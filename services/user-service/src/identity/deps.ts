@@ -43,13 +43,147 @@ export interface Notifier {
   }): Promise<void>;
 }
 
+export interface LaunchedCity {
+  readonly id: string;
+  readonly name: string;
+  readonly country: string;
+  readonly region: string | null;
+  readonly timezone: string;
+}
+
+export interface CityCatalog {
+  listLaunchedCities(): Promise<readonly LaunchedCity[]>;
+}
+
 export interface IdentityDeps {
   readonly prisma: PrismaClient;
   readonly cache: IdentityCache;
   readonly policy: PolicyProvider;
+  readonly cities: CityCatalog;
   readonly notifier: Notifier;
   readonly faceVerifier: FaceVerifier;
   readonly now: () => Date;
+}
+
+const LAUNCHED_CITIES_CACHE_KEY = "ubi:identity:launched_cities";
+const LAUNCHED_CITIES_TTL_SECONDS = 60;
+
+const ConfigCitiesResponseSchema = z.object({
+  cities: z.array(
+    z.object({
+      id: z.string().min(2).max(16),
+      name: z.string().min(1),
+      country: z.string().length(2),
+      region: z.string().nullable().optional(),
+      timezone: z.string().min(1),
+      status: z.string(),
+      active: z.boolean().optional(),
+    }),
+  ),
+});
+
+export async function assertLaunchedCity(
+  deps: IdentityDeps,
+  rawCityId: string,
+): Promise<LaunchedCity> {
+  const normalized = rawCityId.trim().toUpperCase();
+  const launched = await deps.cities.listLaunchedCities();
+  const match = launched.find((city) => city.id.toUpperCase() === normalized);
+  if (match === undefined) {
+    throw new ContractError(
+      "city_unsupported",
+      "UBI is not available in that city yet.",
+      {
+        cityId: normalized,
+        availableCities: launched.map((city) => city.id),
+      },
+    );
+  }
+  return match;
+}
+
+function httpCityCatalog(baseUrl: string, cache: IdentityCache): CityCatalog {
+  const endpoint = `${baseUrl.replace(/\/+$/, "")}/v1/config/cities`;
+  return {
+    async listLaunchedCities(): Promise<readonly LaunchedCity[]> {
+      try {
+        const cached = await cache.get(LAUNCHED_CITIES_CACHE_KEY);
+        if (cached !== null) {
+          const parsedCached = z
+            .array(
+              z.object({
+                id: z.string(),
+                name: z.string(),
+                country: z.string(),
+                region: z.string().nullable(),
+                timezone: z.string(),
+              }),
+            )
+            .safeParse(JSON.parse(cached));
+          if (parsedCached.success) {
+            return parsedCached.data;
+          }
+        }
+      } catch {
+        // Cache misses or transient Redis issues fall through to config-service.
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          method: "GET",
+          headers: { accept: "application/json" },
+        });
+      } catch {
+        throw new ContractError(
+          "config_unavailable",
+          "Available cities could not be loaded right now. Please try again shortly.",
+        );
+      }
+
+      if (!response.ok) {
+        throw new ContractError(
+          "config_unavailable",
+          "Available cities could not be loaded right now. Please try again shortly.",
+          { status: response.status },
+        );
+      }
+
+      const parsed = ConfigCitiesResponseSchema.safeParse(
+        await response.json(),
+      );
+      if (!parsed.success) {
+        throw new ContractError(
+          "config_unavailable",
+          "Available cities could not be loaded right now. Please try again shortly.",
+          { cause: "unparseable_cities_response" },
+        );
+      }
+
+      const activeCities: LaunchedCity[] = parsed.data.cities
+        .filter((city) => city.status === "active" || city.active === true)
+        .map((city) => ({
+          id: city.id,
+          name: city.name,
+          country: city.country,
+          region: city.region ?? null,
+          timezone: city.timezone,
+        }));
+
+      try {
+        await cache.set(
+          LAUNCHED_CITIES_CACHE_KEY,
+          JSON.stringify(activeCities),
+          "EX",
+          LAUNCHED_CITIES_TTL_SECONDS,
+        );
+      } catch {
+        // Non-fatal cache write failure.
+      }
+
+      return activeCities;
+    },
+  };
 }
 
 /**
@@ -146,6 +280,7 @@ export function defaultIdentityDeps(): IdentityDeps {
     prisma,
     cache: redis,
     policy: createPolicyProvider(new ConfigClient({ baseUrl, cache: redis })),
+    cities: httpCityCatalog(baseUrl, redis),
     notifier: {
       async sendSms(params) {
         await notificationClient.sendSMS(params);

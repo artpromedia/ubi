@@ -36,6 +36,7 @@ import { OnboardingScreen } from "../screens/boot/OnboardingScreen";
 import { LoginScreen } from "../screens/auth/LoginScreen";
 import { OtpScreen } from "../screens/auth/OtpScreen";
 import { RegisterScreen } from "../screens/auth/RegisterScreen";
+import { CityPickerScreen } from "../screens/auth/CityPickerScreen";
 import { OfferScreen } from "../screens/trip/OfferScreen";
 import { NavigateScreen } from "../screens/trip/NavigateScreen";
 import { WaitingScreen } from "../screens/trip/WaitingScreen";
@@ -198,6 +199,7 @@ function AuthNavigator() {
       <Auth.Screen name="Login" component={LoginScreen} />
       <Auth.Screen name="Otp" component={OtpScreen} />
       <Auth.Screen name="Register" component={RegisterScreen} />
+      <Auth.Screen name="CityPicker" component={CityPickerScreen} />
     </Auth.Navigator>
   );
 }

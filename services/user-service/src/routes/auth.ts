@@ -1,21 +1,19 @@
 /**
- * Authentication Routes
+ * Legacy Authentication & Password-Reset Routes
  *
- * Handles user registration, login, OTP verification, and token management.
+ * Sign-up, OTP verification, device enrolment, session refresh, and logout now
+ * live in `src/routes/identity.ts` (CC-B00). Legacy `/register`, `/login/otp`,
+ * `/verify-otp`, and `/login` return `410 legacy_auth_retired` for one release
+ * so older app builds surface an explicit upgrade message instead of minting
+ * cityless or deviceless tokens.
  */
 
 import bcrypt from "bcrypt";
 import { Hono } from "hono";
-import * as jose from "jose";
 import { z } from "zod";
 
 import { ContractError } from "@ubi/contracts";
-import {
-  ErrorCodes,
-  generateOTP,
-  generateReferralCode,
-  UbiError,
-} from "@ubi/utils";
+import { ErrorCodes, UbiError } from "@ubi/utils";
 
 import { authLogger } from "../lib/logger.js";
 import { notificationClient } from "../lib/notification-client.js";
@@ -23,39 +21,6 @@ import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 
 const authRoutes = new Hono();
-
-// ===========================================
-// Validation Schemas
-// ===========================================
-
-const registerSchema = z.object({
-  phone: z.string().min(10).max(15),
-  email: z.string().email().optional(),
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
-  country: z.string().length(2),
-  language: z.string().default("en"),
-  role: z.enum(["RIDER", "DRIVER"]).default("RIDER"),
-  referralCode: z.string().optional(),
-});
-
-const loginOTPSchema = z.object({
-  phone: z.string().min(10).max(15),
-});
-
-const verifyOTPSchema = z.object({
-  phone: z.string().min(10).max(15),
-  code: z.string().length(6),
-});
-
-const loginCredentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-});
-
-const refreshTokenSchema = z.object({
-  refreshToken: z.string(),
-});
 
 const resetPasswordSchema = z.object({
   email: z.string().email(),
@@ -66,586 +31,43 @@ const confirmResetPasswordSchema = z.object({
   password: z.string().min(8),
 });
 
-// ===========================================
-// JWT Configuration
-// ===========================================
-
-const getJWTSecret = () => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET environment variable is required");
-  }
-  return new TextEncoder().encode(secret);
-};
-
-const JWT_SECRET = getJWTSecret();
-const JWT_ISSUER = "ubi.africa";
-const JWT_AUDIENCE = "ubi-api";
-const ACCESS_TOKEN_EXPIRY = "15m";
-const REFRESH_TOKEN_EXPIRY = "7d";
+const RETIRED_AUTH_MESSAGE =
+  "This sign-in endpoint has been retired. Please update the app or use /v1/auth/signup, /v1/auth/otp, and /v1/auth/verify.";
 
 /**
- * Generate JWT tokens for a user
+ * POST /auth/register — retired in favour of POST /auth/signup (CC-B00).
  */
-async function generateTokens(user: {
-  id: string;
-  email: string;
-  role: string;
-  permissions?: string[];
-}): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
-  const accessToken = await new jose.SignJWT({
-    sub: user.id,
-    email: user.email,
-    role: user.role.toLowerCase(),
-    permissions: user.permissions || [],
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer(JWT_ISSUER)
-    .setAudience(JWT_AUDIENCE)
-    .setExpirationTime(ACCESS_TOKEN_EXPIRY)
-    .setIssuedAt()
-    .sign(JWT_SECRET);
-
-  const refreshToken = await new jose.SignJWT({
-    sub: user.id,
-    type: "refresh",
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer(JWT_ISSUER)
-    .setExpirationTime(REFRESH_TOKEN_EXPIRY)
-    .setIssuedAt()
-    .sign(JWT_SECRET);
-
-  return {
-    accessToken,
-    refreshToken,
-    expiresIn: 900, // 15 minutes in seconds
-  };
-}
-
-// ===========================================
-// Routes
-// ===========================================
-
-/**
- * POST /auth/register
- * Register a new user
- */
-authRoutes.post("/register", async (c) => {
-  const body = await c.req.json();
-  const data = registerSchema.parse(body);
-
-  // Check if phone already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { phone: data.phone },
-  });
-
-  if (existingUser) {
-    throw new UbiError(
-      ErrorCodes.DUPLICATE_ENTRY,
-      "A user with this phone number already exists",
-    );
-  }
-
-  // Check if email already exists (if provided)
-  if (data.email) {
-    const existingEmail = await prisma.user.findUnique({
-      where: { email: data.email },
-    });
-    if (existingEmail) {
-      throw new UbiError(
-        ErrorCodes.DUPLICATE_ENTRY,
-        "A user with this email already exists",
-      );
-    }
-  }
-
-  // Generate referral code for the user
-  const referralCode = generateReferralCode();
-
-  // Find referrer if referral code provided
-  let referredBy: string | undefined;
-  if (data.referralCode) {
-    const referrer = await prisma.rider.findUnique({
-      where: { referralCode: data.referralCode },
-    });
-    if (referrer) {
-      referredBy = referrer.id;
-    }
-  }
-
-  // Create user
-  const user = await prisma.user.create({
-    data: {
-      phone: data.phone,
-      email: data.email || `${data.phone}@placeholder.ubi.africa`,
-      passwordHash: "", // Will be set when they add a password
-      firstName: data.firstName,
-      lastName: data.lastName,
-      country: data.country,
-      language: data.language,
-      role: data.role,
-      status: "PENDING", // Requires OTP verification
-      rider:
-        data.role === "RIDER"
-          ? {
-              create: {
-                referralCode,
-                referredBy,
-              },
-            }
-          : undefined,
-    },
-    select: {
-      id: true,
-      phone: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-      role: true,
-      status: true,
-      country: true,
-      language: true,
-      createdAt: true,
-    },
-  });
-
-  // Generate and store OTP so a retry within the rate limit can resend it
-  const otp = generateOTP(6);
-  await redis.setex(`otp:${data.phone}`, 300, otp); // 5 minute expiry
-
-  // Send OTP via notification service — never claim success when delivery fails
-  try {
-    await notificationClient.sendSMS({
-      userId: user.id,
-      phone: data.phone,
-      message: `Your UBI verification code is: ${otp}. This code expires in 5 minutes. Do not share this code with anyone.`,
-    });
-    authLogger.info({ userId: user.id }, "Registration OTP sent successfully");
-  } catch (error) {
-    authLogger.error(
-      {
-        userId: user.id,
-        err: error instanceof Error ? error.message : "send_failed",
-      },
-      "Failed to send registration OTP via notification service",
-    );
-    throw new ContractError(
-      "otp_send_failed",
-      "We couldn't send your verification code right now. Please try again shortly.",
-      { retryable: true },
-    );
-  }
-
-  return c.json({
-    success: true,
-    data: {
-      user,
-      message:
-        "Registration successful. Please verify your phone number with the OTP sent.",
-    },
+authRoutes.post("/register", () => {
+  throw new ContractError("legacy_auth_retired", RETIRED_AUTH_MESSAGE, {
+    replacement: "/v1/auth/signup",
   });
 });
 
 /**
- * POST /auth/login/otp
- * Request OTP for phone login
+ * POST /auth/login/otp — retired in favour of POST /auth/otp (CC-B00).
  */
-authRoutes.post("/login/otp", async (c) => {
-  const body = await c.req.json();
-  const { phone } = loginOTPSchema.parse(body);
-
-  // Check if user exists
-  const user = await prisma.user.findUnique({
-    where: { phone },
-    select: { id: true, status: true },
-  });
-
-  if (user?.status === "SUSPENDED") {
-    throw new UbiError(
-      ErrorCodes.ACCOUNT_SUSPENDED,
-      "Your account has been suspended",
-    );
-  }
-
-  // Rate limit OTP requests before issuing or resending
-  const otpCount = await redis.incr(`otp_count:${phone}`);
-  if (otpCount === 1) {
-    await redis.expire(`otp_count:${phone}`, 3600); // Reset after 1 hour
-  }
-  if (otpCount > 5) {
-    throw new UbiError(
-      ErrorCodes.RATE_LIMIT_EXCEEDED,
-      "Too many OTP requests. Please try again later.",
-    );
-  }
-
-  // Reuse an unexpired stored code so a retry after a transient SMS failure
-  // resends the same code within the rate limit.
-  const existingOtp = await redis.get(`otp:${phone}`);
-  const otp = existingOtp ?? generateOTP(6);
-  await redis.setex(`otp:${phone}`, 300, otp); // 5 minute expiry
-
-  // Send OTP via notification service — never claim "OTP sent" when delivery fails
-  try {
-    await notificationClient.sendSMS({
-      userId: user?.id,
-      phone,
-      message: `Your UBI login code is: ${otp}. This code expires in 5 minutes. Do not share this code with anyone.`,
-    });
-    authLogger.info({ userId: user?.id }, "Login OTP sent successfully");
-  } catch (error) {
-    authLogger.error(
-      {
-        userId: user?.id,
-        err: error instanceof Error ? error.message : "send_failed",
-      },
-      "Failed to send login OTP via notification service",
-    );
-    throw new ContractError(
-      "otp_send_failed",
-      "We couldn't send your login code right now. Please try again shortly.",
-      { retryable: true },
-    );
-  }
-
-  return c.json({
-    success: true,
-    data: {
-      message: "OTP sent successfully",
-      expiresIn: 300,
-    },
+authRoutes.post("/login/otp", () => {
+  throw new ContractError("legacy_auth_retired", RETIRED_AUTH_MESSAGE, {
+    replacement: "/v1/auth/otp",
   });
 });
 
 /**
- * POST /auth/verify-otp
- * Verify OTP and login/complete registration
+ * POST /auth/verify-otp — retired in favour of POST /auth/verify (CC-B00).
  */
-authRoutes.post("/verify-otp", async (c) => {
-  const body = await c.req.json();
-  const { phone, code } = verifyOTPSchema.parse(body);
-
-  // Get stored OTP
-  const storedOTP = await redis.get(`otp:${phone}`);
-
-  if (!storedOTP) {
-    throw new UbiError(
-      ErrorCodes.OTP_EXPIRED,
-      "OTP has expired. Please request a new one.",
-    );
-  }
-
-  if (storedOTP !== code) {
-    // Track failed attempts
-    const attempts = await redis.incr(`otp_attempts:${phone}`);
-    if (attempts >= 5) {
-      await redis.del(`otp:${phone}`);
-      throw new UbiError(
-        ErrorCodes.OTP_INVALID,
-        "Too many failed attempts. Please request a new OTP.",
-      );
-    }
-    await redis.expire(`otp_attempts:${phone}`, 300);
-
-    throw new UbiError(ErrorCodes.OTP_INVALID, "Invalid OTP code");
-  }
-
-  // Clear OTP and attempts
-  await redis.del(`otp:${phone}`);
-  await redis.del(`otp_attempts:${phone}`);
-  await redis.del(`otp_count:${phone}`);
-
-  // Get or create user
-  let user = await prisma.user.findUnique({
-    where: { phone },
-    include: {
-      rider: true,
-      driver: true,
-    },
-  });
-
-  if (!user) {
-    throw new UbiError(
-      ErrorCodes.USER_NOT_FOUND,
-      "User not found. Please register first.",
-    );
-  }
-
-  // Update user status if pending
-  if (user.status === "PENDING") {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        status: "ACTIVE",
-        phoneVerified: true,
-      },
-      include: {
-        rider: true,
-        driver: true,
-      },
-    });
-  }
-
-  // Generate tokens
-  const tokens = await generateTokens({
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    permissions: getRolePermissions(user.role),
-  });
-
-  // Create session
-  const session = await prisma.session.create({
-    data: {
-      userId: user.id,
-      token: tokens.refreshToken,
-      deviceType: c.req.header("x-device-type"),
-      deviceId: c.req.header("x-device-id"),
-      ipAddress:
-        c.req.header("x-forwarded-for")?.split(",")[0] ||
-        c.req.header("x-real-ip"),
-      userAgent: c.req.header("user-agent"),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-    },
-  });
-
-  // Store session in Redis for quick lookup
-  await redis.setex(
-    `session:${session.id}`,
-    7 * 24 * 60 * 60,
-    JSON.stringify({ userId: user.id, role: user.role }),
-  );
-
-  return c.json({
-    success: true,
-    data: {
-      user: {
-        id: user.id,
-        phone: user.phone,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        status: user.status,
-        avatarUrl: user.avatarUrl,
-        rider: user.rider,
-        driver: user.driver,
-      },
-      tokens: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresIn: tokens.expiresIn,
-      },
-    },
+authRoutes.post("/verify-otp", () => {
+  throw new ContractError("legacy_auth_retired", RETIRED_AUTH_MESSAGE, {
+    replacement: "/v1/auth/verify",
   });
 });
 
 /**
- * POST /auth/login
- * Login with email and password
+ * POST /auth/login — retired because password-only login minted tokens without
+ * device enrolment or city verification (CC-B00).
  */
-authRoutes.post("/login", async (c) => {
-  const body = await c.req.json();
-  const { email, password } = loginCredentialsSchema.parse(body);
-
-  // Find user
-  const user = await prisma.user.findUnique({
-    where: { email },
-    include: {
-      rider: true,
-      driver: true,
-    },
-  });
-
-  if (!user?.passwordHash) {
-    throw new UbiError(
-      ErrorCodes.INVALID_CREDENTIALS,
-      "Invalid email or password",
-    );
-  }
-
-  if (user.status === "SUSPENDED") {
-    throw new UbiError(
-      ErrorCodes.ACCOUNT_SUSPENDED,
-      "Your account has been suspended",
-    );
-  }
-
-  // Verify password
-  const validPassword = await bcrypt.compare(password, user.passwordHash);
-  if (!validPassword) {
-    throw new UbiError(
-      ErrorCodes.INVALID_CREDENTIALS,
-      "Invalid email or password",
-    );
-  }
-
-  // Generate tokens
-  const tokens = await generateTokens({
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    permissions: getRolePermissions(user.role),
-  });
-
-  // Create session
-  const session = await prisma.session.create({
-    data: {
-      userId: user.id,
-      token: tokens.refreshToken,
-      deviceType: c.req.header("x-device-type"),
-      deviceId: c.req.header("x-device-id"),
-      ipAddress:
-        c.req.header("x-forwarded-for")?.split(",")[0] ||
-        c.req.header("x-real-ip"),
-      userAgent: c.req.header("user-agent"),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    },
-  });
-
-  await redis.setex(
-    `session:${session.id}`,
-    7 * 24 * 60 * 60,
-    JSON.stringify({ userId: user.id, role: user.role }),
-  );
-
-  return c.json({
-    success: true,
-    data: {
-      user: {
-        id: user.id,
-        phone: user.phone,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        status: user.status,
-        avatarUrl: user.avatarUrl,
-        rider: user.rider,
-        driver: user.driver,
-      },
-      tokens: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresIn: tokens.expiresIn,
-      },
-    },
-  });
-});
-
-/**
- * POST /auth/refresh
- * Refresh access token
- */
-authRoutes.post("/refresh", async (c) => {
-  const body = await c.req.json();
-  const { refreshToken } = refreshTokenSchema.parse(body);
-
-  try {
-    // Verify refresh token
-    const { payload } = await jose.jwtVerify(refreshToken, JWT_SECRET, {
-      issuer: JWT_ISSUER,
-    });
-
-    if (payload.type !== "refresh") {
-      throw new Error("Invalid token type");
-    }
-
-    // Check if session exists
-    const session = await prisma.session.findFirst({
-      where: {
-        token: refreshToken,
-        userId: payload.sub,
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        user: true,
-      },
-    });
-
-    if (!session) {
-      throw new UbiError(
-        ErrorCodes.SESSION_EXPIRED,
-        "Session expired. Please login again.",
-      );
-    }
-
-    // Generate new tokens
-    const tokens = await generateTokens({
-      id: session.user.id,
-      email: session.user.email,
-      role: session.user.role,
-      permissions: getRolePermissions(session.user.role),
-    });
-
-    // Update session with new refresh token
-    await prisma.session.update({
-      where: { id: session.id },
-      data: {
-        token: tokens.refreshToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    return c.json({
-      success: true,
-      data: {
-        tokens: {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresIn: tokens.expiresIn,
-        },
-      },
-    });
-  } catch (error) {
-    if (error instanceof jose.errors.JWTExpired) {
-      throw new UbiError(
-        ErrorCodes.TOKEN_EXPIRED,
-        "Refresh token expired. Please login again.",
-      );
-    }
-    throw new UbiError(ErrorCodes.INVALID_TOKEN, "Invalid refresh token");
-  }
-});
-
-/**
- * POST /auth/logout
- * Logout and invalidate session
- */
-authRoutes.post("/logout", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return c.json({ success: true, data: { message: "Logged out" } });
-  }
-
-  try {
-    const token = authHeader.substring(7);
-    const { payload } = await jose.jwtVerify(token, JWT_SECRET);
-
-    // Delete all sessions for this user (optional: just current session)
-    await prisma.session.deleteMany({
-      where: { userId: payload.sub },
-    });
-
-    // Clear Redis cache
-    const sessions = await redis.keys(`session:*`);
-    for (const session of sessions) {
-      const data = await redis.get(session);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (parsed.userId === payload.sub) {
-          await redis.del(session);
-        }
-      }
-    }
-  } catch {
-    // Ignore errors, logout anyway
-  }
-
-  return c.json({
-    success: true,
-    data: { message: "Logged out successfully" },
+authRoutes.post("/login", () => {
+  throw new ContractError("legacy_auth_retired", RETIRED_AUTH_MESSAGE, {
+    replacement: "/v1/auth/otp",
   });
 });
 
@@ -752,47 +174,5 @@ authRoutes.post("/reset-password", async (c) => {
     },
   });
 });
-
-// ===========================================
-// Helper Functions
-// ===========================================
-
-/**
- * Get permissions for a role
- */
-function getRolePermissions(role: string): string[] {
-  const permissions: Record<string, string[]> = {
-    RIDER: [
-      "ride:create",
-      "ride:read",
-      "ride:cancel",
-      "order:create",
-      "order:read",
-      "delivery:create",
-      "delivery:read",
-    ],
-    DRIVER: [
-      "ride:accept",
-      "ride:read",
-      "ride:update",
-      "delivery:accept",
-      "delivery:update",
-      "earnings:read",
-    ],
-    RESTAURANT: ["menu:manage", "order:manage", "earnings:read"],
-    MERCHANT: ["delivery:create", "delivery:read", "delivery:manage"],
-    FLEET_MANAGER: ["driver:manage", "vehicle:manage", "analytics:read"],
-    ADMIN: [
-      "*:read",
-      "user:manage",
-      "driver:manage",
-      "order:manage",
-      "payment:manage",
-    ],
-    SUPER_ADMIN: ["*"],
-  };
-
-  return permissions[role] || [];
-}
 
 export { authRoutes };

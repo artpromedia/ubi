@@ -16,7 +16,9 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import { ContractError } from "@ubi/contracts";
+import { generateReferralCode } from "@ubi/utils";
 
+import { writeAudit } from "../identity/audit";
 import {
   decideIdentityCase,
   DecideCaseSchema,
@@ -24,10 +26,19 @@ import {
 } from "../identity/cases";
 import {
   getIdentity,
+  IDENTITY_HEADER,
   requireIdentity,
   requireScope,
+  verifyIdentityContext,
 } from "../identity/context";
-import { enrollDevice } from "../identity/devices";
+import { assertLaunchedCity, type IdentityDeps } from "../identity/deps";
+import {
+  ClientDeviceIdSchema,
+  enrollDevice,
+  internalDeviceId,
+  RecoverDeviceSchema,
+  recoverTrustedDevice,
+} from "../identity/devices";
 import {
   listDriverDocuments,
   reviewDocument,
@@ -69,14 +80,19 @@ import {
   sweepSafeModeExits,
 } from "../identity/safe-mode";
 import {
+  createSession,
+  revokeSession,
+  rotateSession,
+  rotateSessionForId,
+  toAuthUserSummary,
+} from "../identity/sessions";
+import {
   approveFromTrustedDevice,
   ApproveFromTrustedDeviceSchema,
   passSelfieStepUp,
   SelfieStepUpSchema,
 } from "../identity/step-up";
-import { prisma } from "../lib/prisma";
-
-import type { IdentityDeps } from "../identity/deps";
+import { issueAccessToken } from "../identity/tokens";
 
 const SimSwapWebhookSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{7,14}$/, "phone must be in E.164 form"),
@@ -84,14 +100,37 @@ const SimSwapWebhookSchema = z.object({
   source: z.string().min(2).max(60),
 });
 
+const SignupSchema = z.object({
+  phone: z.string().regex(/^\+?[1-9]\d{7,14}$/, "phone must be in E.164 form"),
+  email: z.string().email().optional(),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
+  cityId: z.string().trim().min(2).max(16),
+  country: z.string().trim().length(2).optional(),
+  language: z.string().trim().min(2).max(5).default("en"),
+  role: z.enum(["RIDER", "DRIVER"]).default("RIDER"),
+  referralCode: z.string().trim().min(3).max(32).optional(),
+});
+
 const VerifyOtpAndEnrolSchema = VerifyOtpSchema.extend({
-  deviceId: z
-    .string()
-    .min(8)
-    .max(64)
-    .regex(/^[A-Za-z0-9_.:-]+$/),
+  deviceId: ClientDeviceIdSchema,
   platform: z.enum(["ios", "android", "web"]).optional(),
   model: z.string().min(1).max(120).optional(),
+});
+
+const RefreshSessionSchema = z.object({
+  refreshToken: z.string().min(10).max(512),
+  deviceId: ClientDeviceIdSchema.optional(),
+});
+
+const LogoutSessionSchema = z
+  .object({
+    refreshToken: z.string().min(1).max(512).optional(),
+  })
+  .optional();
+
+const SelectCitySchema = z.object({
+  cityId: z.string().trim().min(2).max(16),
 });
 
 const ReviewDocumentSchema = z.object({
@@ -100,9 +139,10 @@ const ReviewDocumentSchema = z.object({
 });
 
 async function driverForUser(
+  deps: IdentityDeps,
   userId: string,
 ): Promise<{ id: string; vehicleId: string | null }> {
-  const driver = await prisma.driver.findFirst({
+  const driver = await deps.prisma.driver.findFirst({
     where: { userId },
     select: { id: true, vehicleId: true },
   });
@@ -120,6 +160,156 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
   // =========================================================================
 
   /**
+   * GET /auth/cities — cities config-service marks as launched (`active`).
+   *
+   * Sign-up and the post-login city picker both read from this list so a user
+   * can never select an unlaunched or unknown city.
+   */
+  routes.get(
+    "/auth/cities",
+    contractRoute(async (c) => {
+      const cities = await deps.cities.listLaunchedCities();
+      return ok(c, { cities });
+    }),
+  );
+
+  /**
+   * POST /auth/signup — create a rider or driver account with a verified
+   * launched home city (DEC-8) and send the hardened scrypt-hashed OTP.
+   */
+  routes.post(
+    "/auth/signup",
+    contractRoute(async (c) => {
+      const body = await parseBody(c, SignupSchema);
+      const city = await assertLaunchedCity(deps, body.cityId);
+
+      if (
+        body.country !== undefined &&
+        body.country.toUpperCase() !== city.country.toUpperCase()
+      ) {
+        throw new ContractError(
+          "validation_failed",
+          "Selected city does not match the stated country",
+          { cityId: city.id, cityCountry: city.country },
+        );
+      }
+
+      const existingPhone = await deps.prisma.user.findUnique({
+        where: { phone: body.phone },
+      });
+
+      if (
+        existingPhone !== null &&
+        (existingPhone.phoneVerified || existingPhone.status !== "PENDING")
+      ) {
+        throw new ContractError(
+          "conflict",
+          "An account with this phone number already exists. Sign in instead.",
+        );
+      }
+
+      if (body.email !== undefined) {
+        const existingEmail = await deps.prisma.user.findUnique({
+          where: { email: body.email },
+          select: { id: true },
+        });
+        if (existingEmail !== null && existingEmail.id !== existingPhone?.id) {
+          throw new ContractError(
+            "conflict",
+            "An account with this email address already exists.",
+          );
+        }
+      }
+
+      let referredBy: string | undefined;
+      if (body.referralCode !== undefined) {
+        const referrer = await deps.prisma.rider.findUnique({
+          where: { referralCode: body.referralCode },
+          select: { id: true },
+        });
+        if (referrer !== null) {
+          referredBy = referrer.id;
+        }
+      }
+
+      const user =
+        existingPhone !== null
+          ? await deps.prisma.user.update({
+              where: { id: existingPhone.id },
+              data: {
+                firstName: body.firstName,
+                lastName: body.lastName,
+                country: city.country,
+                homeCityId: city.id,
+                language: body.language,
+                role: body.role,
+                ...(body.email === undefined ? {} : { email: body.email }),
+              },
+            })
+          : await deps.prisma.$transaction(async (tx) => {
+              const created = await tx.user.create({
+                data: {
+                  phone: body.phone,
+                  email: body.email ?? `${body.phone}@placeholder.ubi.africa`,
+                  passwordHash: "",
+                  firstName: body.firstName,
+                  lastName: body.lastName,
+                  country: city.country,
+                  homeCityId: city.id,
+                  language: body.language,
+                  role: body.role,
+                  status: "PENDING",
+                  ...(body.role === "RIDER"
+                    ? {
+                        rider: {
+                          create: {
+                            referralCode: generateReferralCode(),
+                            ...(referredBy === undefined ? {} : { referredBy }),
+                          },
+                        },
+                      }
+                    : {}),
+                },
+              });
+
+              await writeAudit(tx, {
+                actorId: created.id,
+                actorRole: created.role,
+                action: "user.signed_up",
+                subjectType: "user",
+                subjectId: created.id,
+                after: {
+                  role: created.role,
+                  homeCityId: city.id,
+                  country: city.country,
+                },
+                reason: "self_signup",
+              });
+
+              return created;
+            });
+
+      const otp = await requestOtp(
+        deps,
+        { phone: body.phone, purpose: "verification" },
+        user.id,
+        city.id,
+      );
+
+      return ok(
+        c,
+        {
+          user: toAuthUserSummary(user),
+          expiresIn: otp.expiresInSeconds,
+          expiresInSeconds: otp.expiresInSeconds,
+          resendAfterSeconds: otp.resendAfterSeconds,
+        },
+        201,
+      );
+    }),
+  );
+
+  /**
    * POST /auth/otp — send a login code.
    *
    * Hardened replacement for `/auth/login/otp`: the code is hashed at rest,
@@ -130,33 +320,51 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     "/auth/otp",
     contractRoute(async (c) => {
       const body = await parseBody(c, RequestOtpSchema);
-      const user = await prisma.user.findUnique({
+      const user = await deps.prisma.user.findUnique({
         where: { phone: body.phone },
-        select: { id: true, status: true },
+        select: { id: true, status: true, homeCityId: true },
       });
       if (user?.status === "SUSPENDED") {
         throw new ContractError("forbidden", "This account is suspended");
       }
-      const result = await requestOtp(deps, body, user?.id);
+      const result = await requestOtp(
+        deps,
+        body,
+        user?.id,
+        user?.homeCityId ?? null,
+      );
       return ok(c, result);
     }),
   );
 
   /**
-   * POST /auth/verify — check the code and enrol the device.
+   * POST /auth/verify — check the code, activate pending sign-ups, create a
+   * rotatable session, and enrol the device.
    *
-   * The OTP proves the phone number and nothing else. The token handed back is
-   * decided by DEVICE TRUST, so signing in from a new phone yields a
-   * LIMITED-MODE token even though the code was correct: SMS alone never
-   * unlocks money (slice 03 guards).
+   * DEC-7 (A): a brand-new account's FIRST device is trusted once its OTP is
+   * verified (`first_device_trusted`); every subsequent device yields a
+   * LIMITED-MODE token until step-up passes.
+   * DEC-8 (A): the user's `homeCityId` is signed into the token; existing
+   * accounts without a city receive `citySelectionRequired: true`.
    */
   routes.post(
     "/auth/verify",
     contractRoute(async (c) => {
       const body = await parseBody(c, VerifyOtpAndEnrolSchema);
-      const user = await prisma.user.findUnique({
+      let user = await deps.prisma.user.findUnique({
         where: { phone: body.phone },
-        select: { id: true, email: true, role: true, status: true },
+        select: {
+          id: true,
+          phone: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          status: true,
+          phoneVerified: true,
+          homeCityId: true,
+          avatarUrl: true,
+        },
       });
       if (user === null) {
         throw new ContractError("not_found", "No account uses that number");
@@ -165,9 +373,46 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         throw new ContractError("forbidden", "This account is suspended");
       }
 
-      const verified = await verifyOtp(deps, {
-        phone: body.phone,
-        code: body.code,
+      const verified = await verifyOtp(
+        deps,
+        {
+          phone: body.phone,
+          code: body.code,
+        },
+        user.homeCityId,
+      );
+
+      if (user.status === "PENDING" || !user.phoneVerified) {
+        user = await deps.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            status: user.status === "PENDING" ? "ACTIVE" : user.status,
+            phoneVerified: true,
+          },
+          select: {
+            id: true,
+            phone: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            status: true,
+            phoneVerified: true,
+            homeCityId: true,
+            avatarUrl: true,
+          },
+        });
+      }
+
+      const resolvedDeviceId = internalDeviceId(user.id, body.deviceId);
+      const session = await createSession(deps, {
+        userId: user.id,
+        deviceId: resolvedDeviceId,
+        platform: body.platform,
+        ipAddress:
+          c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
+          c.req.header("x-real-ip"),
+        userAgent: c.req.header("user-agent"),
       });
 
       const enrolment = await enrollDevice(deps, {
@@ -177,13 +422,24 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         userId: user.id,
         role: user.role,
         email: user.email,
-        cityId: null,
-        sessionId: null,
+        cityId: user.homeCityId,
+        sessionId: session.sessionId,
+        otpVerified: true,
       });
+
+      const tokenPayload = {
+        accessToken: enrolment.token.accessToken,
+        refreshToken: session.refreshToken,
+        expiresIn: enrolment.token.expiresIn,
+        mode: enrolment.token.mode,
+        scopes: enrolment.token.scopes,
+      };
 
       return ok(c, {
         phoneVerified: verified.verified,
         grantsMoneyAccess: verified.grantsMoneyAccess,
+        citySelectionRequired: user.homeCityId === null,
+        user: toAuthUserSummary(user),
         device: {
           id: enrolment.deviceId,
           trusted: enrolment.trusted,
@@ -194,13 +450,70 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
           methods: enrolment.methods,
           unavailable: enrolment.unavailable,
         },
-        token: {
-          accessToken: enrolment.token.accessToken,
-          expiresIn: enrolment.token.expiresIn,
-          mode: enrolment.token.mode,
-          scopes: enrolment.token.scopes,
-        },
+        token: tokenPayload,
+        tokens: tokenPayload,
       });
+    }),
+  );
+
+  /**
+   * POST /auth/refresh — rotate the session's refresh token and mint a fresh
+   * access token carrying the user's current `homeCityId` and device trust mode.
+   */
+  routes.post(
+    "/auth/refresh",
+    contractRoute(async (c) => {
+      const body = await parseBody(c, RefreshSessionSchema);
+      const rotated = await rotateSession(deps, {
+        refreshToken: body.refreshToken,
+        clientDeviceId: body.deviceId,
+      });
+      return ok(c, {
+        user: rotated.user,
+        citySelectionRequired: rotated.citySelectionRequired,
+        tokens: rotated.tokens,
+      });
+    }),
+  );
+
+  /**
+   * POST /auth/logout — invalidate the caller's session by signed context
+   * (`sessionId` / `userId`) or refresh token.
+   */
+  routes.post(
+    "/auth/logout",
+    contractRoute(async (c) => {
+      let body: z.infer<typeof LogoutSessionSchema>;
+      try {
+        const rawText = await c.req.text();
+        body =
+          rawText.trim().length > 0
+            ? LogoutSessionSchema.parse(JSON.parse(rawText))
+            : undefined;
+      } catch {
+        body = undefined;
+      }
+
+      let sessionId: string | null = null;
+      let userId: string | null = null;
+      const identityHeader = c.req.header(IDENTITY_HEADER);
+      if (identityHeader !== undefined && identityHeader.length > 0) {
+        try {
+          const verified = await verifyIdentityContext(identityHeader);
+          sessionId = verified.sessionId;
+          userId = verified.userId;
+        } catch {
+          // Expired or absent identity still allows revoking by refreshToken.
+        }
+      }
+
+      await revokeSession(deps, {
+        sessionId,
+        userId,
+        refreshToken: body?.refreshToken,
+      });
+
+      return ok(c, { message: "Logged out successfully" });
     }),
   );
 
@@ -228,7 +541,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       }
       const body = SimSwapWebhookSchema.parse(parsedJson);
 
-      const user = await prisma.user.findUnique({
+      const user = await deps.prisma.user.findUnique({
         where: { phone: body.phone },
         select: { id: true },
       });
@@ -282,6 +595,126 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
   // too, locking out every endpoint this slice does not own.
   // =========================================================================
 
+  /**
+   * POST /auth/city — set or change the caller's home city (DEC-8) and re-issue
+   * a fresh token carrying the verified `cityId`.
+   *
+   * Requires `profile:read` (kept in limited mode) so an existing cityless
+   * account on an unverified device can still select a launched city.
+   */
+  routes.post(
+    "/auth/city",
+    requireIdentity,
+    contractRoute(async (c) => {
+      const principal = getIdentity(c);
+      requireScope(principal, "profile:read");
+      requireIdempotencyKey(c);
+      const body = await parseBody(c, SelectCitySchema);
+
+      const city = await assertLaunchedCity(deps, body.cityId);
+
+      const current = await deps.prisma.user.findUnique({
+        where: { id: principal.userId },
+        select: {
+          id: true,
+          phone: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          status: true,
+          homeCityId: true,
+          avatarUrl: true,
+        },
+      });
+      if (current === null) {
+        throw new ContractError("not_found", "Account not found");
+      }
+      if (current.status === "SUSPENDED") {
+        throw new ContractError("forbidden", "This account is suspended");
+      }
+
+      const updatedUser = await deps.prisma.$transaction(async (tx) => {
+        const nextUser = await tx.user.update({
+          where: { id: principal.userId },
+          data: {
+            homeCityId: city.id,
+            country: city.country,
+          },
+          select: {
+            id: true,
+            phone: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            status: true,
+            homeCityId: true,
+            avatarUrl: true,
+          },
+        });
+
+        await writeAudit(tx, {
+          actorId: principal.userId,
+          actorRole: principal.role,
+          action: "user.city_changed",
+          subjectType: "user",
+          subjectId: principal.userId,
+          before: { homeCityId: current.homeCityId },
+          after: { homeCityId: city.id, country: city.country },
+          reason: "user_selected_city",
+        });
+
+        return nextUser;
+      });
+
+      let mode: "full" | "limited" = principal.modes.includes("limited")
+        ? "limited"
+        : "full";
+      if (principal.deviceId !== null) {
+        const device = await deps.prisma.device.findUnique({
+          where: { id: principal.deviceId },
+          select: { trusted: true },
+        });
+        if (device !== null) {
+          mode = device.trusted ? "full" : "limited";
+        }
+      }
+
+      const issued = await issueAccessToken({
+        userId: updatedUser.id,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        mode,
+        deviceId: principal.deviceId ?? `session_${principal.userId}`,
+        sessionId: principal.sessionId ?? undefined,
+        cityId: city.id,
+      });
+
+      const rotatedRefreshToken = await rotateSessionForId(
+        deps,
+        principal.sessionId,
+      );
+
+      const tokenPayload = {
+        accessToken: issued.accessToken,
+        ...(rotatedRefreshToken === null
+          ? {}
+          : { refreshToken: rotatedRefreshToken }),
+        expiresIn: issued.expiresIn,
+        mode: issued.mode,
+        scopes: issued.scopes,
+      };
+
+      return ok(c, {
+        cityId: city.id,
+        user: toAuthUserSummary(updatedUser),
+        token: tokenPayload,
+        tokens: tokenPayload,
+      });
+    }),
+  );
+
   /** Liveness + NIN face match. The image is verified and dropped; the score is kept. */
   routes.post(
     "/auth/step-up/selfie",
@@ -291,9 +724,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       requireScope(principal, "auth:step_up");
       const body = await parseBody(c, SelfieStepUpSchema);
 
-      const user = await prisma.user.findUnique({
+      const user = await deps.prisma.user.findUnique({
         where: { id: principal.userId },
-        select: { email: true },
+        select: { email: true, homeCityId: true },
       });
       if (user === null) {
         throw new ContractError("not_found", "Account not found");
@@ -305,7 +738,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
           userId: principal.userId,
           role: principal.role,
           email: user.email,
-          cityId: principal.cityId,
+          cityId: user.homeCityId ?? principal.cityId,
           sessionId: principal.sessionId,
         },
         body,
@@ -341,9 +774,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       requireScope(principal, "auth:step_up");
       const body = await parseBody(c, ApproveFromTrustedDeviceSchema);
 
-      const user = await prisma.user.findUnique({
+      const user = await deps.prisma.user.findUnique({
         where: { id: principal.userId },
-        select: { email: true },
+        select: { email: true, homeCityId: true },
       });
       if (user === null) {
         throw new ContractError("not_found", "Account not found");
@@ -355,7 +788,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
           userId: principal.userId,
           role: principal.role,
           email: user.email,
-          cityId: principal.cityId,
+          cityId: user.homeCityId ?? principal.cityId,
           sessionId: principal.sessionId,
           // The approving device is named by the SIGNED context, not the body.
           approvingDeviceId: principal.deviceId,
@@ -453,7 +886,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");
-      const driver = await driverForUser(principal.userId);
+      const driver = await driverForUser(deps, principal.userId);
       return ok(
         c,
         await listDriverDocuments(deps, driver.id, driver.vehicleId),
@@ -469,7 +902,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       requireScope(principal, "driver:documents:write");
       const idempotencyKey = requireIdempotencyKey(c);
       const body = await parseBody(c, UploadDocumentSchema);
-      const driver = await driverForUser(principal.userId);
+      const driver = await driverForUser(deps, principal.userId);
 
       const document = await uploadDocument(
         deps,
@@ -493,7 +926,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");
-      const driver = await driverForUser(principal.userId);
+      const driver = await driverForUser(deps, principal.userId);
       return ok(c, await driverEligibility(deps, driver.id));
     }),
   );
@@ -504,7 +937,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");
-      const driver = await driverForUser(principal.userId);
+      const driver = await driverForUser(deps, principal.userId);
       if (principal.deviceId === null) {
         return ok(c, { required: true, reason: "first_shift_on_device" });
       }
@@ -539,7 +972,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  // ---- Reviewer surface (board 4d) ----------------------------------------
+  // ---- Reviewer surface (board 4d + DEC-7 device recovery) ----------------
 
   routes.get(
     "/identity/cases",
@@ -584,6 +1017,29 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         cityId: principal.cityId,
       });
       return ok(c, { document });
+    }),
+  );
+
+  /**
+   * POST /identity/devices/recover — support-assisted recovery for an existing
+   * account with zero trusted devices (DEC-7).
+   */
+  routes.post(
+    "/identity/devices/recover",
+    requireIdentity,
+    contractRoute(async (c) => {
+      const principal = getIdentity(c);
+      requireReviewerRole(principal.role);
+      const idempotencyKey = requireIdempotencyKey(c);
+      const body = await parseBody(c, RecoverDeviceSchema);
+      const outcome = await recoverTrustedDevice(deps, {
+        ...body,
+        reviewerId: principal.userId,
+        reviewerRole: principal.role,
+        cityId: principal.cityId,
+        idempotencyKey,
+      });
+      return ok(c, outcome);
     }),
   );
 

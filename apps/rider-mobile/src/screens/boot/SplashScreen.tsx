@@ -10,12 +10,22 @@ import { restoreSession } from "../../api/auth";
 export function SplashScreen() {
   const t = useTheme();
   const nav = useNavigation<{
-    reset: (state: { index: number; routes: { name: string }[] }) => void;
+    reset: (state: {
+      index: number;
+      routes: { name: string; params?: unknown }[];
+    }) => void;
   }>();
   useEffect(() => {
     let alive = true;
     void restoreSession().then((decision) => {
       if (!alive) return;
+      if (decision === "city_required") {
+        nav.reset({
+          index: 0,
+          routes: [{ name: "Auth", params: { screen: "CityPicker" } }],
+        });
+        return;
+      }
       nav.reset({
         index: 0,
         routes: [

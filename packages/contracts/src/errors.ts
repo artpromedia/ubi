@@ -59,6 +59,8 @@ export const ERROR_CODES = [
   "document_expired",
   "limited_mode",
   "otp_send_failed",
+  "city_selection_required",
+  "legacy_auth_retired",
   // ops
   "recon_unexplained",
   "remedy_not_permitted",
@@ -147,6 +149,8 @@ const STATUS_BY_CODE = {
   document_expired: 403,
   limited_mode: 403,
   otp_send_failed: 503,
+  city_selection_required: 409,
+  legacy_auth_retired: 410,
   recon_unexplained: 409,
   remedy_not_permitted: 403,
   // Unconfigured production markets fail closed rather than inventing bounds.

@@ -139,6 +139,24 @@ export function createHarness(): TestHarness {
     prisma,
     cache: redis,
     policy: createPolicyProvider({ getCityConfig: async () => CITY_CONFIG }),
+    cities: {
+      listLaunchedCities: async () => [
+        {
+          id: "LOS",
+          name: "Lagos",
+          country: "NG",
+          region: "Lagos",
+          timezone: "Africa/Lagos",
+        },
+        {
+          id: "ABV",
+          name: "Abuja",
+          country: "NG",
+          region: "FCT",
+          timezone: "Africa/Lagos",
+        },
+      ],
+    },
     notifier: {
       async sendSms(params) {
         if (smsBroken) throw new Error("notification service unavailable");

@@ -110,6 +110,51 @@ export function resolveCityId(contextCityId: string | null): string {
   );
 }
 
+export type NonMoneyIdentityPolicy = Omit<
+  IdentityPolicy,
+  "cityId" | "configVersion" | "maxPinAttempts"
+> & {
+  readonly cityId: string | null;
+};
+
+/**
+ * Security timings for flows that are NOT money movement (OTP delivery/verify,
+ * pre-city device enrolment for legacy cityless users or global admins).
+ *
+ * When a city is known (or `IDENTITY_DEFAULT_CITY_ID` is configured) we still
+ * resolve through `PolicyProvider.forCity` so city-scoped policy applies; when
+ * neither is present in a multi-city deployment, we return the non-market
+ * security timings with `cityId: null` rather than blocking sign-in with
+ * `404 city_unsupported`. Money-moving PIN checks continue to call
+ * `provider.forCity` directly and fail closed without a city.
+ */
+export async function nonMoneyPolicyForCity(
+  provider: PolicyProvider,
+  cityId: string | null,
+): Promise<NonMoneyIdentityPolicy> {
+  const configured = process.env.IDENTITY_DEFAULT_CITY_ID;
+  if (
+    (cityId !== null && cityId.length > 0) ||
+    (configured !== undefined && configured.length > 0)
+  ) {
+    const resolved = await provider.forCity(cityId);
+    return resolved;
+  }
+  return {
+    cityId: null,
+    pinLockMs: PIN_LOCK_MINUTES * MINUTE_MS,
+    coolingMs: PIN_COOLING_HOURS * HOUR_MS,
+    safeModeMs: SAFE_MODE_HOURS * HOUR_MS,
+    stepUpTtlMs: STEP_UP_TTL_MINUTES * MINUTE_MS,
+    documentReminderDays: DOCUMENT_REMINDER_DAYS,
+    faceMatchThreshold: FACE_MATCH_THRESHOLD,
+    otpTtlSeconds: OTP_TTL_SECONDS,
+    otpMaxAttempts: OTP_MAX_ATTEMPTS,
+    otpResendCooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
+    otpMaxSendsPerHour: OTP_MAX_SENDS_PER_HOUR,
+  };
+}
+
 export function createPolicyProvider(source: CityConfigSource): PolicyProvider {
   return {
     async forCity(cityId: string | null): Promise<IdentityPolicy> {

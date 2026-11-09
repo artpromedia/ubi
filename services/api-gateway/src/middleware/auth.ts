@@ -62,6 +62,8 @@ function optionalString(value: unknown): string | null {
 // Note what is NOT here: `/v1/auth/step-up/*` and `/v1/auth/pin/*` require a
 // token, because they change what a session may do.
 const PUBLIC_ROUTES = [
+  "/v1/auth/cities",
+  "/v1/auth/signup",
   "/v1/auth/login",
   "/v1/auth/register",
   "/v1/auth/forgot-password",

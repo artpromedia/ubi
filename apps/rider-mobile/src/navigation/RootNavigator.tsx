@@ -63,6 +63,7 @@ import { useSessionKeeper } from "../api/auth";
 import { LoginScreen } from "../screens/auth/LoginScreen";
 import { OtpScreen } from "../screens/auth/OtpScreen";
 import { RegisterScreen } from "../screens/auth/RegisterScreen";
+import { CityPickerScreen } from "../screens/auth/CityPickerScreen";
 import {
   RideToMarketplaceRedirect,
   RideStateRouterScreen,
@@ -167,6 +168,7 @@ function AuthNavigator() {
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Otp" component={OtpScreen} />
       <AuthStack.Screen name="Register" component={RegisterScreen} />
+      <AuthStack.Screen name="CityPicker" component={CityPickerScreen} />
     </AuthStack.Navigator>
   );
 }

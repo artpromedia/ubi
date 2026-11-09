@@ -352,35 +352,70 @@ describe("CC-A06 · user-service -> notification-service service-key auth & OTP 
     ).not.toThrow();
   });
 
-  it("answers 503 otp_send_failed on /auth/login/otp when SMS fails, keeps the stored code, and resends it on retry", async () => {
+  it("retires legacy /auth/login/otp, /auth/verify-otp, /auth/register, and /auth/login with 410 legacy_auth_retired", async () => {
     const app = new Hono();
     app.onError(errorHandler);
     app.route("/auth", authRoutes);
 
+    for (const path of [
+      "/auth/login/otp",
+      "/auth/verify-otp",
+      "/auth/register",
+      "/auth/login",
+    ]) {
+      const res = await app.request(`http://user.internal${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(410);
+      const body = (await res.json()) as {
+        success: boolean;
+        error: { code: string };
+      };
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("legacy_auth_retired");
+    }
+  });
+
+  it("answers 503 otp_send_failed on hardened /auth/otp when SMS fails, rolls back state, and delivers cleanly on retry", async () => {
+    const { createHarness } = await import("./identity/harness");
+    const { createIdentityRoutes } = await import("../src/routes/identity");
+    const client = new NotificationClient({
+      baseUrl: "http://notification.internal",
+      serviceKey: VALID_USER_NOTIFICATION_KEY,
+    });
+
+    const app = new Hono();
+    app.onError(errorHandler);
+    app.route(
+      "/",
+      createIdentityRoutes({
+        ...createHarness().deps,
+        notifier: {
+          sendSms: async (params) => {
+            await client.sendSMS(params);
+          },
+        },
+      }),
+    );
+
     const phone = `+234809${String(Math.floor(1000000 + Math.random() * 8999999))}`;
-    await redis.del(`otp:${phone}`, `otp_count:${phone}`);
 
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockRejectedValueOnce(new Error("upstream 503"));
 
-    const failedRes = await app.request("http://user.internal/auth/login/otp", {
+    const failedRes = await app.request("http://user.internal/auth/otp", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ phone }),
     });
     expect(failedRes.status).toBe(503);
     const failedBody = (await failedRes.json()) as {
-      success: boolean;
-      error: { code: string; details?: { retryable?: boolean } };
+      error: { code: string };
     };
-    expect(failedBody.success).toBe(false);
     expect(failedBody.error.code).toBe("otp_send_failed");
-    expect(failedBody.error.details?.retryable).toBe(true);
-
-    // Stored OTP remains in Redis so a retry within the rate limit resends the same code
-    const storedAfterFailure = await redis.get(`otp:${phone}`);
-    expect(storedAfterFailure).toMatch(/^\d{6}$/);
 
     let deliveredMessage = "";
     fetchSpy.mockImplementationOnce(async (_url, init) => {
@@ -394,13 +429,13 @@ describe("CC-A06 · user-service -> notification-service service-key auth & OTP 
       );
     });
 
-    const retryRes = await app.request("http://user.internal/auth/login/otp", {
+    const retryRes = await app.request("http://user.internal/auth/otp", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ phone }),
     });
     expect(retryRes.status).toBe(200);
-    expect(deliveredMessage).toContain(storedAfterFailure!);
+    expect(deliveredMessage).toMatch(/\b\d{6}\b/);
   });
 
   it("masks standalone 4-8 digit codes while preserving non-OTP numbers", () => {

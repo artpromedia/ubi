@@ -27,6 +27,7 @@ beforeAll(async () => {
   process.env.ASK_SERVICE_URL = upstream.url;
   process.env.TRAVEL_SERVICE_URL = upstream.url;
   process.env.FLEET_SERVICE_URL = upstream.url;
+  process.env.CONFIG_SERVICE_URL = upstream.url;
 });
 
 afterAll(async () => {
@@ -58,6 +59,7 @@ async function call(
   const token = await clientToken({
     sub: USER_ID,
     role,
+    cityId: "LOS",
     ...(mode === "limited" || mode === "limited_and_safe"
       ? { mode: "limited" as const }
       : {}),
@@ -980,7 +982,11 @@ describe("limited mode and wallet safe mode scope matrix", () => {
 
   it("lets safe mode lapse on its own once the window has passed", async () => {
     setIdentityStateStore(safeModeStore(USER_ID, new Date(Date.now() - 1_000)));
-    const token = await clientToken({ sub: USER_ID, role: "rider" });
+    const token = await clientToken({
+      sub: USER_ID,
+      role: "rider",
+      cityId: "LOS",
+    });
     const response = await app.fetch(
       new Request("http://gateway.test/v1/wallets/transfers", {
         method: "POST",
@@ -992,5 +998,76 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       }),
     );
     expect(response.status).toBe(200);
+  });
+
+  it("answers 409 city_selection_required on city-scoped routes when a user token carries no cityId, while letting city picker, profile, and admin through", async () => {
+    setIdentityStateStore(openRiskStore);
+    const citylessDriver = await clientToken({
+      sub: "usr_cityless_driver",
+      role: "driver",
+    });
+
+    for (const [method, path] of [
+      ["POST", "/v1/drivers/me/status"],
+      ["POST", "/v1/drivers/me/locations"],
+      ["GET", "/v1/mp/feed"],
+      ["POST", "/v1/rides"],
+      ["GET", "/v1/fleets"],
+    ] as const) {
+      ipCounter += 1;
+      const res = await app.fetch(
+        new Request(`http://gateway.test${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${citylessDriver}`,
+            "content-type": "application/json",
+            "x-forwarded-for": `10.99.0.${ipCounter % 250}`,
+          },
+          ...(method === "GET" ? {} : { body: "{}" }),
+        }),
+      );
+      expect(res.status, `${method} ${path}`).toBe(409);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code, `${method} ${path}`).toBe(
+        "city_selection_required",
+      );
+    }
+
+    // Non-city-scoped routes (city picker, logout, profile, active ride read, flags) still pass
+    for (const [method, path] of [
+      ["POST", "/v1/auth/city"],
+      ["POST", "/v1/auth/logout"],
+      ["GET", "/v1/users/me"],
+      ["GET", "/v1/rides/active"],
+      ["GET", "/v1/config/flags"],
+    ] as const) {
+      ipCounter += 1;
+      const res = await app.fetch(
+        new Request(`http://gateway.test${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${citylessDriver}`,
+            "content-type": "application/json",
+            "x-forwarded-for": `10.99.1.${ipCounter % 250}`,
+          },
+          ...(method === "GET" ? {} : { body: "{}" }),
+        }),
+      );
+      expect(res.status, `${method} ${path}`).toBe(200);
+    }
+
+    // Admin cross-city tokens without cityId are not blocked
+    const adminToken = await clientToken({ sub: "usr_admin", role: "admin" });
+    ipCounter += 1;
+    const adminRes = await app.fetch(
+      new Request("http://gateway.test/v1/fleets", {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+          "x-forwarded-for": `10.99.2.${ipCounter % 250}`,
+        },
+      }),
+    );
+    expect(adminRes.status).toBe(200);
   });
 });

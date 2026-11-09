@@ -307,6 +307,7 @@ export const scopeEnforcementMiddleware = createMiddleware(
         role: identity.role,
         modes: identity.modes,
         scopes: identity.scopes,
+        cityId: identity.cityId,
       });
     } catch (error) {
       if (error instanceof ContractError) {
@@ -323,7 +324,7 @@ export const scopeEnforcementMiddleware = createMiddleware(
         );
         return c.json(
           { success: false, error: error.toBody() },
-          error.status as 403,
+          error.status as 403 | 409,
         );
       }
       throw error;

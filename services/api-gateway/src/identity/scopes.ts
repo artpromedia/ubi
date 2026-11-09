@@ -259,7 +259,20 @@ export interface RouteRule {
   readonly prefix: string;
   /** The request is allowed when the session holds ANY of these. */
   readonly anyOf: readonly Scope[];
+  /**
+   * When true, non-admin/service callers (`rider`, `driver`, `merchant`,
+   * `restaurant`) must carry a verified `cityId` on their token; otherwise the
+   * gateway answers `409 city_selection_required` before forwarding (DEC-8).
+   */
+  readonly requiresCity?: boolean;
 }
+
+const CITY_SCOPED_USER_ROLES: ReadonlySet<string> = new Set([
+  "rider",
+  "driver",
+  "merchant",
+  "restaurant",
+]);
 
 /**
  * Longest matching prefix wins; a method-specific rule beats a `"*"` rule of
@@ -272,6 +285,8 @@ export interface RouteRule {
  */
 export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/devices", anyOf: ["device:enroll"] },
+  { methods: ["POST"], prefix: "/v1/auth/city", anyOf: ["profile:read"] },
+  { methods: ["POST"], prefix: "/v1/auth/logout", anyOf: ["profile:read"] },
   { methods: "*", prefix: "/v1/auth/step-up", anyOf: ["auth:step_up"] },
   { methods: "*", prefix: "/v1/auth/pin/reset", anyOf: ["auth:step_up"] },
   { methods: "*", prefix: "/v1/auth/pin", anyOf: ["wallet:read"] },
@@ -303,6 +318,7 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     methods: ["POST"],
     prefix: "/v1/rides",
     anyOf: ["ride:book:cash", "ride:book:wallet"],
+    requiresCity: true,
   },
   {
     methods: "*",
@@ -320,7 +336,18 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     prefix: "/v1/drivers/me/documents",
     anyOf: ["driver:documents:write"],
   },
-  { methods: "*", prefix: "/v1/drivers/me/status", anyOf: ["driver:online"] },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/status",
+    anyOf: ["driver:online"],
+    requiresCity: true,
+  },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/locations",
+    anyOf: ["driver:online"],
+    requiresCity: true,
+  },
   { methods: ["GET"], prefix: "/v1/wallets", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/wallet", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/transactions", anyOf: ["history:read"] },
@@ -356,35 +383,92 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   // owner snapshot/award poll (mp:request) and the driver-view (mp:bid); the
   // downstream engine enforces ownership. Writes on the request family are
   // requester actions only.
-  { methods: ["GET"], prefix: "/v1/mp/quote", anyOf: ["mp:request"] },
+  {
+    methods: ["GET"],
+    prefix: "/v1/mp/quote",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
   {
     methods: ["GET"],
     prefix: "/v1/mp/requests",
     anyOf: ["mp:request", "mp:bid"],
+    requiresCity: true,
   },
-  { methods: ["POST"], prefix: "/v1/mp/requests", anyOf: ["mp:request"] },
-  { methods: ["GET"], prefix: "/v1/mp/feed", anyOf: ["mp:bid"] },
-  { methods: "*", prefix: "/v1/mp/bids", anyOf: ["mp:bid"] },
-  { methods: "*", prefix: "/v1/mp/rate-profiles", anyOf: ["mp:bid"] },
+  {
+    methods: ["POST"],
+    prefix: "/v1/mp/requests",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/mp/feed",
+    anyOf: ["mp:bid"],
+    requiresCity: true,
+  },
+  {
+    methods: "*",
+    prefix: "/v1/mp/bids",
+    anyOf: ["mp:bid"],
+    requiresCity: true,
+  },
+  {
+    methods: "*",
+    prefix: "/v1/mp/rate-profiles",
+    anyOf: ["mp:bid"],
+    requiresCity: true,
+  },
   // Driver-only marketplace surfaces (parked confirmation, job list,
   // preferences). Without this family rule they were undeclared, so any
   // authenticated role reached them and only the downstream role check
   // stood in the way.
-  { methods: "*", prefix: "/v1/mp/driver", anyOf: ["mp:bid"] },
+  {
+    methods: "*",
+    prefix: "/v1/mp/driver",
+    anyOf: ["mp:bid"],
+    requiresCity: true,
+  },
   // Book for Later (A03). Scheduled requests, advance requests and recurring
   // templates are requester actions; an advance booking has two parties
   // (the engine enforces which of rider/driver may cancel, rematch,
   // reconfirm or withdraw). The driver calendar rides on /v1/mp/driver.
-  { methods: "*", prefix: "/v1/mp/scheduled-requests", anyOf: ["mp:request"] },
-  { methods: "*", prefix: "/v1/mp/advance-requests", anyOf: ["mp:request"] },
-  { methods: "*", prefix: "/v1/mp/recurring-templates", anyOf: ["mp:request"] },
+  {
+    methods: "*",
+    prefix: "/v1/mp/scheduled-requests",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
+  {
+    methods: "*",
+    prefix: "/v1/mp/advance-requests",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
+  {
+    methods: "*",
+    prefix: "/v1/mp/recurring-templates",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
   // Rider confidence (A06/A04): saved drivers and the service-needs catalog.
-  { methods: "*", prefix: "/v1/mp/favourite-drivers", anyOf: ["mp:request"] },
-  { methods: ["GET"], prefix: "/v1/mp/service-needs", anyOf: ["mp:request"] },
+  {
+    methods: "*",
+    prefix: "/v1/mp/favourite-drivers",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/mp/service-needs",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
   {
     methods: "*",
     prefix: "/v1/mp/advance-bookings",
     anyOf: ["mp:request", "mp:bid"],
+    requiresCity: true,
   },
   { methods: ["GET"], prefix: "/v1/admin/mp", anyOf: ["mp:admin:read"] },
   // Commission-hold ledger endpoints are service-to-service (payment-service
@@ -407,7 +491,12 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     prefix: "/v1/ask/executions",
     anyOf: ["ask:transact"],
   },
-  { methods: "*", prefix: "/v1/ask/mp", anyOf: ["mp:request"] },
+  {
+    methods: "*",
+    prefix: "/v1/ask/mp",
+    anyOf: ["mp:request"],
+    requiresCity: true,
+  },
   // Mandates (user-service): reading your automations is a profile read;
   // creating, editing, pausing, resuming or revoking one is mandate:manage.
   { methods: ["GET"], prefix: "/v1/mandates", anyOf: ["profile:read"] },
@@ -451,6 +540,7 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     methods: ["POST", "PUT", "PATCH", "DELETE"],
     prefix: "/v1/reservations",
     anyOf: ["mp:request"],
+    requiresCity: true,
   },
   // The travel-ops console: admin and service tokens only. travel-service
   // re-checks an ops role on the signed context.
@@ -483,38 +573,59 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   // own conflicts — is fleet:driver, a DRIVER scope. None survives limited
   // mode. fleet-service re-checks each on the signed context, and its own
   // staff table decides owner / manager / read-only inside a fleet.
-  { methods: ["GET"], prefix: "/v1/fleets", anyOf: ["fleet:read"] },
+  {
+    methods: ["GET"],
+    prefix: "/v1/fleets",
+    anyOf: ["fleet:read"],
+    requiresCity: true,
+  },
   {
     methods: ["POST", "PUT", "PATCH", "DELETE"],
     prefix: "/v1/fleets",
     anyOf: ["fleet:manage"],
+    requiresCity: true,
   },
-  { methods: "*", prefix: "/v1/fleet-offers", anyOf: ["fleet:driver"] },
+  {
+    methods: "*",
+    prefix: "/v1/fleet-offers",
+    anyOf: ["fleet:driver"],
+    requiresCity: true,
+  },
   {
     methods: "*",
     prefix: "/v1/drivers/me/fleet-offers",
     anyOf: ["fleet:driver"],
+    requiresCity: true,
   },
-  { methods: "*", prefix: "/v1/drivers/me/fleet", anyOf: ["fleet:driver"] },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/fleet",
+    anyOf: ["fleet:driver"],
+    requiresCity: true,
+  },
   {
     methods: "*",
     prefix: "/v1/drivers/me/schedule",
     anyOf: ["fleet:driver"],
+    requiresCity: true,
   },
   {
     methods: "*",
     prefix: "/v1/drivers/me/availability",
     anyOf: ["fleet:driver"],
+    requiresCity: true,
   },
   {
     methods: "*",
     prefix: "/v1/drivers/me/availability:preview",
     anyOf: ["fleet:driver"],
+    requiresCity: true,
   },
   {
     methods: "*",
     prefix: "/v1/drivers/me/conflicts",
     anyOf: ["fleet:driver"],
+    requiresCity: true,
   },
   // C5: the driver reports the vehicle they are driving cannot drive or needs
   // service soon (FLEET_CALENDAR_DECISIONS.md Q5).
@@ -522,10 +633,26 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     methods: "*",
     prefix: "/v1/drivers/me/vehicle-issues",
     anyOf: ["fleet:driver"],
+    requiresCity: true,
   },
-  { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
-  { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
-  { methods: ["POST"], prefix: "/v1/packages", anyOf: ["shipment:create"] },
+  {
+    methods: ["POST"],
+    prefix: "/v1/food",
+    anyOf: ["order:create"],
+    requiresCity: true,
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/delivery",
+    anyOf: ["shipment:create"],
+    requiresCity: true,
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/packages",
+    anyOf: ["shipment:create"],
+    requiresCity: true,
+  },
   { methods: "*", prefix: "/v1/support", anyOf: ["support:write"] },
 ];
 
@@ -605,12 +732,14 @@ export interface AuthorizeInput {
   readonly role: string;
   readonly modes: readonly IdentityMode[];
   readonly scopes: readonly Scope[];
+  readonly cityId?: string | null;
 }
 
 /**
  * Decides one request. Throws a `ContractError` carrying the canonical code so
  * the client can tell "you are in safe mode" from "your device is not trusted
- * yet" from a plain permission failure, and never has to read message text.
+ * yet" from "you have not selected a home city yet" from a plain permission
+ * failure, and never has to read message text.
  */
 export function authorizeRequest(input: AuthorizeInput): void {
   const rule = ruleFor(input.path, input.method);
@@ -628,6 +757,20 @@ export function authorizeRequest(input: AuthorizeInput): void {
   }
 
   if (rule.anyOf.some((scope) => input.scopes.includes(scope))) {
+    if (
+      rule.requiresCity === true &&
+      CITY_SCOPED_USER_ROLES.has(input.role.toLowerCase()) &&
+      (input.cityId === null || input.cityId === "")
+    ) {
+      throw new ContractError(
+        "city_selection_required",
+        "Select a home city before using city-scoped services.",
+        {
+          path: input.path,
+          method: input.method.toUpperCase(),
+        },
+      );
+    }
     return;
   }
 

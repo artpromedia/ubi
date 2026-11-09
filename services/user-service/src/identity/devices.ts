@@ -19,6 +19,7 @@ import { writeAudit } from "./audit";
 import { actorTypeFor, auditRevision } from "./common";
 import { deterministicId } from "./ids";
 import { eventIdempotencyKey, writeOutboxEventOnce } from "./outbox";
+import { nonMoneyPolicyForCity } from "./policy";
 import { issueAccessToken, type IssuedToken } from "./tokens";
 
 import type { IdentityDeps } from "./deps";
@@ -46,6 +47,8 @@ export interface EnrollDeviceInput extends EnrollDeviceBody {
   readonly email: string;
   readonly cityId: string | null;
   readonly sessionId: string | null;
+  /** True only when called immediately after hardened OTP verification. */
+  readonly otpVerified?: boolean | undefined;
 }
 
 export interface EnrollDeviceResult {
@@ -102,7 +105,7 @@ export async function enrollDevice(
   input: EnrollDeviceInput,
 ): Promise<EnrollDeviceResult> {
   const now = deps.now();
-  const policy = await deps.policy.forCity(input.cityId);
+  const policy = await nonMoneyPolicyForCity(deps.policy, input.cityId);
   const deviceId = internalDeviceId(input.userId, input.deviceId);
 
   const existing = await deps.prisma.device.findUnique({
@@ -140,6 +143,88 @@ export async function enrollDevice(
         cityId: input.cityId,
       }),
     };
+  }
+
+  // DEC-7 (A): a brand-new account's FIRST device is trusted once its OTP is
+  // verified (audited as first_device_trusted); every subsequent device stays
+  // limited until step-up passes.
+  if (existing === null && input.otpVerified === true) {
+    const trustedFirstDevice = await deps.prisma.$transaction(async (tx) => {
+      const priorDevices = await tx.device.count({
+        where: { userId: input.userId },
+      });
+      if (priorDevices > 0) {
+        return false;
+      }
+
+      await tx.device.create({
+        data: {
+          id: deviceId,
+          userId: input.userId,
+          trusted: true,
+          enrolledAt: now,
+          lastSeen: now,
+          ...(input.platform === undefined ? {} : { platform: input.platform }),
+          ...(input.model === undefined ? {} : { model: input.model }),
+        },
+      });
+
+      const revision = await auditRevision(tx, "device", deviceId);
+      await writeAudit(tx, {
+        actorId: input.userId,
+        actorRole: input.role,
+        action: "device.enrolled",
+        subjectType: "device",
+        subjectId: deviceId,
+        after: {
+          trusted: true,
+          platform: input.platform ?? null,
+          firstDevice: true,
+        },
+        reason: "first_device_trusted",
+      });
+
+      await writeOutboxEventOnce(tx, {
+        name: "device.enrolled",
+        subjectType: "device",
+        subjectId: deviceId,
+        actorType: actorTypeFor(input.role),
+        actorId: input.userId,
+        idempotencyKey: eventIdempotencyKey("device.enrolled", deviceId),
+        fromVersion: revision,
+        toVersion: revision + 1,
+        cityId: policy.cityId,
+        payload: {
+          userId: input.userId,
+          deviceId,
+          trusted: true,
+          reason: "first_device_trusted",
+        },
+        occurredAt: now,
+      });
+
+      return true;
+    });
+
+    if (trustedFirstDevice) {
+      return {
+        status: "enrolled",
+        deviceId,
+        trusted: true,
+        methods: [],
+        challengeId: null,
+        unavailable: [],
+        token: await issueAccessToken({
+          userId: input.userId,
+          email: input.email,
+          role: input.role,
+          mode: "full",
+          deviceId,
+          sessionId: input.sessionId ?? undefined,
+          cityId: input.cityId,
+        }),
+      };
+    }
   }
 
   const { methods, unavailable } = await availableStepUpMethods(
@@ -266,4 +351,140 @@ export async function listDevices(
     enrolledAt: device.enrolledAt.toISOString(),
     lastSeen: device.lastSeen?.toISOString() ?? null,
   }));
+}
+
+export const RecoverDeviceSchema = z.object({
+  userId: z.string().uuid(),
+  deviceId: z.string().min(4).max(80),
+  note: z.string().min(8).max(500),
+  ticketId: z.string().min(2).max(80).optional(),
+});
+
+export type RecoverDeviceBody = z.infer<typeof RecoverDeviceSchema>;
+
+export interface RecoverDeviceInput extends RecoverDeviceBody {
+  readonly reviewerId: string;
+  readonly reviewerRole: string;
+  readonly cityId: string | null;
+  readonly idempotencyKey: string;
+}
+
+export interface RecoverDeviceResult {
+  readonly userId: string;
+  readonly deviceId: string;
+  readonly trusted: true;
+  readonly recoveredAt: string;
+}
+
+/**
+ * Support-assisted device recovery (DEC-7): when an existing account has ZERO
+ * trusted devices (so old_device_approve is impossible and selfie_nin may be
+ * unconfigured), an identity reviewer can verify the user out-of-band and mark
+ * one already-enrolled device trusted, audited with the ticket and note.
+ */
+export async function recoverTrustedDevice(
+  deps: IdentityDeps,
+  input: RecoverDeviceInput,
+): Promise<RecoverDeviceResult> {
+  if (input.reviewerId === input.userId) {
+    throw new ContractError(
+      "approver_is_author",
+      "A reviewer cannot recover their own device",
+    );
+  }
+
+  const now = deps.now();
+  const policy = await nonMoneyPolicyForCity(deps.policy, input.cityId);
+
+  const candidateIds = [
+    input.deviceId,
+    internalDeviceId(input.userId, input.deviceId),
+  ];
+
+  await deps.prisma.$transaction(async (tx) => {
+    const device = await tx.device.findFirst({
+      where: { userId: input.userId, id: { in: candidateIds } },
+    });
+    if (device === null) {
+      throw new ContractError(
+        "not_found",
+        "That device is not enrolled on this account",
+      );
+    }
+
+    if (device.trusted) {
+      return;
+    }
+
+    const existingTrusted = await tx.device.count({
+      where: { userId: input.userId, trusted: true },
+    });
+    if (existingTrusted > 0) {
+      throw new ContractError(
+        "conflict",
+        "This account already has a trusted device; approve the new device from it instead.",
+      );
+    }
+
+    await tx.device.update({
+      where: { id: device.id },
+      data: { trusted: true, lastSeen: now },
+    });
+
+    await tx.stepUpChallenge.updateMany({
+      where: { userId: input.userId, deviceId: device.id, status: "pending" },
+      data: { status: "passed", resolvedAt: now },
+    });
+
+    const revision = await auditRevision(tx, "user", input.userId);
+    await writeAudit(tx, {
+      actorId: input.reviewerId,
+      actorRole: input.reviewerRole,
+      action: "device.recovered",
+      subjectType: "device",
+      subjectId: device.id,
+      before: { trusted: false },
+      after: {
+        trusted: true,
+        userId: input.userId,
+        ticketId: input.ticketId ?? null,
+      },
+      reason: `support_device_recovery: ${input.note}`,
+    });
+
+    await writeOutboxEventOnce(tx, {
+      name: "step_up.passed",
+      subjectType: "user",
+      subjectId: input.userId,
+      actorType: actorTypeFor(input.reviewerRole),
+      actorId: input.reviewerId,
+      idempotencyKey: eventIdempotencyKey(
+        "device.recovered",
+        device.id,
+        input.idempotencyKey,
+      ),
+      fromVersion: revision,
+      toVersion: revision + 1,
+      cityId: policy.cityId,
+      payload: {
+        userId: input.userId,
+        deviceId: device.id,
+        method: "support_device_recovery",
+        until: null,
+        ticketId: input.ticketId ?? null,
+      },
+      occurredAt: now,
+    });
+  });
+
+  const resolved = await deps.prisma.device.findFirstOrThrow({
+    where: { userId: input.userId, id: { in: candidateIds } },
+  });
+
+  return {
+    userId: input.userId,
+    deviceId: resolved.id,
+    trusted: true,
+    recoveredAt: now.toISOString(),
+  };
 }

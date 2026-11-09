@@ -213,6 +213,7 @@ model User {
   emailVerified Boolean    @default(false) @map("email_verified")
   phoneVerified Boolean    @default(false) @map("phone_verified")
   country       String     @db.Char(2)
+  homeCityId    String?    @map("home_city_id") @db.VarChar(16)
   language      String     @default("en") @db.VarChar(5)
   currency      Currency   @default(NGN)
   createdAt     DateTime   @default(now()) @map("created_at")
@@ -233,6 +234,7 @@ model User {
 
   @@index([email])
   @@index([phone])
+  @@index([homeCityId])
   @@index([role, status])
   @@map("users")
 }

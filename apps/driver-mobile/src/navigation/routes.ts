@@ -3,6 +3,7 @@ export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
   Otp: { phone: string };
+  CityPicker: undefined;
 };
 // Every screen carries the ride id (`tripId` — the marketplace award's
 // executionRef.id, per the jobs surface). "Offer" is the one-time "you won

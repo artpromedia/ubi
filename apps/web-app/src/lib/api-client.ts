@@ -1,12 +1,43 @@
 /**
  * API Client for UBI Web App
  *
- * Centralized HTTP client with authentication handling,
- * error management, and request/response interceptors.
+ * Centralized HTTP client targeting the UBI API Gateway (/v1/*) with hardened
+ * phone + OTP authentication, refresh rotation, idempotency keys, and cityId
+ * support (CC-B00 / DEC-8).
  */
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
+).replace(/\/+$/, "");
+
+const DEVICE_STORAGE_KEY = "ubi.web.deviceId";
+
+function webDeviceId(): string {
+  if (typeof window === "undefined") {
+    return "web_ssr_device";
+  }
+  try {
+    const existing = window.localStorage.getItem(DEVICE_STORAGE_KEY);
+    if (existing) return existing;
+    const created =
+      "web_" +
+      Date.now().toString(36) +
+      Math.random().toString(36).slice(2, 10);
+    window.localStorage.setItem(DEVICE_STORAGE_KEY, created);
+    return created;
+  } catch {
+    return "web_" + Date.now().toString(36);
+  }
+}
+
+function newIdempotencyKey(): string {
+  return (
+    "idem_" +
+    Date.now().toString(36) +
+    "_" +
+    Math.random().toString(36).slice(2, 10)
+  );
+}
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -29,32 +60,41 @@ export interface ApiError {
   status: number;
 }
 
-// Auth response types
+export interface LaunchedCity {
+  id: string;
+  name: string;
+  country: string;
+  region?: string | null;
+  timezone?: string;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+  expiresIn?: number;
+  mode?: "full" | "limited";
 }
 
-export interface LoginResponse {
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    phone: string;
-  };
+export interface AuthUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  role?: string;
+  cityId?: string | null;
+  homeCityId?: string | null;
+}
+
+export interface VerifyOtpResponse {
+  user: AuthUser;
   tokens: AuthTokens;
+  citySelectionRequired?: boolean;
 }
 
 export interface SignUpResponse {
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    phone: string;
-  };
-  tokens: AuthTokens;
+  user: AuthUser;
+  expiresInSeconds?: number;
 }
 
 class ApiClient {
@@ -65,7 +105,20 @@ class ApiClient {
   private onAuthError?: () => void;
 
   constructor(baseUrl: string) {
-    this.baseUrl = baseUrl;
+    // Strip legacy `/api` suffix if set in local .env so `/v1/*` hits the gateway cleanly.
+    this.baseUrl = baseUrl.replace(/\/api$/, "").replace(/\/+$/, "");
+  }
+
+  private resolveUrl(endpoint: string): string {
+    const clean = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    if (this.baseUrl.endsWith("/v1")) {
+      return clean.startsWith("/v1/")
+        ? `${this.baseUrl}${clean.slice(3)}`
+        : `${this.baseUrl}${clean}`;
+    }
+    return clean.startsWith("/v1/") || clean === "/health"
+      ? `${this.baseUrl}${clean}`
+      : `${this.baseUrl}/v1${clean}`;
   }
 
   setAccessToken(token: string | null) {
@@ -89,16 +142,23 @@ class ApiClient {
     options: RequestInit = {},
     retry = true,
   ): Promise<ApiResponse<T>> {
-    const url = `${this.baseUrl}${endpoint}`;
+    const url = this.resolveUrl(endpoint);
+    const method = (options.method || "GET").toUpperCase();
 
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...options.headers,
+      ...(options.headers as Record<string, string> | undefined),
     };
 
     if (this.accessToken) {
-      (headers as Record<string, string>)["Authorization"] =
-        `Bearer ${this.accessToken}`;
+      headers["Authorization"] = `Bearer ${this.accessToken}`;
+    }
+    if (
+      method === "POST" &&
+      !headers["Idempotency-Key"] &&
+      !headers["idempotency-key"]
+    ) {
+      headers["Idempotency-Key"] = newIdempotencyKey();
     }
 
     try {
@@ -107,7 +167,6 @@ class ApiClient {
         headers,
       });
 
-      // Handle token refresh on 401
       if (response.status === 401 && retry && this.refreshToken) {
         const refreshed = await this.refreshTokens();
         if (refreshed) {
@@ -118,7 +177,7 @@ class ApiClient {
           success: false,
           error: {
             code: "AUTH_EXPIRED",
-            message: "Session expired. Please login again.",
+            message: "Session expired. Please sign in again.",
           },
         };
       }
@@ -138,7 +197,7 @@ class ApiClient {
 
       return {
         success: true,
-        data: data.data || data,
+        data: data.data ?? data,
         meta: data.meta,
       };
     } catch (error) {
@@ -155,18 +214,25 @@ class ApiClient {
 
   private async refreshTokens(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+      const response = await fetch(this.resolveUrl("/v1/auth/refresh"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: this.refreshToken }),
+        body: JSON.stringify({
+          refreshToken: this.refreshToken,
+          deviceId: webDeviceId(),
+        }),
       });
 
       if (!response.ok) return false;
 
-      const data = await response.json();
-      this.accessToken = data.accessToken;
-      this.refreshToken = data.refreshToken;
-      this.onTokenRefresh?.(data.accessToken, data.refreshToken);
+      const raw = await response.json();
+      const tokens = raw?.data?.tokens ?? raw?.tokens ?? raw;
+      if (!tokens?.accessToken || !tokens?.refreshToken) {
+        return false;
+      }
+      this.accessToken = tokens.accessToken;
+      this.refreshToken = tokens.refreshToken;
+      this.onTokenRefresh?.(tokens.accessToken, tokens.refreshToken);
       return true;
     } catch {
       return false;
@@ -183,21 +249,21 @@ class ApiClient {
   async post<T>(endpoint: string, body?: unknown) {
     return this.request<T>(endpoint, {
       method: "POST",
-      body: body ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   }
 
   async put<T>(endpoint: string, body?: unknown) {
     return this.request<T>(endpoint, {
       method: "PUT",
-      body: body ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   }
 
   async patch<T>(endpoint: string, body?: unknown) {
     return this.request<T>(endpoint, {
       method: "PATCH",
-      body: body ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   }
 
@@ -205,60 +271,89 @@ class ApiClient {
     return this.request<T>(endpoint, { method: "DELETE" });
   }
 
-  // Auth-specific methods
-  async login(
-    emailOrPhone: string,
-    password: string,
-  ): Promise<ApiResponse<LoginResponse>> {
-    const response = await this.post<LoginResponse>("/auth/login", {
-      emailOrPhone,
-      password,
+  async getLaunchedCities(): Promise<ApiResponse<{ cities: LaunchedCity[] }>> {
+    return this.get<{ cities: LaunchedCity[] }>("/v1/auth/cities");
+  }
+
+  async requestOtp(
+    phone: string,
+  ): Promise<ApiResponse<{ expiresInSeconds: number }>> {
+    return this.post<{ expiresInSeconds: number }>("/v1/auth/otp", {
+      phone,
+      purpose: "login",
     });
-
-    if (response.success && response.data) {
-      this.accessToken = response.data.tokens.accessToken;
-      this.refreshToken = response.data.tokens.refreshToken;
-    }
-
-    return response;
   }
 
   async signUp(data: {
     firstName: string;
     lastName: string;
-    email: string;
     phone: string;
-    password: string;
+    cityId: string;
+    email?: string;
+    country?: string;
   }): Promise<ApiResponse<SignUpResponse>> {
-    const response = await this.post<SignUpResponse>("/auth/register", data);
-
-    if (response.success && response.data) {
-      this.accessToken = response.data.tokens.accessToken;
-      this.refreshToken = response.data.tokens.refreshToken;
-    }
-
-    return response;
-  }
-
-  async logout(): Promise<void> {
-    if (this.accessToken) {
-      await this.post("/auth/logout", {}).catch(() => {
-        // Ignore logout errors
-      });
-    }
-    this.accessToken = null;
-    this.refreshToken = null;
+    return this.post<SignUpResponse>("/v1/auth/signup", {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone,
+      cityId: data.cityId,
+      ...(data.email ? { email: data.email } : {}),
+      ...(data.country ? { country: data.country } : {}),
+      role: "RIDER",
+    });
   }
 
   async verifyOtp(
     phone: string,
-    otp: string,
-  ): Promise<ApiResponse<{ verified: boolean }>> {
-    return this.post<{ verified: boolean }>("/auth/verify-otp", { phone, otp });
+    code: string,
+  ): Promise<ApiResponse<VerifyOtpResponse>> {
+    const response = await this.post<VerifyOtpResponse>("/v1/auth/verify", {
+      phone,
+      code,
+      deviceId: webDeviceId(),
+      platform: "web",
+    });
+    if (response.success && response.data) {
+      this.accessToken = response.data.tokens.accessToken;
+      this.refreshToken = response.data.tokens.refreshToken;
+    }
+    return response;
   }
 
-  async resendOtp(phone: string): Promise<ApiResponse<{ sent: boolean }>> {
-    return this.post<{ sent: boolean }>("/auth/resend-otp", { phone });
+  async selectCity(
+    cityId: string,
+  ): Promise<ApiResponse<{ cityId: string; tokens: AuthTokens }>> {
+    const response = await this.post<{ cityId: string; tokens: AuthTokens }>(
+      "/v1/auth/city",
+      { cityId },
+    );
+    if (response.success && response.data) {
+      this.accessToken = response.data.tokens.accessToken;
+      this.refreshToken = response.data.tokens.refreshToken;
+      this.onTokenRefresh?.(
+        response.data.tokens.accessToken,
+        response.data.tokens.refreshToken,
+      );
+    }
+    return response;
+  }
+
+  async resendOtp(
+    phone: string,
+  ): Promise<ApiResponse<{ expiresInSeconds: number }>> {
+    return this.requestOtp(phone);
+  }
+
+  async logout(): Promise<void> {
+    if (this.accessToken) {
+      await this.post("/v1/auth/logout", {
+        ...(this.refreshToken ? { refreshToken: this.refreshToken } : {}),
+      }).catch(() => {
+        // Ignore logout errors; clear local session regardless.
+      });
+    }
+    this.accessToken = null;
+    this.refreshToken = null;
   }
 }
 

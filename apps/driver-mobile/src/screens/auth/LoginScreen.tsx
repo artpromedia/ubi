@@ -1,4 +1,4 @@
-// Phone sign-in (C05 / G01) against POST /v1/auth/login/otp. The server never
+// Phone sign-in (CC-B00) against POST /v1/auth/otp. The server never
 // reveals whether a number exists; this screen only reports what the server
 // said and moves to code entry once the OTP send is acknowledged.
 import React, { useState } from "react";

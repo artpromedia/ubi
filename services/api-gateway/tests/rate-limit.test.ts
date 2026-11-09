@@ -114,7 +114,7 @@ function errorCode(reply: Reply): string | undefined {
 }
 
 async function bearer(sub: string, role = "rider"): Promise<string> {
-  return `Bearer ${await clientToken({ sub, role })}`;
+  return `Bearer ${await clientToken({ sub, role, cityId: "LOS" })}`;
 }
 
 async function clearBuckets(): Promise<void> {

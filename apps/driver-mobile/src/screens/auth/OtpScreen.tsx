@@ -1,8 +1,7 @@
-// OTP verification (C05 / G01) against POST /v1/auth/verify-otp. Success is
-// ONLY the server's { user, tokens } body: the Keychain session is saved by
-// the api layer before navigation moves on. The code itself is never logged
-// and never sent to analytics. A rider account is refused with a plain
-// explanation instead of a broken driver session.
+// OTP verification (CC-B00) against POST /v1/auth/verify. Success is ONLY the
+// server's { user, tokens } body: the Keychain session is saved by the api
+// layer before navigation moves on. Cityless accounts route to CityPicker
+// before Main. The code itself is never logged and never sent to analytics.
 import React, { useState } from "react";
 import { View, TextInput, type TextStyle } from "react-native";
 import {
@@ -19,6 +18,7 @@ export function OtpScreen() {
   const t = useTheme();
   type Nav = {
     goBack: () => void;
+    navigate: (n: string) => void;
     getParent: () => (Nav & { reset: Reset }) | undefined;
   };
   type Reset = (s: { index: number; routes: { name: string }[] }) => void;
@@ -31,6 +31,10 @@ export function OtpScreen() {
     onSuccess: (outcome) => {
       if (outcome.result === "wrong_app") {
         setWrongApp(true);
+        return;
+      }
+      if (outcome.result === "city_required") {
+        nav.navigate("CityPicker");
         return;
       }
       // This screen lives inside the Auth stack, nested under the Root

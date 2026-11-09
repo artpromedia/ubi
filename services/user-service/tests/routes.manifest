@@ -7,6 +7,7 @@ DELETE /sessions
 DELETE /sessions/:id
 DELETE /users/me
 DELETE /users/me/saved-places/:id
+GET /auth/cities
 GET /auth/pin/state
 GET /devices
 GET /drivers/:id
@@ -41,6 +42,7 @@ GET /v1/kyc/requirements
 PATCH /mandates/:id
 PATCH /organizations/:orgId/members/:memberId
 PATCH /users/me
+POST /auth/city
 POST /auth/forgot-password
 POST /auth/login
 POST /auth/login/otp
@@ -51,6 +53,7 @@ POST /auth/pin/verify
 POST /auth/refresh
 POST /auth/register
 POST /auth/reset-password
+POST /auth/signup
 POST /auth/step-up/approve
 POST /auth/step-up/selfie
 POST /auth/verify
@@ -61,6 +64,7 @@ POST /drivers/apply
 POST /drivers/documents
 POST /drivers/me/documents
 POST /identity/cases/:id/decide
+POST /identity/devices/recover
 POST /identity/documents/:id/review
 POST /identity/jobs/document-expiry
 POST /identity/jobs/safe-mode-exit

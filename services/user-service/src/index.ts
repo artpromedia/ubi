@@ -89,21 +89,24 @@ app.onError(errorHandler);
 app.route("/health", healthRoutes);
 
 // ===========================================
-// Public Auth Routes
-// ===========================================
-app.route("/auth", authRoutes);
-
-// ===========================================
-// Identity (slice 03) — devices, step-up, PIN, documents, SIM-swap.
+// Identity (slice 03 + CC-B00) — hardened auth, sessions, devices, step-up,
+// PIN, documents, SIM-swap.
 //
 // These routes authenticate themselves: user-facing ones verify the API
 // gateway's SIGNED identity context, and the webhook and sweeps verify a
 // shared secret. They are mounted OUTSIDE `protectedApi` because they must not
-// inherit the header-trusting service-auth middleware.
+// inherit the header-trusting service-auth middleware, and BEFORE `authRoutes`
+// so `/auth/otp`, `/auth/verify`, `/auth/signup`, `/auth/refresh` and
+// `/auth/logout` are served by the hardened slice.
 // ===========================================
 const identityDeps = defaultIdentityDeps();
 app.route("/devices", createDeviceRoutes(identityDeps));
 app.route("/", createIdentityRoutes(identityDeps));
+
+// ===========================================
+// Legacy / Password-Reset Auth Routes
+// ===========================================
+app.route("/auth", authRoutes);
 
 // KYC requirements per city: public, no account data (marketing site and
 // driver app read the same list). Mounted outside `protectedApi` on purpose.

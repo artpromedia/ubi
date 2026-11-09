@@ -26,6 +26,7 @@ import { z } from "zod";
 
 import { ContractError } from "@ubi/contracts";
 
+import { nonMoneyPolicyForCity } from "./policy";
 import { hashSecret, verifySecret } from "./secret-hash";
 
 import type { IdentityDeps } from "./deps";
@@ -76,8 +77,9 @@ export async function requestOtp(
   deps: IdentityDeps,
   input: z.infer<typeof RequestOtpSchema>,
   userId?: string,
+  cityId: string | null = null,
 ): Promise<RequestOtpResult> {
-  const policy = await deps.policy.forCity(null);
+  const policy = await nonMoneyPolicyForCity(deps.policy, cityId);
   const id = phoneKey(input.phone);
 
   const cooling = await deps.cache.ttl(cooldownKey(id));
@@ -157,8 +159,9 @@ export interface VerifyOtpResult {
 export async function verifyOtp(
   deps: IdentityDeps,
   input: z.infer<typeof VerifyOtpSchema>,
+  cityId: string | null = null,
 ): Promise<VerifyOtpResult> {
-  const policy = await deps.policy.forCity(null);
+  const policy = await nonMoneyPolicyForCity(deps.policy, cityId);
   const id = phoneKey(input.phone);
 
   const raw = await deps.cache.get(codeKey(id));

@@ -42,7 +42,7 @@ export function createDeviceRoutes(deps: IdentityDeps): Hono {
 
       const user = await prisma.user.findUnique({
         where: { id: principal.userId },
-        select: { email: true, status: true },
+        select: { email: true, status: true, homeCityId: true },
       });
       if (user === null) {
         throw new ContractError("not_found", "Account not found");
@@ -56,7 +56,7 @@ export function createDeviceRoutes(deps: IdentityDeps): Hono {
         userId: principal.userId,
         role: principal.role,
         email: user.email,
-        cityId: principal.cityId,
+        cityId: user.homeCityId ?? principal.cityId,
         sessionId: principal.sessionId,
       });
 

@@ -1,14 +1,16 @@
-// Registration (C05 / G01) against POST /v1/auth/register (role DRIVER), which
-// sends the verification OTP itself; success hands off to the same code entry
-// as sign-in. Country is ISO-3166 alpha-2, defaulted to NG for the pilot city
-// until the profile/location port carries it. This registers the ACCOUNT
-// only — vehicle and document onboarding are a separate, unbuilt slice
-// (api/unsupported.ts driverDocuments) and are not implied here.
-import React, { useState } from "react";
-import { View, TextInput, type TextStyle } from "react-native";
+// Registration (CC-B00 / DEC-8) against POST /v1/auth/signup (role DRIVER), which
+// requires a launched operating city from GET /v1/auth/cities and sends the verification
+// OTP; success hands off to OtpScreen. Vehicle and document onboarding remain separate.
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  TextInput,
+  ActivityIndicator,
+  type TextStyle,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useMutation } from "@tanstack/react-query";
-import { Screen, Text, Button, Banner, useTheme } from "@ubi/mobile-ui";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Screen, Text, Button, Banner, Chip, useTheme } from "@ubi/mobile-ui";
 import { authApi, authErrorMessage } from "../../api/auth";
 
 export function RegisterScreen() {
@@ -20,22 +22,41 @@ export function RegisterScreen() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [cityId, setCityId] = useState("");
+
+  const citiesQuery = useQuery({
+    queryKey: ["auth", "cities"],
+    queryFn: () => authApi.listCities(),
+  });
+
+  useEffect(() => {
+    const first = citiesQuery.data?.[0];
+    if (!cityId && first) {
+      setCityId(first.id);
+    }
+  }, [citiesQuery.data, cityId]);
+
+  const selectedCity = citiesQuery.data?.find((c) => c.id === cityId);
   const normalized = phone.replace(/[^\d+]/g, "");
   const valid =
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     normalized.length >= 10 &&
-    normalized.length <= 15;
+    normalized.length <= 15 &&
+    cityId.length > 0;
+
   const register = useMutation({
     mutationFn: () =>
       authApi.register({
         phone: normalized,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        country: "NG",
+        cityId,
+        country: selectedCity?.country ?? "NG",
       }),
     onSuccess: () => nav.navigate("Otp", { phone: normalized }),
   });
+
   const field = (
     label: string,
     value: string,
@@ -66,6 +87,7 @@ export function RegisterScreen() {
       />
     </View>
   );
+
   return (
     <Screen
       title="Create your driver account"
@@ -91,6 +113,32 @@ export function RegisterScreen() {
           "driver.auth.phone",
           "phone-pad",
         )}
+        <View style={{ gap: 8 }}>
+          <Text variant="label" tone="text2">
+            Operating city
+          </Text>
+          {citiesQuery.isLoading ? (
+            <ActivityIndicator color={t.colors.text2} />
+          ) : citiesQuery.isError ? (
+            <Banner
+              tone="error"
+              title="Cities unavailable"
+              body={authErrorMessage(citiesQuery.error)}
+            />
+          ) : (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {(citiesQuery.data ?? []).map((c) => (
+                <Chip
+                  key={c.id}
+                  testID={`driver.auth.signupCity.${c.id}`}
+                  label={`${c.name} (${c.id})`}
+                  selected={cityId === c.id}
+                  onPress={() => setCityId(c.id)}
+                />
+              ))}
+            </View>
+          )}
+        </View>
         <Text variant="caption" tone="text3">
           Vehicle and document verification happen after your account is created
           — support will be in touch about next steps.

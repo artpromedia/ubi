@@ -1,18 +1,22 @@
-// Real authentication against user-service THROUGH the api-gateway (C05 / G01).
-// Routes (verified in services/user-service/src/routes/auth.ts, public in
-// services/api-gateway/src/middleware/auth.ts PUBLIC_ROUTES):
-//   POST /v1/auth/login/otp   { phone }         -> { success, data: { message, expiresIn } }
-//   POST /v1/auth/verify-otp  { phone, code }   -> { success, data: { user, tokens } }
-//   POST /v1/auth/register    { phone, ... }    -> { success, data: { user, message } }
-//   POST /v1/auth/refresh     { refreshToken }  -> { success, data: { tokens } }
-//   POST /v1/auth/logout                        -> { success, data }
+// Real authentication against user-service THROUGH the api-gateway (CC-B00 / P0-06 / P1-14 / P3-05).
+// Routes (verified in services/user-service/src/routes/identity.ts and
+// services/api-gateway/src/middleware/auth.ts + src/identity/scopes.ts):
+//   GET  /v1/auth/cities      (public)         -> { success, data: { cities } }
+//   POST /v1/auth/signup      (public)         -> { success, data: { user, expiresInSeconds } }
+//   POST /v1/auth/otp         (public)         -> { success, data: { expiresInSeconds } }
+//   POST /v1/auth/verify      (public)         -> { success, data: { user, tokens, citySelectionRequired } }
+//   POST /v1/auth/city        (authenticated)  -> { success, data: { cityId, tokens } }
+//   POST /v1/auth/refresh     (public)         -> { success, data: { tokens, user? } }
+//   POST /v1/auth/logout      (authenticated)  -> { success, data }
 // Tokens live in the Keychain-backed session store (@ubi/mobile-core session.ts).
 // The OTP code is never logged and never sent to analytics.
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import {
   api,
   ApiError,
   clearSession,
+  getOrCreateDeviceId,
   loadSession,
   saveSession,
 } from "@ubi/mobile-core";
@@ -20,11 +24,20 @@ import {
 /** user-service wraps every body as { success, data } (UbiError -> { success:false, error }). */
 export type Envelope<T> = { success: boolean; data: T };
 
+export type LaunchedCity = {
+  id: string;
+  name: string;
+  country: string;
+  region?: string | null;
+  timezone?: string;
+};
+
 export type AuthTokens = {
   accessToken: string;
   refreshToken: string;
   /** Seconds until the access token expires (server-stated). */
   expiresIn: number;
+  mode?: "full" | "limited";
 };
 
 export type AuthUser = {
@@ -35,28 +48,29 @@ export type AuthUser = {
   lastName: string;
   role: string;
   status: string;
+  cityId?: string | null;
+  homeCityId?: string | null;
   avatarUrl?: string | null;
 };
 
 /** Which account role this app serves. A rider account must use the UBI app. */
 export const APP_ROLE = "driver" as const;
 
-/**
- * Refresh ahead of mobile-core's 30s window: session.ts's internal refresh()
- * parses the bare token shape while the server answers the { success, data }
- * envelope (and hits a hardcoded host, not this app's configured base) — a
- * cross-tree finding in @ubi/mobile-core, reported for its owner, not fixed
- * here. Refreshing whenever less than 10 of the 15 token minutes remain keeps
- * the session comfortably clear of that path.
- */
 const REFRESH_AHEAD_MS = 10 * 60_000;
 
-const newDeviceId = () =>
-  "rnd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+function currentPlatform(): "ios" | "android" | "web" {
+  if (Platform.OS === "ios") return "ios";
+  if (Platform.OS === "android") return "android";
+  return "web";
+}
+
+export function isCitySelectionRequiredError(e: unknown): boolean {
+  return e instanceof ApiError && e.code === "city_selection_required";
+}
 
 /**
- * user-service errors arrive as { success:false, error:{ code, message } };
- * ApiError keeps that body in `details`. Surface the server's own phrasing.
+ * user-service errors arrive as { success:false, error:{ code, message } }.
+ * Surface the server's own phrasing.
  */
 export function authErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
@@ -71,68 +85,131 @@ export function authErrorMessage(e: unknown): string {
 
 export type VerifyOutcome =
   | { result: "authenticated"; user: AuthUser }
+  | { result: "city_required"; user: AuthUser }
   | { result: "wrong_app"; role: string };
 
-async function adoptTokens(userId: string, tokens: AuthTokens) {
+async function adoptTokens(
+  userId: string,
+  tokens: AuthTokens,
+  cityId: string | null | undefined,
+  explicitDeviceId?: string,
+) {
   const existing = await loadSession();
+  const deviceId =
+    explicitDeviceId ?? existing?.deviceId ?? (await getOrCreateDeviceId());
   await saveSession({
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
     userId,
     role: APP_ROLE,
-    deviceId: existing?.deviceId ?? newDeviceId(),
+    deviceId,
     expiresAt: Date.now() + tokens.expiresIn * 1000,
+    cityId: cityId !== undefined ? cityId : existing?.cityId,
+    mode: tokens.mode ?? existing?.mode,
   });
 }
 
 export const authApi = {
-  /** Sends a login code. The server never says whether the number exists. */
-  requestOtp: async (phone: string): Promise<{ expiresIn: number }> => {
-    const r = await api<Envelope<{ message: string; expiresIn: number }>>(
-      "POST",
-      "/v1/auth/login/otp",
-      { phone },
+  /** Fetches the launched city catalog from user-service (backed by config-service). */
+  listCities: async (): Promise<LaunchedCity[]> => {
+    const r = await api<Envelope<{ cities: LaunchedCity[] }>>(
+      "GET",
+      "/v1/auth/cities",
     );
-    return { expiresIn: r.data.expiresIn };
+    return r.data.cities;
   },
 
-  /** Registers a new driver account, which then verifies via the same OTP path. */
+  /** Sends a login code. The server never says whether the number exists. */
+  requestOtp: async (phone: string): Promise<{ expiresIn: number }> => {
+    const r = await api<
+      Envelope<{ expiresInSeconds?: number; expiresIn?: number }>
+    >("POST", "/v1/auth/otp", { phone, purpose: "login" });
+    return {
+      expiresIn: r.data.expiresInSeconds ?? r.data.expiresIn ?? 300,
+    };
+  },
+
+  /** Registers a new driver account in a launched home city and triggers verification OTP. */
   register: async (input: {
     phone: string;
     firstName: string;
     lastName: string;
-    country: string;
+    cityId: string;
+    country?: string;
   }): Promise<void> => {
-    await api<Envelope<{ user: AuthUser; message: string }>>(
+    await api<Envelope<{ user: AuthUser; expiresInSeconds?: number }>>(
       "POST",
-      "/v1/auth/register",
-      { ...input, role: "DRIVER" },
+      "/v1/auth/signup",
+      {
+        phone: input.phone,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        cityId: input.cityId,
+        ...(input.country ? { country: input.country } : {}),
+        role: "DRIVER",
+      },
     );
   },
 
   /**
-   * Verifies the code. Success is ONLY the server's { user, tokens } body —
-   * the session is persisted before this resolves. A non-driver account is
-   * refused here (this app must not carry a rider session).
+   * Verifies the code and enrolls this device (first device on a brand-new
+   * account receives full trust per DEC-7). Cityless existing accounts receive
+   * `city_required` so the app collects their home city before going online (DEC-8).
    */
   verifyOtp: async (phone: string, code: string): Promise<VerifyOutcome> => {
-    const r = await api<Envelope<{ user: AuthUser; tokens: AuthTokens }>>(
-      "POST",
-      "/v1/auth/verify-otp",
-      { phone, code },
-    );
-    const { user, tokens } = r.data;
+    const deviceId = await getOrCreateDeviceId();
+    const r = await api<
+      Envelope<{
+        user: AuthUser;
+        tokens: AuthTokens;
+        citySelectionRequired?: boolean;
+      }>
+    >("POST", "/v1/auth/verify", {
+      phone,
+      code,
+      deviceId,
+      platform: currentPlatform(),
+    });
+    const { user, tokens, citySelectionRequired } = r.data;
     if (user.role.toLowerCase() !== APP_ROLE) {
       return { result: "wrong_app", role: user.role.toLowerCase() };
     }
-    await adoptTokens(user.id, tokens);
+    const resolvedCityId = user.cityId ?? user.homeCityId ?? null;
+    await adoptTokens(user.id, tokens, resolvedCityId, deviceId);
+    if (citySelectionRequired === true || resolvedCityId === null) {
+      return { result: "city_required", user };
+    }
     return { result: "authenticated", user };
+  },
+
+  /** Persists the driver's chosen home city and adopts the re-issued city-bound tokens. */
+  selectCity: async (cityId: string): Promise<{ cityId: string }> => {
+    const existing = await loadSession();
+    const r = await api<Envelope<{ cityId: string; tokens: AuthTokens }>>(
+      "POST",
+      "/v1/auth/city",
+      { cityId },
+    );
+    if (existing) {
+      await adoptTokens(
+        existing.userId,
+        r.data.tokens,
+        r.data.cityId,
+        existing.deviceId,
+      );
+    }
+    return { cityId: r.data.cityId };
   },
 
   /** Server-side session invalidation first; the local session goes regardless. */
   logout: async (): Promise<void> => {
+    const existing = await loadSession();
     try {
-      await api("POST", "/v1/auth/logout");
+      await api("POST", "/v1/auth/logout", {
+        ...(existing?.refreshToken
+          ? { refreshToken: existing.refreshToken }
+          : {}),
+      });
     } catch {
       // The server session expires on its own; the device must still forget.
     } finally {
@@ -141,34 +218,43 @@ export const authApi = {
   },
 };
 
-export type BootDecision = "authenticated" | "unauthenticated";
+export type BootDecision =
+  | "authenticated"
+  | "city_required"
+  | "unauthenticated";
 
 async function refreshTokens(): Promise<BootDecision> {
   const s = await loadSession();
   if (!s) return "unauthenticated";
   try {
-    const r = await api<Envelope<{ tokens: AuthTokens }>>(
-      "POST",
-      "/v1/auth/refresh",
-      { refreshToken: s.refreshToken },
-    );
-    await adoptTokens(s.userId, r.data.tokens);
-    return "authenticated";
+    const r = await api<
+      Envelope<{
+        tokens: AuthTokens;
+        user?: { cityId?: string | null; homeCityId?: string | null };
+      }>
+    >("POST", "/v1/auth/refresh", {
+      refreshToken: s.refreshToken,
+      deviceId: s.deviceId,
+    });
+    const nextCityId =
+      r.data.user !== undefined
+        ? (r.data.user.cityId ?? r.data.user.homeCityId ?? null)
+        : s.cityId;
+    await adoptTokens(s.userId, r.data.tokens, nextCityId, s.deviceId);
+    return nextCityId === null ? "city_required" : "authenticated";
   } catch (e) {
     if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
-      // The server refused the refresh token: the session is dead.
       await clearSession();
       return "unauthenticated";
     }
-    // Network failure: keep the stored session; screens render their own
-    // offline states rather than logging the person out over a dead radio.
-    return "authenticated";
+    return s.cityId === null ? "city_required" : "authenticated";
   }
 }
 
 /**
  * Cold-start restore (Splash). A stored session of the wrong role is cleared;
- * a near-expiry session is refreshed before any screen depends on it.
+ * a near-expiry session is refreshed before any screen depends on it; a
+ * cityless session lands on CityPicker before Main.
  */
 export async function restoreSession(): Promise<BootDecision> {
   const s = await loadSession();
@@ -178,7 +264,7 @@ export async function restoreSession(): Promise<BootDecision> {
     return "unauthenticated";
   }
   if (s.expiresAt - Date.now() < REFRESH_AHEAD_MS) return refreshTokens();
-  return "authenticated";
+  return s.cityId === null ? "city_required" : "authenticated";
 }
 
 /**

@@ -21,10 +21,20 @@ let fixtureHandler: Handler | undefined;
 export function installFixtures(h: Handler) {
   if (__DEV__) fixtureHandler = h;
 }
+export async function invokeFixture(input: {
+  method: string;
+  path: string;
+  body?: unknown;
+}): Promise<{ status: number; json: unknown } | undefined> {
+  return fixtureHandler ? fixtureHandler(input) : undefined;
+}
 
 let base = "https://api.ubi.africa";
 export function configureApi(opts: { baseUrl: string }) {
-  base = opts.baseUrl;
+  base = opts.baseUrl.replace(/\/+$/, "");
+}
+export function getApiBaseUrl(): string {
+  return base;
 }
 
 function newIdempotencyKey(): string {
@@ -34,6 +44,30 @@ function newIdempotencyKey(): string {
     "_" +
     Math.random().toString(36).slice(2, 10)
   );
+}
+
+type ErrorEnvelopeShape = {
+  code?: string;
+  message?: string;
+  details?: unknown;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: unknown;
+  };
+};
+
+function toApiError(
+  status: number,
+  payload: unknown,
+  fallbackMessage: string,
+  fallbackCode: string,
+): ApiError {
+  const raw = (payload ?? {}) as ErrorEnvelopeShape;
+  const code = raw.error?.code ?? raw.code ?? fallbackCode;
+  const message = raw.error?.message ?? raw.message ?? fallbackMessage;
+  const details = raw.error?.details ?? raw.details ?? payload;
+  return new ApiError(status, code, message, details);
 }
 
 export async function api<T>(
@@ -46,13 +80,7 @@ export async function api<T>(
     const r = await fixtureHandler({ method, path, body });
     if (r) {
       if (r.status >= 400) {
-        const e = r.json as { code?: string; message?: string };
-        throw new ApiError(
-          r.status,
-          e?.code ?? "error",
-          e?.message ?? "fixture error",
-          r.json,
-        );
+        throw toApiError(r.status, r.json, "fixture error", "error");
       }
       return r.json as T;
     }
@@ -73,17 +101,7 @@ export async function api<T>(
   const text = await res.text();
   const json = text ? JSON.parse(text) : undefined;
   if (!res.ok) {
-    const e = (json ?? {}) as {
-      code?: string;
-      message?: string;
-      details?: unknown;
-    };
-    throw new ApiError(
-      res.status,
-      e.code ?? "http_" + res.status,
-      e.message ?? res.statusText,
-      e.details ?? json,
-    );
+    throw toApiError(res.status, json, res.statusText, "http_" + res.status);
   }
   return json as T;
 }
