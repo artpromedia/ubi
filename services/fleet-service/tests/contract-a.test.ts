@@ -344,10 +344,11 @@ describe("fleet-service serves routes 8-9 behind FLEET_SERVICE_KEY", () => {
     pathname: string,
     key: string | null = process.env.FLEET_SERVICE_KEY ?? null,
   ) {
-    return api(h.app, {
+    const response = await api(h.app, {
       path: pathname,
       headers: key === null ? {} : { "x-service-key": key },
     });
+    return response;
   }
 
   it("route 8: the vehicle assigned for the WHOLE interval, else nulls", async () => {
@@ -412,6 +413,97 @@ describe("fleet-service serves routes 8-9 behind FLEET_SERVICE_KEY", () => {
         )
       ).status,
     ).toBe(404);
+  });
+
+  it("online-vehicle: resolves active shift, doc_expired, no_active_shift, and non-fleet driver", async () => {
+    // In beforeEach inspectionExpiry is null -> doc_expired with vehicle populated.
+    const missingDoc = await internal(
+      `/internal/fleet/drivers/${driverId}/online-vehicle?at=2026-10-01T08:00:00.000Z&cityId=${world.cityId}`,
+    );
+    expect(missingDoc.status).toBe(200);
+    expect(missingDoc.body).toMatchObject({
+      fleetMember: true,
+      status: "doc_expired",
+      assignmentId,
+      shiftEndsAt: "2026-10-01T17:00:00.000Z",
+      vehicle: {
+        vehicleId,
+        fleetId: world.fleetId,
+        make: "Toyota",
+        model: "Corolla",
+        colour: "Silver",
+        bodyType: "sedan",
+        classes: ["comfort", "go"],
+        capacity: 4,
+      },
+    });
+
+    await h.db.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        plateNumber: "LND-482-KJ",
+        inspectionExpiry: new Date("2027-06-30T00:00:00Z"),
+      },
+    });
+
+    const active = await internal(
+      `/internal/fleet/drivers/${driverId}/online-vehicle?at=2026-10-01T08:00:00.000Z&cityId=${world.cityId}`,
+    );
+    expect(active.status).toBe(200);
+    expect(active.body).toEqual({
+      fleetMember: true,
+      status: "ok",
+      assignmentId,
+      shiftEndsAt: "2026-10-01T17:00:00.000Z",
+      vehicle: {
+        vehicleId,
+        fleetId: world.fleetId,
+        plateMasked: "•••KJ",
+        make: "Toyota",
+        model: "Corolla",
+        colour: "Silver",
+        bodyType: "sedan",
+        classes: ["comfort", "go"],
+        capacity: 4,
+        documents: {
+          insuranceExpiry: "2027-06-30T00:00:00.000Z",
+          inspectionExpiry: "2027-06-30T00:00:00.000Z",
+        },
+      },
+    });
+
+    const outsideShift = await internal(
+      `/internal/fleet/drivers/${driverId}/online-vehicle?at=2026-10-01T19:00:00.000Z&cityId=${world.cityId}`,
+    );
+    expect(outsideShift.status).toBe(200);
+    expect(outsideShift.body).toEqual({
+      fleetMember: true,
+      status: "no_active_shift",
+      assignmentId: null,
+      shiftEndsAt: null,
+      vehicle: null,
+    });
+
+    const nonFleet = await internal(
+      `/internal/fleet/drivers/00000000-0000-0000-0000-000000000099/online-vehicle?at=2026-10-01T08:00:00.000Z&cityId=${world.cityId}`,
+    );
+    expect(nonFleet.status).toBe(200);
+    expect(nonFleet.body).toEqual({
+      fleetMember: false,
+      status: "not_fleet_driver",
+      assignmentId: null,
+      shiftEndsAt: null,
+      vehicle: null,
+    });
+
+    expect(
+      (
+        await internal(
+          `/internal/fleet/drivers/${driverId}/online-vehicle?at=2026-10-01T08:00:00.000Z`,
+          null,
+        )
+      ).status,
+    ).toBe(401);
   });
 
   it("refuses a missing or wrong key (the payment key included) and closes when the key is unset", async () => {

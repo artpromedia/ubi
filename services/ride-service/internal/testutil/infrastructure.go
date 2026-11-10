@@ -343,6 +343,8 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	service.SetExecutionObserver(marketplaceService)
 	service.SetDriverActivityObserver(marketplaceService)
 	service.SetRiderCancelGuard(marketplaceService)
+	service.SetDriverOnlineGuard(marketplaceService)
+	service.SetRideVehicleResolver(marketplaceService)
 
 	rideHandler := handler.NewRideHandler(service, zerolog.Nop())
 	marketplaceHandler := handler.NewMarketplaceHandler(marketplaceService, zerolog.Nop())
@@ -390,6 +392,7 @@ func (h *Harness) cleanup(ctx context.Context) {
 		// keyed by the city of the trip they were saved from.
 		`DELETE FROM mp.favourite_drivers WHERE city_id = $1`,
 		`DELETE FROM mp.execution_routes WHERE city_id = $1`,
+		`DELETE FROM mp.driver_online_vehicles WHERE city_id = $1`,
 		// A05 fleet calendar: off-road use flags reference the ledger; the
 		// ledger's fleet rows use this harness's vehicle ids (VehicleID) and
 		// its booking rows this city's bookings. Swaps and risk blockers

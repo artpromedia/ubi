@@ -49,6 +49,12 @@ type Service struct {
 	// marketplace-managed ride before anything moves (see
 	// SetRiderCancelGuard).
 	cancelGuard RiderCancelGuard
+	// onlineGuard, when set, resolves a fleet driver's assigned vehicle
+	// before go-online commits (CC-A01).
+	onlineGuard DriverOnlineGuard
+	// vehicleResolver, when set, decorates marketplace execution rides with
+	// their server-verified / fleet-assigned vehicle (CC-A01).
+	vehicleResolver RideVehicleResolver
 }
 
 // NewService validates its dependencies rather than discovering a nil one
@@ -506,6 +512,13 @@ func (s *Service) decorate(ctx context.Context, ride *domain.Ride) (*RideView, e
 		s.deps.Logger.Warn().Err(err).Str("ride_id", ride.ID.String()).Msg("could not read the ride's marketplace request")
 	} else {
 		view.MarketplaceRequestID = requestID
+	}
+	if s.vehicleResolver != nil {
+		if awardID, err := s.deps.Store.MarketplaceAwardID(ctx, s.deps.Store.Pool(), ride.ID); err != nil {
+			s.deps.Logger.Warn().Err(err).Str("ride_id", ride.ID.String()).Msg("could not read the ride's marketplace award")
+		} else if awardID != nil {
+			view.Vehicle = s.vehicleResolver.MarketplaceRideVehicle(ctx, *awardID, ride.VehicleClass)
+		}
 	}
 
 	if ride.State == machine.RiderNoDriver {

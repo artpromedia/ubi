@@ -23,6 +23,7 @@ import { ContractError } from "@ubi/contracts";
 
 import {
   FleetInternalVehicleSchema,
+  FleetOnlineVehicleResponseSchema,
   FleetVehicleAtResponseSchema,
   SettlementInputsQuerySchema,
   SettlementInputsResponseSchema,
@@ -36,7 +37,7 @@ import {
 } from "../lib/service-key";
 import { iso } from "../lib/time";
 import { failure } from "../middleware/error-handler";
-import { vehicleAt } from "../ops/assignments";
+import { onlineVehicle, vehicleAt } from "../ops/assignments";
 import { settlementInputs } from "../ops/settlement";
 
 import type { FleetDeps } from "../ops/context";
@@ -45,6 +46,13 @@ const VehicleAtQuerySchema = z
   .object({
     from: z.string().datetime({ offset: true }),
     to: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+const OnlineVehicleQuerySchema = z
+  .object({
+    at: z.string().datetime({ offset: true }),
+    cityId: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -63,6 +71,21 @@ export function createInternalRoutes(deps: FleetDeps): Hono {
         new Date(query.to),
       );
       return respond(c, FleetVehicleAtResponseSchema, answer);
+    } catch (error) {
+      return failure(c, error);
+    }
+  });
+
+  routes.get("/drivers/:driverId/online-vehicle", rideKey, async (c) => {
+    try {
+      const query = OnlineVehicleQuerySchema.parse(c.req.query());
+      const answer = await onlineVehicle(
+        deps.db,
+        c.req.param("driverId"),
+        query.cityId,
+        new Date(query.at),
+      );
+      return respond(c, FleetOnlineVehicleResponseSchema, answer);
     } catch (error) {
       return failure(c, error);
     }

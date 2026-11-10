@@ -66,6 +66,30 @@ func TestFleetClientHoldsFleetServiceToTheContract(t *testing.T) {
 			t.Errorf("%s: a malformed route 9 answer is refused, got %v", name, err)
 		}
 	}
+
+	onlineOK, err := parseFleetOnlineVehicle([]byte(`{
+		"fleetMember":true,"status":"ok","assignmentId":"asg-1","shiftEndsAt":"2026-10-01T18:00:00Z",
+		"vehicle":{"vehicleId":"veh-1","fleetId":"flt-1","plateMasked":"•••KJ","make":"Honda","model":"Civic","colour":"Blue",
+		"bodyType":"sedan","classes":["go","comfort"],"capacity":4,
+		"documents":{"insuranceExpiry":"2027-01-01","inspectionExpiry":"2027-06-01"}}}`))
+	if err != nil || !onlineOK.FleetMember || onlineOK.Status != OnlineVehicleOK || onlineOK.Vehicle == nil ||
+		onlineOK.Vehicle.PlateMasked != "•••KJ" || !onlineOK.Vehicle.SupportsClass("comfort") {
+		t.Fatalf("a well-formed online-vehicle answer parses: %+v %v", onlineOK, err)
+	}
+	nonFleet, err := parseFleetOnlineVehicle([]byte(`{"fleetMember":false,"status":"not_fleet_driver","assignmentId":null,"shiftEndsAt":null,"vehicle":null}`))
+	if err != nil || nonFleet.FleetMember || nonFleet.Vehicle != nil {
+		t.Fatalf("a non-fleet online-vehicle answer parses: %+v %v", nonFleet, err)
+	}
+	for name, body := range map[string]string{
+		"non-fleet with vehicle": `{"fleetMember":false,"status":"not_fleet_driver","assignmentId":null,"shiftEndsAt":null,"vehicle":{"vehicleId":"v","fleetId":"f","plateMasked":"•••KJ","make":null,"model":null,"colour":null,"bodyType":"sedan","classes":["go"],"capacity":4,"documents":{"insuranceExpiry":"2030-01-01","inspectionExpiry":"2030-01-01"}}}`,
+		"ok without vehicle":     `{"fleetMember":true,"status":"ok","assignmentId":"asg-1","shiftEndsAt":null,"vehicle":null}`,
+		"bad bodyType":           `{"fleetMember":true,"status":"ok","assignmentId":"asg-1","shiftEndsAt":null,"vehicle":{"vehicleId":"v","fleetId":"f","plateMasked":"•••KJ","make":null,"model":null,"colour":null,"bodyType":"truck","classes":["go"],"capacity":4,"documents":{"insuranceExpiry":"2030-01-01","inspectionExpiry":"2030-01-01"}}}`,
+		"extra vehicle key":      `{"fleetMember":true,"status":"ok","assignmentId":"asg-1","shiftEndsAt":null,"vehicle":{"vehicleId":"v","fleetId":"f","plateMasked":"•••KJ","plate":"KJA123","make":null,"model":null,"colour":null,"bodyType":"sedan","classes":["go"],"capacity":4,"documents":{"insuranceExpiry":"2030-01-01","inspectionExpiry":"2030-01-01"}}}`,
+	} {
+		if _, err := parseFleetOnlineVehicle([]byte(body)); !errors.Is(err, ErrFleetServiceUnavailable) {
+			t.Errorf("%s: a malformed online-vehicle answer is refused, got %v", name, err)
+		}
+	}
 }
 
 // TestRiskDeadlineIsTheEarlierCandidate (decisions Q4): the earlier of the

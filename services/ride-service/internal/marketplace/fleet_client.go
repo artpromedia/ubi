@@ -85,12 +85,70 @@ func (v *FleetVehicle) EarliestExpiry() *time.Time {
 	return v.InspectionExpiry
 }
 
+// Statuses answered by GET /internal/fleet/drivers/{driverId}/online-vehicle
+// (MP_ONLINE_VEHICLE_STATUSES in packages/contracts/src/marketplace-fleet.ts).
+const (
+	OnlineVehicleNotFleetDriver = "not_fleet_driver"
+	OnlineVehicleOK             = "ok"
+	OnlineVehicleNoActiveShift  = "no_active_shift"
+	OnlineVehicleInactive       = "vehicle_inactive"
+	OnlineVehicleDocExpired     = "doc_expired"
+)
+
+// FleetOnlineVehicleDetail is the rider-safe vehicle metadata returned by
+// fleet-service for a fleet driver's signed shift right now (CC-A01).
+type FleetOnlineVehicleDetail struct {
+	VehicleID        string
+	FleetID          string
+	PlateMasked      string
+	Make             *string
+	Model            *string
+	Colour           *string
+	BodyType         string
+	Classes          []string
+	Capacity         int
+	InsuranceExpiry  *time.Time
+	InspectionExpiry *time.Time
+}
+
+// DocumentsValidAt reports whether both documents cover `at`.
+func (v *FleetOnlineVehicleDetail) DocumentsValidAt(at time.Time) bool {
+	return v != nil && v.InsuranceExpiry != nil && v.InspectionExpiry != nil &&
+		!v.InsuranceExpiry.Before(at) && !v.InspectionExpiry.Before(at)
+}
+
+// SupportsClass reports whether the vehicle is eligible for `vehicleClass`.
+func (v *FleetOnlineVehicleDetail) SupportsClass(vehicleClass string) bool {
+	if v == nil {
+		return false
+	}
+	for _, class := range v.Classes {
+		if class == vehicleClass {
+			return true
+		}
+	}
+	return false
+}
+
+// FleetOnlineVehicle is fleet-service's live go-online / award vehicle answer
+// (MpFleetOnlineVehicleSchema).
+type FleetOnlineVehicle struct {
+	FleetMember  bool
+	Status       string
+	AssignmentID *string
+	ShiftEndsAt  *time.Time
+	Vehicle      *FleetOnlineVehicleDetail
+}
+
 // FleetServicePort is ride-service's port onto fleet-service.
 type FleetServicePort interface {
 	// VehicleAt answers route 8 for one driver and interval.
 	VehicleAt(ctx context.Context, driverID uuid.UUID, from, to time.Time) (*FleetVehicleAt, error)
 	// Vehicle answers route 9 for one vehicle.
 	Vehicle(ctx context.Context, vehicleID string) (*FleetVehicle, error)
+	// OnlineVehicle resolves whether a driver is a fleet driver in `cityID`
+	// and which vehicle their signed shift assigns them right now (CC-A01).
+	OnlineVehicle(ctx context.Context, driverID uuid.UUID, cityID string, at time.Time) (*FleetOnlineVehicle, error)
 }
 
 // unconfiguredFleetService is the port when no fleet-service is wired: it
@@ -102,6 +160,10 @@ func (unconfiguredFleetService) VehicleAt(context.Context, uuid.UUID, time.Time,
 }
 
 func (unconfiguredFleetService) Vehicle(context.Context, string) (*FleetVehicle, error) {
+	return nil, fmt.Errorf("%w: no fleet-service is configured", ErrFleetServiceUnavailable)
+}
+
+func (unconfiguredFleetService) OnlineVehicle(context.Context, uuid.UUID, string, time.Time) (*FleetOnlineVehicle, error) {
 	return nil, fmt.Errorf("%w: no fleet-service is configured", ErrFleetServiceUnavailable)
 }
 
@@ -352,6 +414,153 @@ func parseFleetVehicle(body []byte) (*FleetVehicle, error) {
 		return nil, err
 	}
 	if out.InspectionExpiry, err = parseFleetExpiry(documents["inspectionExpiry"], "documents.inspectionExpiry"); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// OnlineVehicle implements FleetServicePort (CC-A01 live vehicle resolution).
+func (f *HTTPFleetService) OnlineVehicle(ctx context.Context, driverID uuid.UUID, cityID string, at time.Time) (*FleetOnlineVehicle, error) {
+	query := url.Values{}
+	query.Set("at", at.UTC().Format(time.RFC3339))
+	if strings.TrimSpace(cityID) != "" {
+		query.Set("cityId", cityID)
+	}
+	body, err := f.get(ctx, "/drivers/"+url.PathEscape(driverID.String())+"/online-vehicle", query, nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseFleetOnlineVehicle(body)
+}
+
+var validOnlineVehicleStatuses = map[string]bool{
+	OnlineVehicleNotFleetDriver: true,
+	OnlineVehicleOK:             true,
+	OnlineVehicleNoActiveShift:  true,
+	OnlineVehicleInactive:       true,
+	OnlineVehicleDocExpired:     true,
+}
+
+func parseFleetInstant(raw json.RawMessage, path string) (*time.Time, error) {
+	text, err := fleetNullableString(raw, path)
+	if err != nil || text == nil {
+		return nil, err
+	}
+	at, err := time.Parse(time.RFC3339Nano, *text)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s must be an RFC 3339 timestamp", ErrFleetServiceUnavailable, path)
+	}
+	utc := at.UTC()
+	return &utc, nil
+}
+
+// parseFleetOnlineVehicle validates MpFleetOnlineVehicleSchema strictly.
+func parseFleetOnlineVehicle(body []byte) (*FleetOnlineVehicle, error) {
+	object, err := exactFleetObject(body, "online-vehicle", "fleetMember", "status", "assignmentId", "shiftEndsAt", "vehicle")
+	if err != nil {
+		return nil, err
+	}
+	out := &FleetOnlineVehicle{}
+	switch string(object["fleetMember"]) {
+	case "true":
+		out.FleetMember = true
+	case "false":
+		out.FleetMember = false
+	default:
+		return nil, fmt.Errorf("%w: fleetMember must be a boolean", ErrFleetServiceUnavailable)
+	}
+	status, err := fleetNullableString(object["status"], "status")
+	if err != nil || status == nil || !validOnlineVehicleStatuses[*status] {
+		return nil, fmt.Errorf("%w: status is invalid", ErrFleetServiceUnavailable)
+	}
+	out.Status = *status
+	if out.AssignmentID, err = fleetNullableString(object["assignmentId"], "assignmentId"); err != nil {
+		return nil, err
+	}
+	if out.ShiftEndsAt, err = parseFleetInstant(object["shiftEndsAt"], "shiftEndsAt"); err != nil {
+		return nil, err
+	}
+	if string(object["vehicle"]) != "null" {
+		detail, err := parseFleetOnlineVehicleDetail(object["vehicle"])
+		if err != nil {
+			return nil, err
+		}
+		out.Vehicle = detail
+	}
+
+	switch {
+	case !out.FleetMember:
+		if out.Status != OnlineVehicleNotFleetDriver || out.AssignmentID != nil || out.ShiftEndsAt != nil || out.Vehicle != nil {
+			return nil, fmt.Errorf("%w: non-fleet online-vehicle carries fleet fields", ErrFleetServiceUnavailable)
+		}
+	case out.Status == OnlineVehicleNotFleetDriver:
+		return nil, fmt.Errorf("%w: fleetMember=true cannot answer not_fleet_driver", ErrFleetServiceUnavailable)
+	case out.Status == OnlineVehicleNoActiveShift && out.Vehicle != nil:
+		return nil, fmt.Errorf("%w: no_active_shift cannot carry a vehicle", ErrFleetServiceUnavailable)
+	case out.Status == OnlineVehicleOK && (out.AssignmentID == nil || out.Vehicle == nil || len(out.Vehicle.Classes) == 0):
+		return nil, fmt.Errorf("%w: ok online-vehicle requires assignmentId, vehicle and classes", ErrFleetServiceUnavailable)
+	}
+	return out, nil
+}
+
+func parseFleetOnlineVehicleDetail(raw []byte) (*FleetOnlineVehicleDetail, error) {
+	object, err := exactFleetObject(raw, "online-vehicle.vehicle",
+		"vehicleId", "fleetId", "plateMasked", "make", "model", "colour", "bodyType", "classes", "capacity", "documents")
+	if err != nil {
+		return nil, err
+	}
+	out := &FleetOnlineVehicleDetail{}
+	id, err := fleetNullableString(object["vehicleId"], "vehicle.vehicleId")
+	if err != nil || id == nil {
+		return nil, fmt.Errorf("%w: vehicle.vehicleId is required", ErrFleetServiceUnavailable)
+	}
+	out.VehicleID = *id
+	fleetID, err := fleetNullableString(object["fleetId"], "vehicle.fleetId")
+	if err != nil || fleetID == nil {
+		return nil, fmt.Errorf("%w: vehicle.fleetId is required", ErrFleetServiceUnavailable)
+	}
+	out.FleetID = *fleetID
+	plate, err := fleetNullableString(object["plateMasked"], "vehicle.plateMasked")
+	if err != nil || plate == nil {
+		return nil, fmt.Errorf("%w: vehicle.plateMasked is required", ErrFleetServiceUnavailable)
+	}
+	out.PlateMasked = *plate
+	if out.Make, err = fleetNullableString(object["make"], "vehicle.make"); err != nil {
+		return nil, err
+	}
+	if out.Model, err = fleetNullableString(object["model"], "vehicle.model"); err != nil {
+		return nil, err
+	}
+	if out.Colour, err = fleetNullableString(object["colour"], "vehicle.colour"); err != nil {
+		return nil, err
+	}
+	bodyType, err := fleetNullableString(object["bodyType"], "vehicle.bodyType")
+	if err != nil || bodyType == nil {
+		return nil, fmt.Errorf("%w: vehicle.bodyType is required", ErrFleetServiceUnavailable)
+	}
+	if _, ok := driverVehicleTypes[*bodyType]; !ok {
+		return nil, fmt.Errorf("%w: vehicle.bodyType %q is invalid", ErrFleetServiceUnavailable, *bodyType)
+	}
+	out.BodyType = *bodyType
+	if err := json.Unmarshal(object["classes"], &out.Classes); err != nil || out.Classes == nil {
+		return nil, fmt.Errorf("%w: vehicle.classes must be an array of strings", ErrFleetServiceUnavailable)
+	}
+	for _, class := range out.Classes {
+		if class == "" {
+			return nil, fmt.Errorf("%w: vehicle.classes carries an empty class", ErrFleetServiceUnavailable)
+		}
+	}
+	if out.Capacity, err = fleetPositiveInt(object["capacity"], "vehicle.capacity"); err != nil {
+		return nil, err
+	}
+	documents, err := exactFleetObject(object["documents"], "vehicle.documents", "insuranceExpiry", "inspectionExpiry")
+	if err != nil {
+		return nil, err
+	}
+	if out.InsuranceExpiry, err = parseFleetExpiry(documents["insuranceExpiry"], "vehicle.documents.insuranceExpiry"); err != nil {
+		return nil, err
+	}
+	if out.InspectionExpiry, err = parseFleetExpiry(documents["inspectionExpiry"], "vehicle.documents.inspectionExpiry"); err != nil {
 		return nil, err
 	}
 	return out, nil

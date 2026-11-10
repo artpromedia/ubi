@@ -64,7 +64,7 @@ func TestEveryCodeIsRegisteredInTheContract(t *testing.T) {
 			t.Errorf("%q answers %d here but %d in the contract", code, status, statuses[string(code)])
 		}
 	}
-	for _, fleet := range []Code{CodeOccupancyConflict, CodeIdempotencyConflict, CodeSwapIneligible} {
+	for _, fleet := range []Code{CodeOccupancyConflict, CodeIdempotencyConflict, CodeSwapIneligible, CodeFleetVehicleUnavailable} {
 		if _, ok := statusByCode[fleet]; !ok {
 			t.Errorf("%q has no status here", fleet)
 		}

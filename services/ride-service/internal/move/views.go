@@ -55,40 +55,55 @@ type DriverSummary struct {
 	ETASeconds int64     `json:"etaSeconds,omitempty"`
 }
 
+// AssignedVehicleView is the rider-safe vehicle card on a marketplace ride
+// whose driver has a server-verified vehicle (for a fleet driver, the vehicle
+// the fleet assigned right now rather than drivers.vehicle_id — CC-A01).
+type AssignedVehicleView struct {
+	Class         string  `json:"class"`
+	CapacitySeats *int    `json:"capacitySeats,omitempty"`
+	BodyType      *string `json:"bodyType,omitempty"`
+	Make          *string `json:"make,omitempty"`
+	Model         *string `json:"model,omitempty"`
+	Colour        *string `json:"colour,omitempty"`
+	PlateMasked   string  `json:"plateMasked"`
+	Verified      bool    `json:"verified"`
+}
+
 // RideView is the ride as an app renders it.
 //
 // `State` is the canonical rider-machine state and `Status` is the uppercase
 // word on the board; both are sent so a client can render the board's language
 // without any client ever having to infer a state machine of its own.
 type RideView struct {
-	RideID           uuid.UUID      `json:"rideId"`
-	State            string         `json:"state"`
-	Status           string         `json:"status"`
-	Version          int            `json:"version"`
-	CityID           string         `json:"cityId"`
-	ConfigVersion    int            `json:"configVersion"`
-	VehicleClass     string         `json:"vehicleClass"`
-	PaymentMethodID  string         `json:"paymentMethodId"`
-	Pickup           domain.Place   `json:"pickup"`
-	Dropoff          domain.Place   `json:"dropoff"`
-	Currency         string         `json:"currency"`
-	QuotedFareMinor  int64          `json:"quotedFareMinor"`
-	WaitFeeMinor     int64          `json:"waitFeeMinor"`
-	FinalFareMinor   *int64         `json:"finalFareMinor,omitempty"`
-	FareSource       string         `json:"fareSource,omitempty"`
-	Driver           *DriverSummary `json:"driver,omitempty"`
-	PinRequired      bool           `json:"pinRequired"`
-	PinVerified      bool           `json:"pinVerified"`
-	PinLocked        bool           `json:"pinLocked"`
-	CancelReasonCode string         `json:"cancelReasonCode,omitempty"`
-	CancelledByRole  string         `json:"cancelledByRole,omitempty"`
-	RequestedAt      time.Time      `json:"requestedAt"`
-	AssignedAt       *time.Time     `json:"assignedAt,omitempty"`
-	ArrivedAt        *time.Time     `json:"arrivedAt,omitempty"`
-	StartedAt        *time.Time     `json:"startedAt,omitempty"`
-	CompletedAt      *time.Time     `json:"completedAt,omitempty"`
-	CancelledAt      *time.Time     `json:"cancelledAt,omitempty"`
-	UpdatedAt        time.Time      `json:"updatedAt"`
+	RideID           uuid.UUID            `json:"rideId"`
+	State            string               `json:"state"`
+	Status           string               `json:"status"`
+	Version          int                  `json:"version"`
+	CityID           string               `json:"cityId"`
+	ConfigVersion    int                  `json:"configVersion"`
+	VehicleClass     string               `json:"vehicleClass"`
+	PaymentMethodID  string               `json:"paymentMethodId"`
+	Pickup           domain.Place         `json:"pickup"`
+	Dropoff          domain.Place         `json:"dropoff"`
+	Currency         string               `json:"currency"`
+	QuotedFareMinor  int64                `json:"quotedFareMinor"`
+	WaitFeeMinor     int64                `json:"waitFeeMinor"`
+	FinalFareMinor   *int64               `json:"finalFareMinor,omitempty"`
+	FareSource       string               `json:"fareSource,omitempty"`
+	Driver           *DriverSummary       `json:"driver,omitempty"`
+	Vehicle          *AssignedVehicleView `json:"vehicle,omitempty"`
+	PinRequired      bool                 `json:"pinRequired"`
+	PinVerified      bool                 `json:"pinVerified"`
+	PinLocked        bool                 `json:"pinLocked"`
+	CancelReasonCode string               `json:"cancelReasonCode,omitempty"`
+	CancelledByRole  string               `json:"cancelledByRole,omitempty"`
+	RequestedAt      time.Time            `json:"requestedAt"`
+	AssignedAt       *time.Time           `json:"assignedAt,omitempty"`
+	ArrivedAt        *time.Time           `json:"arrivedAt,omitempty"`
+	StartedAt        *time.Time           `json:"startedAt,omitempty"`
+	CompletedAt      *time.Time           `json:"completedAt,omitempty"`
+	CancelledAt      *time.Time           `json:"cancelledAt,omitempty"`
+	UpdatedAt        time.Time            `json:"updatedAt"`
 	// Options is what a rider can do next when matching found nobody, so the
 	// app never has to invent choices for a dead end (board 1e).
 	Options []string `json:"options,omitempty"`

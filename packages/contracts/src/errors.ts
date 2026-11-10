@@ -91,6 +91,7 @@ export const ERROR_CODES = [
   "preview_stale",
   "maintenance_overlap",
   "unresolved_booking_overlap",
+  "fleet_vehicle_unavailable",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -193,6 +194,8 @@ const STATUS_BY_CODE = {
   maintenance_overlap: 409,
   // A time-off change overlaps bookings the driver has not chosen for.
   unresolved_booking_overlap: 409,
+  // A fleet driver cannot go online when their assigned fleet vehicle cannot be resolved or used now (P1-04).
+  fleet_vehicle_unavailable: 409,
 } as const satisfies Readonly<Record<ErrorCode, number>>;
 
 export function statusForErrorCode(code: ErrorCode): number {

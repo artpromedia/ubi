@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/testutil"
 )
@@ -48,6 +49,15 @@ func goOffline(t *testing.T, h *testutil.Harness, driver testutil.Actor) {
 	requireStatus(t, h.Do(http.MethodPost, "/drivers/me/status", driver, map[string]any{"online": false}), http.StatusOK)
 }
 
+// tryGoOnline attempts to take a driver online without asserting 200 OK.
+func tryGoOnline(h *testutil.Harness, driver testutil.Actor) *http.Response {
+	recorder := h.Do(http.MethodPost, "/drivers/me/status", driver, map[string]any{
+		"online":  true,
+		"filters": map[string]any{"vehicleClasses": []string{"go"}},
+	})
+	return recorder.Result()
+}
+
 // offRoadReportID is the ledger id of a fleet's off-road block.
 func offRoadReportID(t *testing.T, h *testutil.Harness, blockID string) string {
 	t.Helper()
@@ -59,11 +69,11 @@ func offRoadReportID(t *testing.T, h *testutil.Harness, blockID string) string {
 	return id
 }
 
-// TestOffRoadVehicleGoingOnlineIsFlagged (correction 4): every off-road
-// report is audited, and a vehicle reported off-road whose driver goes
-// online during the claimed breakdown is flagged to UBI ops — recorded once
-// per occurrence, with an ops event and an audit row, never silently
-// ignored. With no vehicle off-road anywhere the check costs no call.
+// TestOffRoadVehicleGoingOnlineIsFlagged (correction 4 + CC-A01): every
+// off-road report is audited, and a vehicle reported off-road whose driver
+// tries to go online during the claimed breakdown is both refused with
+// fleet_vehicle_unavailable AND flagged to UBI ops — recorded once per
+// occurrence, with an ops event and an audit row, never silently ignored.
 func TestOffRoadVehicleGoingOnlineIsFlagged(t *testing.T) {
 	double := newFleetDouble(t)
 	h := fleetHarness(t, double)
@@ -73,11 +83,11 @@ func TestOffRoadVehicleGoingOnlineIsFlagged(t *testing.T) {
 	double.assign(driver.UserID, vehicle, h.Clock.Now().Add(-24*time.Hour), nil)
 	double.assign(other.UserID, healthy, h.Clock.Now().Add(-24*time.Hour), nil)
 
-	// Nothing off-road: going online asks fleet-service nothing.
+	// Nothing off-road: going online asks online-vehicle (never vehicle-at).
 	goOnline(t, h, other)
 	goOffline(t, h, other)
 	if calls := double.callCount("vehicle-at"); calls != 0 {
-		t.Fatalf("no vehicle is off-road, so no check is made: %d calls", calls)
+		t.Fatalf("no vehicle is off-road, so no vehicle-at check is made: %d calls", calls)
 	}
 
 	reportOffRoad(t, h, "off-a", vehicle)
@@ -86,7 +96,10 @@ func TestOffRoadVehicleGoingOnlineIsFlagged(t *testing.T) {
 		t.Fatalf("the off-road report itself is audited: %d", n)
 	}
 
-	goOnline(t, h, driver)
+	requireCode(t, h.Do(http.MethodPost, "/drivers/me/status", driver, map[string]any{
+		"online":  true,
+		"filters": map[string]any{"vehicleClasses": []string{"go"}},
+	}), http.StatusConflict, domain.CodeFleetVehicleUnavailable)
 	flags := offRoadFlags(t, h, vehicle)
 	if len(flags) != 1 || flags[0].DriverID != driver.UserID || flags[0].Trigger != "driver_online" ||
 		!strings.HasPrefix(flags[0].SubjectRef, "online:") {
@@ -100,24 +113,30 @@ func TestOffRoadVehicleGoingOnlineIsFlagged(t *testing.T) {
 	if n := countRows(t, h, `SELECT COUNT(*) FROM public.audit_log WHERE action = 'vehicle_occupancy.offroad_use_flagged' AND subject_id = $1`, reportID); n != 1 {
 		t.Fatalf("the flag is audited: %d", n)
 	}
-	// Re-asserting online (no transition) is not a new occurrence; going
-	// offline and online again is.
-	goOnline(t, h, driver)
+	// Repeating the same attempt at the same instant is deduplicated; a fresh
+	// attempt at a later instant is recorded as a new occurrence.
+	requireCode(t, h.Do(http.MethodPost, "/drivers/me/status", driver, map[string]any{
+		"online":  true,
+		"filters": map[string]any{"vehicleClasses": []string{"go"}},
+	}), http.StatusConflict, domain.CodeFleetVehicleUnavailable)
 	if n := len(offRoadFlags(t, h, vehicle)); n != 1 {
-		t.Fatalf("no transition, no new flag: %d", n)
+		t.Fatalf("same instant, no duplicate flag: %d", n)
 	}
 	goOffline(t, h, driver)
 	h.Clock.Set(h.Clock.Now().Add(time.Minute))
-	goOnline(t, h, driver)
+	requireCode(t, h.Do(http.MethodPost, "/drivers/me/status", driver, map[string]any{
+		"online":  true,
+		"filters": map[string]any{"vehicleClasses": []string{"go"}},
+	}), http.StatusConflict, domain.CodeFleetVehicleUnavailable)
 	if n := len(offRoadFlags(t, h, vehicle)); n != 2 {
-		t.Fatalf("each go-online during the breakdown is flagged: %d", n)
+		t.Fatalf("each go-online attempt during the breakdown is flagged: %d", n)
 	}
 	// A driver on a healthy vehicle is never flagged.
 	goOnline(t, h, other)
 	if n := len(offRoadFlags(t, h, healthy)); n != 0 {
 		t.Fatalf("a healthy vehicle is not flagged: %d", n)
 	}
-	// Once the fleet releases the report, going online is fine.
+	// Once the fleet releases the report, going online succeeds cleanly.
 	requireStatus(t, fleetPost(h, "/occupancy/maintenance/off-a/release", nil, ""), http.StatusOK)
 	goOffline(t, h, driver)
 	h.Clock.Set(h.Clock.Now().Add(time.Minute))

@@ -12,6 +12,17 @@ export type RidePlace = { lat: number; lng: number; address?: string };
 
 export type RideDriverSummary = { driverId: string; etaSeconds?: number };
 
+export type RideAssignedVehicle = {
+  class: string;
+  capacitySeats?: number | null;
+  bodyType?: string | null;
+  make?: string | null;
+  model?: string | null;
+  colour?: string | null;
+  plateMasked: string;
+  verified: boolean;
+};
+
 /** move.RideView as served (state = canonical machine state, status = board word). */
 export type RideView = {
   rideId: string;
@@ -30,6 +41,7 @@ export type RideView = {
   finalFareMinor?: number | null;
   fareSource?: string;
   driver?: RideDriverSummary | null;
+  vehicle?: RideAssignedVehicle | null;
   pinRequired: boolean;
   pinVerified: boolean;
   pinLocked: boolean;

@@ -736,6 +736,43 @@ export const FleetInternalVehicleSchema = z.object({
   }),
 });
 
+/**
+ * Live go-online & award vehicle resolution (CC-A01 / DEC-3 = A, served by
+ * fleet-service under `GET /internal/fleet/drivers/:driverId/online-vehicle`).
+ */
+export const FleetOnlineVehicleResponseSchema = z.object({
+  fleetMember: z.boolean(),
+  status: z.enum([
+    "not_fleet_driver",
+    "ok",
+    "no_active_shift",
+    "vehicle_inactive",
+    "doc_expired",
+  ]),
+  assignmentId: z.string().min(1).nullable(),
+  shiftEndsAt: Timestamp.nullable(),
+  vehicle: z
+    .object({
+      vehicleId: z.string().min(1),
+      fleetId: z.string().min(1),
+      plateMasked: z.string().min(1),
+      make: z.string().min(1).nullable(),
+      model: z.string().min(1).nullable(),
+      colour: z.string().min(1).nullable(),
+      bodyType: z.enum(["sedan", "suv", "van", "motorcycle", "electric"]),
+      classes: z.array(z.string().min(1)),
+      capacity: z.number().int().positive(),
+      documents: z.object({
+        insuranceExpiry: Timestamp.nullable(),
+        inspectionExpiry: Timestamp.nullable(),
+      }),
+    })
+    .nullable(),
+});
+export type FleetOnlineVehicleResponse = z.infer<
+  typeof FleetOnlineVehicleResponseSchema
+>;
+
 /** The seven routes ride-service serves and the two fleet-service serves. */
 export const CONTRACT_A_ROUTES = {
   maintenancePreview: {
@@ -1587,5 +1624,6 @@ export const FLEET_RESPONSE_SCHEMAS = {
   DriverTerminationView: DriverTerminationViewSchema,
   FleetVehicleAtResponse: FleetVehicleAtResponseSchema,
   FleetInternalVehicle: FleetInternalVehicleSchema,
+  FleetOnlineVehicleResponse: FleetOnlineVehicleResponseSchema,
   SettlementInputsResponse: SettlementInputsResponseSchema,
 } as const;

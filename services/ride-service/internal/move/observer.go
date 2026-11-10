@@ -80,3 +80,34 @@ type RiderCancelGuard interface {
 func (s *Service) SetRiderCancelGuard(guard RiderCancelGuard) {
 	s.cancelGuard = guard
 }
+
+// DriverOnlineGuard is asked BEFORE a driver goes online, outside any
+// transaction (pool-deadlock rule), and may refuse go-online with a definite
+// domain.Error (CC-A01: resolving a fleet driver's assigned vehicle now).
+// DriverWentOffline clears the online session's fleet vehicle post-commit.
+type DriverOnlineGuard interface {
+	AuthorizeDriverOnline(ctx context.Context, driverID uuid.UUID, cityID string) error
+	DriverWentOffline(ctx context.Context, driverID uuid.UUID)
+}
+
+// SetDriverOnlineGuard wires the go-online guard from the composition root.
+func (s *Service) SetDriverOnlineGuard(guard DriverOnlineGuard) {
+	s.onlineGuard = guard
+}
+
+func (s *Service) notifyWentOffline(ctx context.Context, driverID uuid.UUID) {
+	if s.onlineGuard != nil {
+		s.onlineGuard.DriverWentOffline(ctx, driverID)
+	}
+}
+
+// RideVehicleResolver resolves the assigned vehicle for a marketplace
+// execution ride (CC-A01), keyed by its marketplace_award_id.
+type RideVehicleResolver interface {
+	MarketplaceRideVehicle(ctx context.Context, awardID uuid.UUID, vehicleClass string) *AssignedVehicleView
+}
+
+// SetRideVehicleResolver wires the marketplace ride vehicle resolver.
+func (s *Service) SetRideVehicleResolver(resolver RideVehicleResolver) {
+	s.vehicleResolver = resolver
+}

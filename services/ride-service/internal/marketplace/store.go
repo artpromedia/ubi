@@ -120,6 +120,10 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 			AND to_regclass('mp.booking_risk_blockers') IS NOT NULL
 			AND to_regclass('mp.booking_vehicle_swaps') IS NOT NULL
 			AND to_regclass('mp.offroad_use_flags') IS NOT NULL
+			AND to_regclass('mp.driver_online_vehicles') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'awards' AND column_name = 'fleet_vehicle')
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
 				WHERE table_schema = 'mp' AND table_name = 'advance_bookings' AND column_name = 'rematch_declined_at')`).Scan(&current)

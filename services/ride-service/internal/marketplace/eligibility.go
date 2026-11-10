@@ -165,6 +165,19 @@ func (s *Service) EvaluateEligibility(ctx context.Context, actor Actor, request 
 		return s.evaluateAdvance(ctx, actor, request, policy, result, refuse, now)
 	}
 
+	// CC-A01: when a fleet driver is online on a resolved fleet vehicle, live
+	// eligibility also requires that assigned vehicle to support the request's
+	// vehicle class (even if the driver asked for a broader filter set).
+	if s.flagOn(ctx, cityconfig.FlagFleet, actor.UserID.String(), request.CityID) {
+		if online, onlineErr := s.deps.Store.DriverOnlineVehicle(ctx, s.deps.Store.Pool(), actor.UserID); onlineErr == nil && online != nil {
+			if !online.SupportsClass(request.VehicleClass) {
+				return refuse(ReasonUnsupportedCapability), nil
+			}
+		} else if onlineErr != nil && !errors.Is(onlineErr, domain.ErrNotFound) {
+			return nil, asDomainError(onlineErr)
+		}
+	}
+
 	currentClaim, err := s.deps.Store.CurrentClaim(ctx, s.deps.Store.Pool(), actor.UserID)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return nil, asDomainError(err)

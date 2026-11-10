@@ -715,10 +715,12 @@ func (s *Service) checkOffRoadUse(ctx context.Context, driverID uuid.UUID, cityI
 			vehicles[*b.VehicleID] = true
 		}
 	}
-	// fleet-service is asked only where the deny-by-default fleet flag is on
-	// (as at the award), so a go-online elsewhere never waits on it.
+	// CC-A01: check the driver's online fleet vehicle session first, falling
+	// back to Fleet.VehicleAt when no online session row is present.
 	if s.flagOn(ctx, cityconfig.FlagFleet, driverID.String(), cityID) {
-		if answer, err := s.deps.Fleet.VehicleAt(ctx, driverID, now, now.Add(time.Minute)); err == nil && answer != nil && answer.VehicleID != nil {
+		if online, onlineErr := s.deps.Store.DriverOnlineVehicle(ctx, s.deps.Store.Pool(), driverID); onlineErr == nil && online != nil {
+			vehicles[online.VehicleID] = true
+		} else if answer, err := s.deps.Fleet.VehicleAt(ctx, driverID, now, now.Add(time.Minute)); err == nil && answer != nil && answer.VehicleID != nil {
 			vehicles[*answer.VehicleID] = true
 		} else if err != nil && FleetServiceConfigured(s.deps.Fleet) {
 			s.deps.Logger.Warn().Err(err).Str("driver_id", driverID.String()).Msg("off-road use check could not ask fleet-service for the driver's vehicle")
@@ -793,6 +795,21 @@ func (s *Service) sweepOffRoadUse(ctx context.Context, now time.Time) {
 			if err := s.flagOffRoadUse(ctx, report, b.DriverID, b.CityID, OffRoadUseDriverOnline,
 				"online:"+onlineSince.UTC().Format(time.RFC3339Nano), now); err != nil {
 				s.deps.Logger.Error().Err(err).Msg("failed to flag off-road use")
+			}
+		}
+
+		// CC-A01: also check drivers whose live online session names this vehicle
+		// and who went online during the claimed breakdown.
+		if onlineDrivers, onlineErr := s.deps.Store.OnlineDriversOnVehicle(ctx, s.deps.Store.Pool(), report.VehicleID); onlineErr == nil {
+			for _, ref := range onlineDrivers {
+				state, onlineSince, sessErr := s.deps.Store.DriverOnlineSince(ctx, s.deps.Store.Pool(), ref.DriverID)
+				if sessErr != nil || state == machine.DriverOffline || onlineSince == nil || onlineSince.Before(report.Start) {
+					continue
+				}
+				if err := s.flagOffRoadUse(ctx, report, ref.DriverID, ref.CityID, OffRoadUseDriverOnline,
+					"online:"+onlineSince.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano), now); err != nil {
+					s.deps.Logger.Error().Err(err).Msg("failed to flag off-road use on online session")
+				}
 			}
 		}
 	}

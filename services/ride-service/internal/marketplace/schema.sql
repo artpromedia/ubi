@@ -1253,3 +1253,42 @@ CREATE TABLE IF NOT EXISTS mp.offroad_use_flags (
     CONSTRAINT offroad_use_flags_trigger CHECK (trigger IN ('driver_online', 'trip_started')),
     CONSTRAINT offroad_use_flags_once UNIQUE (occupancy_id, driver_id, trigger, subject_ref)
 );
+
+-- ---------------------------------------------------------------------------
+-- Fleet live vehicle resolution (CC-A01 / DEC-3 = A), additive and idempotent.
+--
+--   * driver_online_vehicles records the fleet vehicle resolved at go-online
+--     (and refreshed on live awards) for a driver in a fleet-enabled city.
+--   * mp.awards.fleet_vehicle snapshots the resolved fleet vehicle onto a
+--     live award at selection so a trip in progress keeps the vehicle it
+--     started with even if the driver's fleet assignment changes later, and
+--     every post-award surface (assigned view, queue, guest trip link,
+--     receipt, ops timeline) names the same vehicle.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.driver_online_vehicles (
+    driver_id          uuid PRIMARY KEY,
+    city_id            text NOT NULL,
+    vehicle_id         text NOT NULL,
+    fleet_id           text NOT NULL,
+    assignment_id      text NOT NULL,
+    plate_masked       text NOT NULL,
+    make               text,
+    model              text,
+    colour             text,
+    body_type          text NOT NULL,
+    classes            text[] NOT NULL DEFAULT '{}',
+    capacity           integer NOT NULL,
+    insurance_expiry   timestamptz,
+    inspection_expiry  timestamptz,
+    shift_ends_at      timestamptz,
+    resolved_at        timestamptz NOT NULL,
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT driver_online_vehicles_capacity CHECK (capacity > 0)
+);
+
+CREATE INDEX IF NOT EXISTS mp_driver_online_vehicles_vehicle_idx
+    ON mp.driver_online_vehicles (vehicle_id);
+CREATE INDEX IF NOT EXISTS mp_driver_online_vehicles_city_idx
+    ON mp.driver_online_vehicles (city_id);
+
+ALTER TABLE mp.awards ADD COLUMN IF NOT EXISTS fleet_vehicle jsonb;

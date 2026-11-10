@@ -73,6 +73,7 @@ type QueueView struct {
 	Status          string                 `json:"status"`
 	Promotion       string                 `json:"promotion"`
 	Driver          OfferDriverView        `json:"driver"`
+	Vehicle         *OfferVehicleView      `json:"vehicle,omitempty"`
 	DriverFirstName string                 `json:"driverFirstName"`
 	Steps           []QueueStepView        `json:"steps"`
 	FareMinor       Money                  `json:"fareMinor"`
@@ -122,7 +123,7 @@ func (s *Service) QueueProjection(ctx context.Context, actor Actor, requestID uu
 	}
 
 	now := s.now()
-	driver := s.driverDisplayFor(ctx, award.DriverID, request.VehicleClass)
+	driver, vehicle := s.awardDriverAndVehicleFor(ctx, award, request.VehicleClass)
 
 	view := &QueueView{
 		RequestID:       request.ID.String(),
@@ -130,6 +131,7 @@ func (s *Service) QueueProjection(ctx context.Context, actor Actor, requestID uu
 		AsOf:            now,
 		Promotion:       PromotionNone,
 		Driver:          driver,
+		Vehicle:         vehicle,
 		DriverFirstName: driver.DisplayName,
 		FareMinor:       money(award.FareMinor, request.Currency),
 		Steps:           []QueueStepView{},

@@ -996,6 +996,8 @@ export const MpAwardSchema = z.object({
   resolvedAt: z.string().datetime({ offset: true }).nullable(),
   /** Human-phrased reason on award.failed; the request reopened if still valid. */
   failReason: z.string().nullable().optional(),
+  driver: MpOfferDriverSchema.optional(),
+  vehicle: MpOfferVehicleSchema.optional(),
 });
 export type MpAward = z.infer<typeof MpAwardSchema>;
 
@@ -1351,6 +1353,7 @@ export const MpQueueViewSchema = z.object({
   promotion: z.enum(["none", "pending", "failed_revalidating"]),
   /** Consistent with the offer/winner projections (same server function). */
   driver: MpOfferDriverSchema,
+  vehicle: MpOfferVehicleSchema.optional(),
   /** Pseudonymous display convenience for the tracker header (== driver.displayName). */
   driverFirstName: z.string().min(1),
   steps: z.array(MpQueueStepSchema),
@@ -1431,6 +1434,7 @@ export const MpTripAccessViewSchema = z.object({
   pickup: z.object({ label: z.string() }),
   dropoff: z.object({ label: z.string() }),
   driver: MpOfferDriverSchema.nullable(),
+  vehicle: MpOfferVehicleSchema.nullable().optional(),
   eta: MpGuestTripEtaSchema.nullable(),
   pickupVerification: MpGuestTripVerificationSchema,
   support: MpGuestTripSupportSchema,
@@ -2266,6 +2270,7 @@ export const MpReceiptSchema = z
       completedAt: z.string().datetime({ offset: true }),
       terminatedEarly: z.boolean(),
       driver: MpOfferDriverSchema,
+      vehicle: MpOfferVehicleSchema.optional(),
     }),
     settlement: z.object({
       status: z.enum(["posted", "pending"]),

@@ -42,7 +42,12 @@ import {
 } from "./errors";
 import { withOutbox, type OutboxInput, type OutboxTx } from "./outbox";
 import { assertCapability, type FleetAccess } from "./roles";
-import { resolveShift, shiftIntervals, shiftSegments } from "./shifts";
+import {
+  resolveShift,
+  shiftInstanceOn,
+  shiftIntervals,
+  shiftSegments,
+} from "./shifts";
 import { fleetVehicleOf } from "./vehicles";
 import {
   arrangementView,
@@ -73,6 +78,7 @@ import type { Actor, FleetTx, JsonRecord } from "./types";
 import type {
   AssignmentTerms,
   AssignmentTermsInput,
+  FleetOnlineVehicleResponse,
   FleetShift,
   FleetShiftInput,
   TermDiff,
@@ -1711,4 +1717,159 @@ export async function vehicleAt(
     };
   }
   return none;
+}
+
+export function maskFleetPlate(plateNumber: string): string {
+  const normalised = plateNumber.replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
+  const characters = Array.from(normalised);
+  return characters.length < 5 ? "•••" : `•••${characters.slice(-2).join("")}`;
+}
+
+function normalizeBodyType(
+  raw: string,
+): "sedan" | "suv" | "van" | "motorcycle" | "electric" {
+  switch (raw.trim().toLowerCase()) {
+    case "suv":
+      return "suv";
+    case "van":
+      return "van";
+    case "motorcycle":
+      return "motorcycle";
+    case "electric":
+      return "electric";
+    default:
+      return "sedan";
+  }
+}
+
+/**
+ * Live go-online & award vehicle resolution (CC-A01 / DEC-3 = A):
+ * resolves whether `driverId` is currently under an in-force signed fleet
+ * arrangement in `cityId` and which fleet vehicle their signed shift covers at
+ * `at` (with rider-safe masked plate, make/model/colour/bodyType, classes,
+ * capacity, and document expiries).
+ */
+export async function onlineVehicle(
+  db: FleetTx,
+  driverId: string,
+  cityId: string | undefined,
+  at: Date,
+): Promise<FleetOnlineVehicleResponse> {
+  const atMs = at.getTime();
+  const rows = await db.fleetAssignment.findMany({
+    where: {
+      driverId,
+      ...(cityId !== undefined ? { fleet: { cityId } } : {}),
+    },
+    orderBy: { signedAt: "desc" },
+  });
+
+  const inForce = rows.filter((row) => {
+    const validFrom = dateColumnToLocalDate(row.validFrom);
+    const validTo = validToOf(row.validTo);
+    if (validTo !== null && compareDates(validFrom, validTo) >= 0) {
+      return false;
+    }
+    if (atMs < startOfLocalDay(validFrom, row.zone)) {
+      return false;
+    }
+    if (validTo === null) {
+      return true;
+    }
+    const lastInstanceEnd = shiftInstanceOn(
+      shiftOf(row),
+      addDays(validTo, -1),
+      row.zone,
+    ).end;
+    const endBoundary = Math.max(
+      startOfLocalDay(validTo, row.zone),
+      lastInstanceEnd,
+    );
+    return atMs < endBoundary;
+  });
+
+  if (inForce.length === 0) {
+    return {
+      fleetMember: false,
+      status: "not_fleet_driver",
+      assignmentId: null,
+      shiftEndsAt: null,
+      vehicle: null,
+    };
+  }
+
+  const window = { start: atMs - DAY_MS, end: atMs + 2 * DAY_MS };
+  for (const row of inForce) {
+    const covered = mergeIntervals(
+      shiftIntervals(
+        shiftOf(row),
+        row.zone,
+        dateColumnToLocalDate(row.validFrom),
+        validToOf(row.validTo),
+        window,
+      ),
+    );
+    const covering = covered.find(
+      (interval) => interval.start <= atMs && atMs < interval.end,
+    );
+    if (covering === undefined) {
+      continue;
+    }
+    const fleetVehicle = await db.fleetVehicle.findFirst({
+      where: {
+        vehicleId: row.vehicleId,
+        fleetId: row.fleetId,
+        status: "active",
+      },
+      include: { vehicle: true },
+    });
+    if (fleetVehicle === null) {
+      return {
+        fleetMember: true,
+        status: "vehicle_inactive",
+        assignmentId: row.id,
+        shiftEndsAt: iso(covering.end),
+        vehicle: null,
+      };
+    }
+    const insuranceExpiry = fleetVehicle.vehicle.insuranceExpiry;
+    const inspectionExpiry = fleetVehicle.vehicle.inspectionExpiry;
+    const docsValid =
+      insuranceExpiry !== null &&
+      inspectionExpiry !== null &&
+      insuranceExpiry.getTime() > atMs &&
+      inspectionExpiry.getTime() > atMs;
+
+    return {
+      fleetMember: true,
+      status: docsValid ? "ok" : "doc_expired",
+      assignmentId: row.id,
+      shiftEndsAt: iso(covering.end),
+      vehicle: {
+        vehicleId: fleetVehicle.vehicleId,
+        fleetId: fleetVehicle.fleetId,
+        plateMasked: maskFleetPlate(fleetVehicle.vehicle.plateNumber),
+        make: fleetVehicle.vehicle.make || null,
+        model: fleetVehicle.vehicle.model || null,
+        colour: fleetVehicle.vehicle.color || null,
+        bodyType: normalizeBodyType(fleetVehicle.vehicle.type),
+        classes: [...fleetVehicle.classes],
+        capacity: fleetVehicle.capacity,
+        documents: {
+          insuranceExpiry:
+            insuranceExpiry === null ? null : iso(insuranceExpiry.getTime()),
+          inspectionExpiry:
+            inspectionExpiry === null ? null : iso(inspectionExpiry.getTime()),
+        },
+      },
+    };
+  }
+
+  return {
+    fleetMember: true,
+    status: "no_active_shift",
+    assignmentId: null,
+    shiftEndsAt: null,
+    vehicle: null,
+  };
 }

@@ -34,13 +34,14 @@ type fleetDouble struct {
 	server *httptest.Server
 	key    string
 
-	mu          sync.Mutex
-	assignments map[uuid.UUID][]fleetAssignment
-	vehicles    map[string]fleetVehicleRecord
-	down        bool
-	delay       time.Duration
-	calls       map[string]int
-	badKeys     int
+	mu           sync.Mutex
+	fleetDrivers map[uuid.UUID]bool
+	assignments  map[uuid.UUID][]fleetAssignment
+	vehicles     map[string]fleetVehicleRecord
+	down         bool
+	delay        time.Duration
+	calls        map[string]int
+	badKeys      int
 }
 
 type fleetAssignment struct {
@@ -53,11 +54,17 @@ type fleetAssignment struct {
 }
 
 type fleetVehicleRecord struct {
-	fleetID    string
-	classes    []string
-	capacity   int
-	insurance  *string
-	inspection *string
+	fleetID     string
+	classes     []string
+	capacity    int
+	insurance   *string
+	inspection  *string
+	plateMasked string
+	make        *string
+	model       *string
+	colour      *string
+	bodyType    string
+	inactive    bool
 }
 
 // fleetDoubleKey is the FLEET_SERVICE_KEY fixture (32+ characters).
@@ -67,12 +74,14 @@ func newFleetDouble(t *testing.T) *fleetDouble {
 	t.Helper()
 	d := &fleetDouble{
 		t: t, key: fleetDoubleKey,
-		assignments: map[uuid.UUID][]fleetAssignment{},
-		vehicles:    map[string]fleetVehicleRecord{},
-		calls:       map[string]int{},
+		fleetDrivers: map[uuid.UUID]bool{},
+		assignments:  map[uuid.UUID][]fleetAssignment{},
+		vehicles:     map[string]fleetVehicleRecord{},
+		calls:        map[string]int{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /internal/fleet/drivers/{driverId}/vehicle-at", d.vehicleAt)
+	mux.HandleFunc("GET /internal/fleet/drivers/{driverId}/online-vehicle", d.onlineVehicle)
 	mux.HandleFunc("GET /internal/fleet/vehicles/{vehicleId}", d.vehicle)
 	d.server = httptest.NewServer(d.authenticated(mux))
 	t.Cleanup(d.server.Close)
@@ -137,6 +146,14 @@ func (d *fleetDouble) setDelay(delay time.Duration) {
 	d.delay = delay
 }
 
+// addFleetDriver registers a driver as a fleet member even when they have no
+// active shift right now.
+func (d *fleetDouble) addFleetDriver(driverID uuid.UUID) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.fleetDrivers[driverID] = true
+}
+
 // assign signs the driver onto a vehicle from `from` (open-ended when to is
 // nil).
 func (d *fleetDouble) assign(driverID uuid.UUID, vehicleID string, from time.Time, to *time.Time) string {
@@ -146,6 +163,7 @@ func (d *fleetDouble) assign(driverID uuid.UUID, vehicleID string, from time.Tim
 	if !ok {
 		d.t.Fatalf("assign to unknown vehicle %s", vehicleID)
 	}
+	d.fleetDrivers[driverID] = true
 	id := "asg_" + uuid.NewString()[:8]
 	d.assignments[driverID] = append(d.assignments[driverID], fleetAssignment{
 		id: id, vehicle: vehicleID, from: from, to: to, class: record.classes[0], capacity: record.capacity,
@@ -169,13 +187,73 @@ func (d *fleetDouble) endAssignments(driverID uuid.UUID, at time.Time) {
 func (d *fleetDouble) addVehicle(vehicleID, fleetID string, classes []string, capacity int, insurance, inspection string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	record := fleetVehicleRecord{fleetID: fleetID, classes: classes, capacity: capacity}
+	existing, had := d.vehicles[vehicleID]
+	record := fleetVehicleRecord{
+		fleetID:     fleetID,
+		classes:     classes,
+		capacity:    capacity,
+		plateMasked: "•••FL",
+		bodyType:    "sedan",
+	}
+	if had {
+		record.plateMasked = existing.plateMasked
+		record.make = existing.make
+		record.model = existing.model
+		record.colour = existing.colour
+		record.bodyType = existing.bodyType
+		record.inactive = existing.inactive
+	}
 	if insurance != "" {
 		record.insurance = &insurance
 	}
 	if inspection != "" {
 		record.inspection = &inspection
 	}
+	d.vehicles[vehicleID] = record
+}
+
+// setVehicleDisplay customises a fleet vehicle's rider-facing card fields.
+func (d *fleetDouble) setVehicleDisplay(vehicleID, plateMasked, makeName, modelName, colour, bodyType string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	record, ok := d.vehicles[vehicleID]
+	if !ok {
+		d.t.Fatalf("setVehicleDisplay on unknown vehicle %s", vehicleID)
+	}
+	record.plateMasked = plateMasked
+	if makeName != "" {
+		v := makeName
+		record.make = &v
+	} else {
+		record.make = nil
+	}
+	if modelName != "" {
+		v := modelName
+		record.model = &v
+	} else {
+		record.model = nil
+	}
+	if colour != "" {
+		v := colour
+		record.colour = &v
+	} else {
+		record.colour = nil
+	}
+	if bodyType != "" {
+		record.bodyType = bodyType
+	}
+	d.vehicles[vehicleID] = record
+}
+
+// setVehicleInactive toggles whether a fleet vehicle is active for dispatch.
+func (d *fleetDouble) setVehicleInactive(vehicleID string, inactive bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	record, ok := d.vehicles[vehicleID]
+	if !ok {
+		d.t.Fatalf("setVehicleInactive on unknown vehicle %s", vehicleID)
+	}
+	record.inactive = inactive
 	d.vehicles[vehicleID] = record
 }
 
@@ -238,5 +316,120 @@ func (d *fleetDouble) vehicle(w http.ResponseWriter, r *http.Request) {
 	writeDoubleJSON(w, http.StatusOK, map[string]any{
 		"vehicleId": id, "fleetId": record.fleetID, "classes": record.classes, "capacity": record.capacity,
 		"documents": map[string]any{"insuranceExpiry": record.insurance, "inspectionExpiry": record.inspection},
+	})
+}
+
+func doubleDocValidAt(raw *string, at time.Time) bool {
+	if raw == nil || *raw == "" {
+		return false
+	}
+	if exp, err := time.Parse("2006-01-02", *raw); err == nil {
+		return exp.UTC().After(at)
+	}
+	if exp, err := time.Parse(time.RFC3339Nano, *raw); err == nil {
+		return exp.UTC().After(at)
+	}
+	return false
+}
+
+func onlineVehiclePayload(id string, record fleetVehicleRecord) map[string]any {
+	return map[string]any{
+		"vehicleId":   id,
+		"fleetId":     record.fleetID,
+		"plateMasked": record.plateMasked,
+		"make":        record.make,
+		"model":       record.model,
+		"colour":      record.colour,
+		"bodyType":    record.bodyType,
+		"classes":     record.classes,
+		"capacity":    record.capacity,
+		"documents": map[string]any{
+			"insuranceExpiry":  record.insurance,
+			"inspectionExpiry": record.inspection,
+		},
+	}
+}
+
+// onlineVehicle serves GET /internal/fleet/drivers/{driverId}/online-vehicle
+// (CC-A01 / DEC-3 = A), matching MpFleetOnlineVehicleSchema strictly.
+func (d *fleetDouble) onlineVehicle(w http.ResponseWriter, r *http.Request) {
+	d.record("online-vehicle")
+	driverID, err := uuid.Parse(r.PathValue("driverId"))
+	if err != nil {
+		writeDoubleJSON(w, http.StatusUnprocessableEntity, map[string]any{"code": "validation_failed", "message": "driverId"})
+		return
+	}
+	at := time.Now().UTC()
+	if rawAt := r.URL.Query().Get("at"); rawAt != "" {
+		parsed, parseErr := time.Parse(time.RFC3339Nano, rawAt)
+		if parseErr != nil {
+			writeDoubleJSON(w, http.StatusUnprocessableEntity, map[string]any{"code": "validation_failed", "message": "at"})
+			return
+		}
+		at = parsed.UTC()
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	assignments := d.assignments[driverID]
+	if !d.fleetDrivers[driverID] && len(assignments) == 0 {
+		writeDoubleJSON(w, http.StatusOK, map[string]any{
+			"fleetMember":  false,
+			"status":       marketplace.OnlineVehicleNotFleetDriver,
+			"assignmentId": nil,
+			"shiftEndsAt":  nil,
+			"vehicle":      nil,
+		})
+		return
+	}
+
+	var active *fleetAssignment
+	for i := len(assignments) - 1; i >= 0; i-- {
+		a := assignments[i]
+		if !at.Before(a.from) && (a.to == nil || at.Before(*a.to)) {
+			chosen := a
+			active = &chosen
+			break
+		}
+	}
+	if active == nil {
+		writeDoubleJSON(w, http.StatusOK, map[string]any{
+			"fleetMember":  true,
+			"status":       marketplace.OnlineVehicleNoActiveShift,
+			"assignmentId": nil,
+			"shiftEndsAt":  nil,
+			"vehicle":      nil,
+		})
+		return
+	}
+
+	var shiftEnds any
+	if active.to != nil {
+		shiftEnds = active.to.UTC().Format(time.RFC3339)
+	}
+	record, ok := d.vehicles[active.vehicle]
+	if !ok {
+		writeDoubleJSON(w, http.StatusOK, map[string]any{
+			"fleetMember":  true,
+			"status":       marketplace.OnlineVehicleInactive,
+			"assignmentId": active.id,
+			"shiftEndsAt":  shiftEnds,
+			"vehicle":      nil,
+		})
+		return
+	}
+	status := marketplace.OnlineVehicleOK
+	if record.inactive {
+		status = marketplace.OnlineVehicleInactive
+	} else if !doubleDocValidAt(record.insurance, at) || !doubleDocValidAt(record.inspection, at) {
+		status = marketplace.OnlineVehicleDocExpired
+	}
+	writeDoubleJSON(w, http.StatusOK, map[string]any{
+		"fleetMember":  true,
+		"status":       status,
+		"assignmentId": active.id,
+		"shiftEndsAt":  shiftEnds,
+		"vehicle":      onlineVehiclePayload(active.vehicle, record),
 	})
 }

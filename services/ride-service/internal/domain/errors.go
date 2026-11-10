@@ -75,6 +75,12 @@ const (
 	CodeOccupancyConflict   Code = "occupancy_conflict"
 	CodeIdempotencyConflict Code = "idempotency_conflict"
 	CodeSwapIneligible      Code = "swap_ineligible"
+
+	// Live fleet vehicle resolution (CC-A01 / DEC-3 = A): a fleet driver
+	// cannot go online in fleet mode when their assigned vehicle cannot be
+	// resolved right now (fleet-service unreachable, no active shift,
+	// vehicle inactive, expired documents, or reported off-road).
+	CodeFleetVehicleUnavailable Code = "fleet_vehicle_unavailable"
 )
 
 var statusByCode = map[Code]int{
@@ -120,9 +126,10 @@ var statusByCode = map[Code]int{
 	CodeAwardUnresolved:        http.StatusConflict,
 	CodeRateProfileOutOfBounds: http.StatusUnprocessableEntity,
 
-	CodeOccupancyConflict:   http.StatusConflict,
-	CodeIdempotencyConflict: http.StatusConflict,
-	CodeSwapIneligible:      http.StatusUnprocessableEntity,
+	CodeOccupancyConflict:       http.StatusConflict,
+	CodeIdempotencyConflict:     http.StatusConflict,
+	CodeSwapIneligible:          http.StatusUnprocessableEntity,
+	CodeFleetVehicleUnavailable: http.StatusConflict,
 }
 
 // StatusFor returns the HTTP status every UBI service uses for a code.

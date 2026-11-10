@@ -46,6 +46,7 @@ type Award struct {
 	CaptureReceiptID string
 	FailReason       string
 	PickupWindow     *AwardWindow
+	FleetVehicle     *LiveFleetVehicle
 	CreatedAt        time.Time
 	ResolvedAt       *time.Time
 	UpdatedAt        time.Time
@@ -56,17 +57,18 @@ const awardColumns = `
 	request_version, bid_version, fare_minor, commission_minor, slot,
 	COALESCE(execution_service, ''), execution_id,
 	COALESCE(capture_receipt_id, ''), COALESCE(fail_reason, ''),
-	pickup_window, created_at, resolved_at, updated_at`
+	pickup_window, fleet_vehicle, created_at, resolved_at, updated_at`
 
 func scanAward(row pgx.Row) (*Award, error) {
 	var award Award
 	var window []byte
+	var fleetVehicle []byte
 	err := row.Scan(
 		&award.ID, &award.RequestID, &award.BidID, &award.DriverID, &award.RequesterID, &award.State,
 		&award.RequestVersion, &award.BidVersion, &award.FareMinor, &award.CommissionMinor, &award.Slot,
 		&award.ExecutionService, &award.ExecutionID,
 		&award.CaptureReceiptID, &award.FailReason,
-		&window, &award.CreatedAt, &award.ResolvedAt, &award.UpdatedAt,
+		&window, &fleetVehicle, &award.CreatedAt, &award.ResolvedAt, &award.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -81,6 +83,13 @@ func scanAward(row pgx.Row) (*Award, error) {
 		}
 		award.PickupWindow = &decoded
 	}
+	if len(fleetVehicle) > 0 {
+		var decoded LiveFleetVehicle
+		if err := json.Unmarshal(fleetVehicle, &decoded); err != nil {
+			return nil, fmt.Errorf("award %s stores an unreadable fleet vehicle: %w", award.ID, err)
+		}
+		award.FleetVehicle = &decoded
+	}
 	return &award, nil
 }
 
@@ -92,21 +101,27 @@ var errAwardAlreadyLive = errors.New("the request already carries an unresolved 
 // request collides with awards_one_live_per_request.
 func (s *Store) InsertAward(ctx context.Context, db DB, award *Award) error {
 	var window []byte
+	var fleetVehicle []byte
 	var err error
 	if award.PickupWindow != nil {
 		if window, err = json.Marshal(award.PickupWindow); err != nil {
 			return fmt.Errorf("unserialisable award pickup window: %w", err)
 		}
 	}
+	if award.FleetVehicle != nil {
+		if fleetVehicle, err = json.Marshal(award.FleetVehicle); err != nil {
+			return fmt.Errorf("unserialisable award fleet vehicle: %w", err)
+		}
+	}
 	_, err = db.Exec(ctx, `
 		INSERT INTO mp.awards (
 			id, request_id, bid_id, driver_id, requester_id, state,
 			request_version, bid_version, fare_minor, commission_minor, slot,
-			pickup_window
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+			pickup_window, fleet_vehicle
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		award.ID, award.RequestID, award.BidID, award.DriverID, award.RequesterID, award.State,
 		award.RequestVersion, award.BidVersion, award.FareMinor, award.CommissionMinor, award.Slot,
-		window,
+		window, fleetVehicle,
 	)
 	if err != nil {
 		if isUniqueViolation(err, "awards_one_live_per_request") {

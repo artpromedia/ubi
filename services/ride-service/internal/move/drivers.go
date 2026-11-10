@@ -70,6 +70,14 @@ func (s *Service) SetDriverStatus(ctx context.Context, actor Actor, req DriverSt
 		}
 	}
 
+	// CC-A01 (DEC-3 = A): in a fleet-enabled city, resolve the fleet driver's
+	// assigned vehicle BEFORE opening the DB transaction (pool-deadlock rule).
+	if req.Online && s.onlineGuard != nil {
+		if err := s.onlineGuard.AuthorizeDriverOnline(ctx, actor.UserID, actor.CityID); err != nil {
+			return nil, asDomainError(err)
+		}
+	}
+
 	var view *DriverStatusView
 	var wentOnline *time.Time
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
@@ -150,6 +158,8 @@ func (s *Service) SetDriverStatus(ctx context.Context, actor Actor, req DriverSt
 	}
 	if wentOnline != nil {
 		s.notifyWentOnline(ctx, actor.UserID, actor.CityID, *wentOnline)
+	} else if !req.Online {
+		s.notifyWentOffline(ctx, actor.UserID)
 	}
 	return view, nil
 }

@@ -66,6 +66,22 @@ export function ReceiptView({ receipt: r, save, onBack }: ReceiptViewProps) {
     r.trip.driver.profileStatus === "verified"
       ? r.trip.driver.displayName
       : "Driver details unavailable";
+  const tripVehicle = r.trip.vehicle;
+  const vehicleSummary = tripVehicle
+    ? [
+        [tripVehicle.colour, tripVehicle.make, tripVehicle.model]
+          .filter(Boolean)
+          .join(" "),
+        tripVehicle.plateMasked ??
+          (r.trip.driver.profileStatus === "verified"
+            ? r.trip.driver.plateMasked
+            : null),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : r.trip.driver.profileStatus === "verified"
+      ? r.trip.driver.plateMasked
+      : null;
   return (
     <Screen
       title="Receipt"
@@ -143,6 +159,11 @@ export function ReceiptView({ receipt: r, save, onBack }: ReceiptViewProps) {
               " · completed " +
               whenLabel(r.trip.completedAt)}
           </Text>
+          {vehicleSummary ? (
+            <Text variant="caption" tone="text2">
+              {vehicleSummary}
+            </Text>
+          ) : null}
           {r.trip.terminatedEarly ? (
             <StateTag label="Ended early" tone="warn" />
           ) : null}

@@ -109,8 +109,13 @@ func TestBookingVehicleResolutionNeverBlocksTheAward(t *testing.T) {
 		double := newFleetDouble(t)
 		h := fleetHarness(t, double)
 		vehicle := fleetVehicle(h, double, "a")
+		f := prepareOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
 		double.setDown(true)
-		f := bookOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
+		selected := selectPrepared(t, f)
+		requireStatus(t, selected, http.StatusAccepted)
+		f.selected = decode(t, selected)
+		f.award = awardRow(t, h, f.requestID)
+		f.booking = bookingOfAward(t, h, f.award.ID)
 		b := f.booking
 		if b.State != machine.MpBookingConfirmed || h.Wallet.CapturesByReservation[f.reservationID] != 1 {
 			t.Fatalf("fleet-service down never blocks the award: %s", b.State)
@@ -142,9 +147,14 @@ func TestBookingVehicleResolutionNeverBlocksTheAward(t *testing.T) {
 		double := newFleetDouble(t)
 		h := fleetHarness(t, double)
 		vehicle := fleetVehicle(h, double, "a")
+		f := prepareOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
 		double.setDelay(2 * time.Second)
 		started := time.Now()
-		f := bookOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
+		selected := selectPrepared(t, f)
+		requireStatus(t, selected, http.StatusAccepted)
+		f.selected = decode(t, selected)
+		f.award = awardRow(t, h, f.requestID)
+		f.booking = bookingOfAward(t, h, f.award.ID)
 		if elapsed := time.Since(started); elapsed >= 2*time.Second {
 			t.Fatalf("the award waited %v for a hanging fleet-service; the client timeout must bound it", elapsed)
 		}
@@ -158,8 +168,13 @@ func TestBookingVehicleResolutionNeverBlocksTheAward(t *testing.T) {
 		double := newFleetDouble(t)
 		h := fleetHarness(t, double)
 		vehicle := fleetVehicle(h, double, "a")
+		f := prepareOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
 		double.setDown(true)
-		f := bookOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
+		selected := selectPrepared(t, f)
+		requireStatus(t, selected, http.StatusAccepted)
+		f.selected = decode(t, selected)
+		f.award = awardRow(t, h, f.requestID)
+		f.booking = bookingOfAward(t, h, f.award.ID)
 		// While the booking's vehicle was unknown, the fleet booked the
 		// vehicle's service over the same interval (nothing refused it).
 		b := f.booking
@@ -187,9 +202,9 @@ func TestBookingVehicleResolutionNeverBlocksTheAward(t *testing.T) {
 		h := fleetHarness(t, double)
 		offRoad := fleetVehicle(h, double, "broken")
 		serviced := fleetVehicle(h, double, "serviced")
+		f := prepareOnVehicle(t, h, double, offRoad, 4*time.Hour, "wallet")
 		now := h.Clock.Now()
 		requireStatus(t, fleetPost(h, "/occupancy/off-road", offRoadBody("off-1", offRoad, now, nil), ""), http.StatusCreated)
-		f := prepareOnVehicle(t, h, double, offRoad, 4*time.Hour, "wallet")
 		requireCode(t, selectPrepared(t, f), http.StatusConflict, domain.CodeSlotUnavailable)
 		if request := requestRow(t, h, f.requestID); request.State != machine.MpRequestOpen {
 			t.Fatalf("a refused selection leaves the request open for another offer: %s", request.State)

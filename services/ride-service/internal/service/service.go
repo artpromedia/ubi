@@ -221,6 +221,9 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	// the marketplace (a business trip's booker who left the organization
 	// may not cancel a colleague's trip).
 	moveService.SetRiderCancelGuard(marketplaceService)
+	// CC-A01: fleet live vehicle resolution at go-online and on ride reads.
+	moveService.SetDriverOnlineGuard(marketplaceService)
+	moveService.SetRideVehicleResolver(marketplaceService)
 
 	return runtime, nil
 }

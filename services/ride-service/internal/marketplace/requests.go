@@ -530,10 +530,20 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 	}
 
 	profile := comparison.profiles[bid.DriverID]
+	onlineVehicle := comparison.onlineVehicles[bid.DriverID]
+	if bid.Slot == SlotAdvance {
+		onlineVehicle = nil
+	}
 	saved := comparison.favourites[bid.DriverID]
 	reliability := comparison.reliability[bid.DriverID]
 	if reliability == nil {
 		reliability = unavailableReliability(comparison.now)
+	}
+	driver := verifiedDriverView(bid.DriverID.String(), request.VehicleClass, profile)
+	vehicle := offerVehicleViewOf(request.VehicleClass, profile)
+	if onlineVehicle != nil {
+		driver = onlineVehicle.OverrideDriverDisplay(driver)
+		vehicle = onlineVehicle.OfferVehicleView(request.VehicleClass)
 	}
 	fee := money(0, request.Currency)
 	total := money(bid.AmountMinor, request.Currency)
@@ -543,7 +553,7 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 		RequestRevision: bid.RequestRevision,
 		AmountMinor:     money(bid.AmountMinor, request.Currency),
 		Kind:            kind,
-		Driver:          verifiedDriverView(bid.DriverID.String(), request.VehicleClass, profile),
+		Driver:          driver,
 		PickupLabel:     pickupLabel,
 		PickupWindow:    window,
 		ExpiresAt:       bid.ExpiresAt,
@@ -554,10 +564,10 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 		TotalLabel:      totalLabelFor(total.AmountMinor, request.Currency, digits),
 		TotalNote:       totalNoteFor(request),
 		PickupEstimate:  pickupEstimateOf(kind, stored, liveSec, pickupLabel),
-		Vehicle:         offerVehicleViewOf(request.VehicleClass, profile),
+		Vehicle:         vehicle,
 		DriverProfile:   offerDriverProfileViewOf(profile),
 		Reliability:     reliability,
-		ServiceFit:      serviceFitOf(profile, saved, comparison.needs),
+		ServiceFit:      serviceFitOf(profile, onlineVehicle, saved, comparison.needs),
 	}
 	if saved {
 		view.Badges = append(view.Badges, CriterionView{Code: "saved_driver", Label: "A driver you saved"})

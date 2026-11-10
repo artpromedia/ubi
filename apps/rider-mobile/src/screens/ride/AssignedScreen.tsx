@@ -95,6 +95,16 @@ export function AssignedScreen() {
     view.state === "matching" ||
     view.state === "rematching" ||
     view.state === "no_driver";
+  const vehicleLabel = view.vehicle
+    ? [
+        [view.vehicle.colour, view.vehicle.make, view.vehicle.model]
+          .filter(Boolean)
+          .join(" "),
+        view.vehicle.plateMasked,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
   return (
     <Screen title="Your ride" subtitle={view.status} onBack={nav.goBack}>
       {cancelled ? (
@@ -123,6 +133,9 @@ export function AssignedScreen() {
                 ? "Looking for your driver"
                 : "Driver pending"}
           </Text>
+          {vehicleLabel ? (
+            <Text variant="bodySmStrong">{vehicleLabel}</Text>
+          ) : null}
           <Text variant="bodySm" tone="text2">
             {view.driver
               ? etaLabel(view.driver.etaSeconds)

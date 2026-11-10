@@ -101,18 +101,19 @@ type ReceiptPaymentView struct {
 
 // ReceiptTripView is the trip's facts.
 type ReceiptTripView struct {
-	Service              string          `json:"service"`
-	VehicleClass         string          `json:"vehicleClass"`
-	Pickup               string          `json:"pickup"`
-	Dropoff              string          `json:"dropoff"`
-	StopCount            int             `json:"stopCount"`
-	StopsVisited         int             `json:"stopsVisited"`
-	StopsSkipped         int             `json:"stopsSkipped"`
-	RoutedDistanceMeters int64           `json:"routedDistanceMeters"`
-	StartedAt            *time.Time      `json:"startedAt"`
-	CompletedAt          time.Time       `json:"completedAt"`
-	TerminatedEarly      bool            `json:"terminatedEarly"`
-	Driver               OfferDriverView `json:"driver"`
+	Service              string            `json:"service"`
+	VehicleClass         string            `json:"vehicleClass"`
+	Pickup               string            `json:"pickup"`
+	Dropoff              string            `json:"dropoff"`
+	StopCount            int               `json:"stopCount"`
+	StopsVisited         int               `json:"stopsVisited"`
+	StopsSkipped         int               `json:"stopsSkipped"`
+	RoutedDistanceMeters int64             `json:"routedDistanceMeters"`
+	StartedAt            *time.Time        `json:"startedAt"`
+	CompletedAt          time.Time         `json:"completedAt"`
+	TerminatedEarly      bool              `json:"terminatedEarly"`
+	Driver               OfferDriverView   `json:"driver"`
+	Vehicle              *OfferVehicleView `json:"vehicle,omitempty"`
 }
 
 // ReceiptSettlementView is where the payment posting stands.
@@ -440,6 +441,7 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 	case request.PaymentMethodID == "cash":
 		method, methodLabel = "cash", "Cash, paid to the driver"
 	}
+	tripDriver, tripVehicle := s.awardDriverAndVehicleFor(ctx, award, request.VehicleClass)
 	trip := ReceiptTripView{
 		Service:              request.Service,
 		VehicleClass:         request.VehicleClass,
@@ -448,7 +450,8 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 		RoutedDistanceMeters: request.RoutedDistanceM,
 		StartedAt:            ride.StartedAt,
 		CompletedAt:          *ride.CompletedAt,
-		Driver:               s.driverDisplayFor(ctx, award.DriverID, request.VehicleClass),
+		Driver:               tripDriver,
+		Vehicle:              tripVehicle,
 	}
 	if route != nil {
 		trip.Dropoff = route.Dropoff.Label

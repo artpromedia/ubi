@@ -324,6 +324,8 @@ type AwardView struct {
 	ExecutionRef    *ExecutionRefView `json:"executionRef,omitempty"`
 	PickupWindow    *PickupWindow     `json:"pickupWindow,omitempty"`
 	FailReason      *string           `json:"failReason,omitempty"`
+	Driver          *OfferDriverView  `json:"driver,omitempty"`
+	Vehicle         *OfferVehicleView `json:"vehicle,omitempty"`
 	CreatedAt       time.Time         `json:"createdAt"`
 	ResolvedAt      *time.Time        `json:"resolvedAt"`
 }

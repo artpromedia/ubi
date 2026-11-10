@@ -228,6 +228,19 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		plan.vehicle = s.resolveBookingVehicle(ctx, bid.DriverID, request.CityID, plan.occupiedStart, plan.occupiedEnd)
 	}
 
+	var liveFleetVehicle *LiveFleetVehicle
+	if bid.Slot != SlotAdvance {
+		// CC-A01 (DEC-3 = A): re-resolve a fleet driver's assigned vehicle for
+		// live slots BEFORE Transaction 1 opens (pool-deadlock rule). If the
+		// shift ended, swapped or went off-road since go-online, we either
+		// snapshot the newly assigned vehicle or refuse cleanly so no stale
+		// plate ever reaches the rider.
+		liveFleetVehicle, err = s.resolveLiveAwardVehicle(ctx, bid.DriverID, request.CityID, request.VehicleClass, now)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
 	award := &Award{
 		ID:              uuid.New(),
 		RequestID:       request.ID,
@@ -241,7 +254,19 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		CommissionMinor: bid.CommissionMinor,
 		Slot:            bid.Slot,
 		PickupWindow:    window,
+		FleetVehicle:    liveFleetVehicle,
 	}
+	awardDriver, awardVehicle := s.awardDriverAndVehicleFor(ctx, award, request.VehicleClass)
+	decorateAwardView := func(v *AwardView) *AwardView {
+		if v == nil {
+			return nil
+		}
+		drv := awardDriver
+		v.Driver = &drv
+		v.Vehicle = awardVehicle
+		return v
+	}
+
 	claim := &Claim{
 		ID:               uuid.New(),
 		DriverID:         bid.DriverID,
@@ -364,6 +389,30 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 			return err
 		}
 
+		pendingPayload := map[string]any{
+			"awardId":         award.ID.String(),
+			"requestId":       request.ID.String(),
+			"bidId":           bid.ID.String(),
+			"driverId":        bid.DriverID.String(),
+			"fareMinor":       award.FareMinor,
+			"commissionMinor": award.CommissionMinor,
+			"slot":            award.Slot,
+		}
+		pendingAudit := map[string]any{
+			"requestId":       request.ID.String(),
+			"bidId":           bid.ID.String(),
+			"driverId":        bid.DriverID.String(),
+			"fareMinor":       award.FareMinor,
+			"commissionMinor": award.CommissionMinor,
+			"currency":        request.Currency,
+			"slot":            award.Slot,
+		}
+		if award.FleetVehicle != nil {
+			pendingPayload["vehicleId"] = award.FleetVehicle.VehicleID
+			pendingPayload["fleetVehicle"] = award.FleetVehicle.TimelineSummary()
+			pendingAudit["vehicleId"] = award.FleetVehicle.VehicleID
+			pendingAudit["fleetVehicle"] = award.FleetVehicle.TimelineSummary()
+		}
 		if err := writeEvent(ctx, tx, Event{
 			Name:           "mp.award.pending",
 			AggregateType:  subjectAward,
@@ -375,15 +424,7 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 			ActorID:        actor.UserID.String(),
 			IdempotencyKey: "mp.award.pending:" + award.ID.String(),
 			OccurredAt:     now,
-			Payload: map[string]any{
-				"awardId":         award.ID.String(),
-				"requestId":       request.ID.String(),
-				"bidId":           bid.ID.String(),
-				"driverId":        bid.DriverID.String(),
-				"fareMinor":       award.FareMinor,
-				"commissionMinor": award.CommissionMinor,
-				"slot":            award.Slot,
-			},
+			Payload:        pendingPayload,
 		}); err != nil {
 			return err
 		}
@@ -423,20 +464,12 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 			Action:      "mp.award.pending",
 			SubjectType: subjectAward,
 			SubjectID:   award.ID.String(),
-			After: map[string]any{
-				"requestId":       request.ID.String(),
-				"bidId":           bid.ID.String(),
-				"driverId":        bid.DriverID.String(),
-				"fareMinor":       award.FareMinor,
-				"commissionMinor": award.CommissionMinor,
-				"currency":        request.Currency,
-				"slot":            award.Slot,
-			},
-			Reason: "requester selected the winning offer",
+			After:       pendingAudit,
+			Reason:      "requester selected the winning offer",
 		}); err != nil {
 			return err
 		}
-		pendingView = &SelectResult{Award: awardViewOf(award, request.Currency)}
+		pendingView = &SelectResult{Award: decorateAwardView(awardViewOf(award, request.Currency))}
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeSelect, actor.UserID, idempotencyKey, req, 202, pendingView)
 	})
 	if err != nil {
@@ -459,7 +492,7 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 	}
 	result := pendingView
 	if resolved != nil {
-		result = &SelectResult{Award: awardViewOf(resolved, request.Currency), PickupPin: pin}
+		result = &SelectResult{Award: decorateAwardView(awardViewOf(resolved, request.Currency)), PickupPin: pin}
 	}
 	if booking != nil {
 		// The advance booking as it stands after the saga's synchronous
@@ -539,7 +572,15 @@ func (s *Service) AwardForRequest(ctx context.Context, actor Actor, requestID uu
 	if request.RequesterID != actor.UserID && award.DriverID != actor.UserID {
 		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
-	return awardViewOf(award, request.Currency), nil
+	view := awardViewOf(award, request.Currency)
+	if actor.UserID == request.RequesterID {
+		drv, veh := s.awardDriverAndVehicleFor(ctx, award, request.VehicleClass)
+		view.Driver = &drv
+		view.Vehicle = veh
+	} else if award.FleetVehicle != nil {
+		view.Vehicle = award.FleetVehicle.OfferVehicleView(request.VehicleClass)
+	}
+	return view, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1125,6 +1166,35 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			releases = append(releases, moved)
 		}
 
+		confirmedPayload := map[string]any{
+			"awardId":          award.ID.String(),
+			"requestId":        request.ID.String(),
+			"requesterId":      award.RequesterID.String(),
+			"bidId":            award.BidID.String(),
+			"driverId":         award.DriverID.String(),
+			"fareMinor":        award.FareMinor,
+			"commissionMinor":  award.CommissionMinor,
+			"slot":             award.Slot,
+			"requestState":     lockedRequest.State,
+			"executionId":      executionIDString(confirmed),
+			"executionService": executionServiceOf(confirmed),
+			"captureReceipt":   confirmed.CaptureReceiptID,
+		}
+		confirmedAudit := map[string]any{
+			"state":            machine.MpAwardConfirmed,
+			"fareMinor":        award.FareMinor,
+			"commissionMinor":  award.CommissionMinor,
+			"currency":         request.Currency,
+			"captureReceipt":   confirmed.CaptureReceiptID,
+			"executionId":      executionIDString(confirmed),
+			"executionService": executionServiceOf(confirmed),
+		}
+		if confirmed.FleetVehicle != nil {
+			confirmedPayload["vehicleId"] = confirmed.FleetVehicle.VehicleID
+			confirmedPayload["fleetVehicle"] = confirmed.FleetVehicle.TimelineSummary()
+			confirmedAudit["vehicleId"] = confirmed.FleetVehicle.VehicleID
+			confirmedAudit["fleetVehicle"] = confirmed.FleetVehicle.TimelineSummary()
+		}
 		if err := writeEvent(ctx, tx, Event{
 			Name:           "mp.award.confirmed",
 			AggregateType:  subjectAward,
@@ -1135,20 +1205,7 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			ActorID:        "ride-service",
 			IdempotencyKey: "mp.award.confirmed:" + award.ID.String(),
 			OccurredAt:     now,
-			Payload: map[string]any{
-				"awardId":          award.ID.String(),
-				"requestId":        request.ID.String(),
-				"requesterId":      award.RequesterID.String(),
-				"bidId":            award.BidID.String(),
-				"driverId":         award.DriverID.String(),
-				"fareMinor":        award.FareMinor,
-				"commissionMinor":  award.CommissionMinor,
-				"slot":             award.Slot,
-				"requestState":     lockedRequest.State,
-				"executionId":      executionIDString(confirmed),
-				"executionService": executionServiceOf(confirmed),
-				"captureReceipt":   confirmed.CaptureReceiptID,
-			},
+			Payload:        confirmedPayload,
 		}); err != nil {
 			return err
 		}
@@ -1200,16 +1257,8 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			SubjectType: subjectAward,
 			SubjectID:   award.ID.String(),
 			Before:      map[string]any{"state": machine.MpAwardPending},
-			After: map[string]any{
-				"state":            machine.MpAwardConfirmed,
-				"fareMinor":        award.FareMinor,
-				"commissionMinor":  award.CommissionMinor,
-				"currency":         request.Currency,
-				"captureReceipt":   confirmed.CaptureReceiptID,
-				"executionId":      executionIDString(confirmed),
-				"executionService": executionServiceOf(confirmed),
-			},
-			Reason: "the award saga captured the commission and committed the execution",
+			After:       confirmedAudit,
+			Reason:      "the award saga captured the commission and committed the execution",
 		}); err != nil {
 			return err
 		}
@@ -1705,6 +1754,18 @@ func (s *Service) createExecutionRide(ctx context.Context, tx pgx.Tx, request *R
 	if err != nil {
 		return nil, "", err
 	}
+	assignedPayload := map[string]any{
+		"rideId":    assigned.ID.String(),
+		"version":   assigned.Version,
+		"driverId":  driverID.String(),
+		"awardId":   award.ID.String(),
+		"fareMinor": assigned.QuotedFareMinor,
+		"currency":  assigned.Currency,
+	}
+	if award.FleetVehicle != nil {
+		assignedPayload["vehicleId"] = award.FleetVehicle.VehicleID
+		assignedPayload["fleetVehicle"] = award.FleetVehicle.TimelineSummary()
+	}
 	if err := writeEvent(ctx, tx, Event{
 		Name:           "ride.assigned",
 		AggregateType:  "ride",
@@ -1716,14 +1777,7 @@ func (s *Service) createExecutionRide(ctx context.Context, tx pgx.Tx, request *R
 		ActorID:        "ride-service",
 		IdempotencyKey: "ride.assigned:" + assigned.ID.String() + ":" + itoa(assigned.Version),
 		OccurredAt:     now,
-		Payload: map[string]any{
-			"rideId":    assigned.ID.String(),
-			"version":   assigned.Version,
-			"driverId":  driverID.String(),
-			"awardId":   award.ID.String(),
-			"fareMinor": assigned.QuotedFareMinor,
-			"currency":  assigned.Currency,
-		},
+		Payload:        assignedPayload,
 	}); err != nil {
 		return nil, "", err
 	}

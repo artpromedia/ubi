@@ -5,6 +5,7 @@
 # Read by services/api-gateway/tests/route-contract.test.ts.
 GET /health
 GET /health/ready
+GET /internal/fleet/drivers/:driverId/online-vehicle
 GET /internal/fleet/drivers/:driverId/vehicle-at
 GET /internal/fleet/settlement-inputs
 GET /internal/fleet/vehicles/:vehicleId

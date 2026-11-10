@@ -295,6 +295,57 @@ export const MpFleetVehicleSchema = z
   .strict();
 export type MpFleetVehicle = z.infer<typeof MpFleetVehicleSchema>;
 
+/**
+ * Live go-online & award vehicle resolution (CC-A01 / DEC-3 = A) —
+ * `GET /internal/fleet/drivers/:driverId/online-vehicle?at&cityId`:
+ * resolves whether the driver is a fleet driver in `cityId` and which fleet
+ * vehicle their signed shift covers at `at`, with rider-safe vehicle display
+ * fields (masked plate, make, model, colour, bodyType, classes, capacity) and
+ * document expiries.
+ */
+export const MP_ONLINE_VEHICLE_STATUSES = [
+  "not_fleet_driver",
+  "ok",
+  "no_active_shift",
+  "vehicle_inactive",
+  "doc_expired",
+] as const;
+export type MpOnlineVehicleStatus = (typeof MP_ONLINE_VEHICLE_STATUSES)[number];
+
+export const MpFleetOnlineVehicleDetailSchema = z
+  .object({
+    vehicleId: z.string().min(1),
+    fleetId: z.string().min(1),
+    plateMasked: z.string().min(1),
+    make: z.string().min(1).nullable(),
+    model: z.string().min(1).nullable(),
+    colour: z.string().min(1).nullable(),
+    bodyType: z.enum(["sedan", "suv", "van", "motorcycle", "electric"]),
+    classes: z.array(z.string().min(1)),
+    capacity: z.number().int().positive(),
+    documents: z
+      .object({
+        insuranceExpiry: ExpiryDate.nullable(),
+        inspectionExpiry: ExpiryDate.nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+export type MpFleetOnlineVehicleDetail = z.infer<
+  typeof MpFleetOnlineVehicleDetailSchema
+>;
+
+export const MpFleetOnlineVehicleSchema = z
+  .object({
+    fleetMember: z.boolean(),
+    status: z.enum(MP_ONLINE_VEHICLE_STATUSES),
+    assignmentId: z.string().min(1).nullable(),
+    shiftEndsAt: Timestamp.nullable(),
+    vehicle: MpFleetOnlineVehicleDetailSchema.nullable(),
+  })
+  .strict();
+export type MpFleetOnlineVehicle = z.infer<typeof MpFleetOnlineVehicleSchema>;
+
 // ── What the booking's own parties see ─────────────────────────────────────
 
 /** Why a booking is at risk (DRIVER view only — never shown to the rider). */

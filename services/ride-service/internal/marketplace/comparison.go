@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
 )
@@ -464,19 +465,20 @@ func (s *Service) withVerifiedDriver(ctx context.Context, view *AdvanceBookingVi
 
 // offerContext is everything the snapshot loads once for all its offers.
 type offerContext struct {
-	profiles    map[uuid.UUID]*DriverProfile
-	estimates   map[uuid.UUID]*bidPickupEstimate
-	reliability map[uuid.UUID]*ReliabilityView
-	favourites  map[uuid.UUID]bool
-	needs       *ServiceNeeds
-	now         time.Time
+	profiles       map[uuid.UUID]*DriverProfile
+	onlineVehicles map[uuid.UUID]*LiveFleetVehicle
+	estimates      map[uuid.UUID]*bidPickupEstimate
+	reliability    map[uuid.UUID]*ReliabilityView
+	favourites     map[uuid.UUID]bool
+	needs          *ServiceNeeds
+	now            time.Time
 }
 
 // loadOfferContext batch-loads the comparison inputs for a request's bids.
 // Every input degrades to "unavailable" on its own: an offer view is never
 // refused because a comparison input could not be read.
 func (s *Service) loadOfferContext(ctx context.Context, request *Request, bids []*Bid, now time.Time) *offerContext {
-	oc := &offerContext{now: now}
+	oc := &offerContext{now: now, onlineVehicles: map[uuid.UUID]*LiveFleetVehicle{}}
 	driverIDs := make([]uuid.UUID, 0, len(bids))
 	bidIDs := make([]uuid.UUID, 0, len(bids))
 	seen := map[uuid.UUID]bool{}
@@ -491,6 +493,12 @@ func (s *Service) loadOfferContext(ctx context.Context, request *Request, bids [
 	oc.reliability = s.reliabilityFor(ctx, driverIDs, now)
 	pool := s.deps.Store.Pool()
 	var err error
+	if !request.isAdvance() && s.flagOn(ctx, cityconfig.FlagFleet, "", request.CityID) {
+		if oc.onlineVehicles, err = s.deps.Store.DriverOnlineVehicles(ctx, pool, driverIDs); err != nil {
+			s.deps.Logger.Warn().Err(err).Msg("driver online fleet vehicles unavailable for an offer view")
+			oc.onlineVehicles = map[uuid.UUID]*LiveFleetVehicle{}
+		}
+	}
 	if oc.estimates, err = s.deps.Store.PickupEstimatesForBids(ctx, pool, bidIDs); err != nil {
 		s.deps.Logger.Warn().Err(err).Msg("pickup estimates unavailable for an offer view")
 		oc.estimates = map[uuid.UUID]*bidPickupEstimate{}
@@ -535,7 +543,7 @@ func pickupEstimateOf(kind string, stored *bidPickupEstimate, liveSec *int, pick
 }
 
 // serviceFitOf scores one offer against what the requester asked for.
-func serviceFitOf(profile *DriverProfile, saved bool, needs *ServiceNeeds) *ServiceFitView {
+func serviceFitOf(profile *DriverProfile, onlineVehicle *LiveFleetVehicle, saved bool, needs *ServiceNeeds) *ServiceFitView {
 	view := &ServiceFitView{Matched: []CriterionView{}, Unmet: []CriterionView{}, Definition: serviceFitDefinition}
 	criterion := func(met bool, code, metLabel, unmetLabel string) {
 		view.MaxScore++
@@ -554,7 +562,12 @@ func serviceFitOf(profile *DriverProfile, saved bool, needs *ServiceNeeds) *Serv
 			if !ok {
 				continue
 			}
-			met := profile.Verified() && profile.Vehicle != nil && spec.bodyTypes[profile.Vehicle.Type]
+			met := false
+			if onlineVehicle != nil {
+				met = spec.bodyTypes[onlineVehicle.BodyType]
+			} else {
+				met = profile.Verified() && profile.Vehicle != nil && spec.bodyTypes[profile.Vehicle.Type]
+			}
 			criterion(met, "preference:"+code, spec.title+": verified vehicle meets it", spec.title+": not confirmed by a verified vehicle")
 		}
 	}

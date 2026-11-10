@@ -818,6 +818,7 @@ type TripAccessView struct {
 	Pickup             TripAccessPlace        `json:"pickup"`
 	Dropoff            TripAccessPlace        `json:"dropoff"`
 	Driver             *OfferDriverView       `json:"driver"`
+	Vehicle            *OfferVehicleView      `json:"vehicle,omitempty"`
 	Eta                *TripAccessEta         `json:"eta"`
 	PickupVerification TripAccessVerification `json:"pickupVerification"`
 	Support            TripAccessSupport      `json:"support"`
@@ -1016,10 +1017,11 @@ func (s *Service) tripAccessViewOf(ctx context.Context, session *TripAccessSessi
 		Instructions: instructions,
 	}
 	if state.award != nil && state.award.State == machine.MpAwardConfirmed {
-		// A driver is committed: the ONE verified-card projection every
-		// rider surface uses.
-		driver := s.driverDisplayFor(ctx, state.award.DriverID, request.VehicleClass)
+		// A driver is committed: the ONE verified-card + fleet-vehicle projection
+		// every rider surface uses.
+		driver, vehicle := s.awardDriverAndVehicleFor(ctx, state.award, request.VehicleClass)
 		view.Driver = &driver
+		view.Vehicle = vehicle
 	}
 	if state.status == TripStatusDriverOnTheWay && state.award != nil {
 		view.Eta = s.passengerEta(ctx, state.award.DriverID, request, now)
