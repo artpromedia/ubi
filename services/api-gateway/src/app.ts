@@ -59,6 +59,7 @@ import { configReadRoutes } from "./routes/config-read";
 import { healthRoutes } from "./routes/health";
 import { opsWalletCreditRoutes } from "./routes/ops-wallet-credits";
 import { proxyRoutes } from "./routes/proxy";
+import { pushDeviceRoutes } from "./routes/push-devices";
 import { tripAccessRoutes } from "./routes/trip-access";
 
 export function createApp(
@@ -161,14 +162,17 @@ export function createApp(
   api.use("*", identityContextMiddleware);
   api.use("*", scopeEnforcementMiddleware);
 
-  // Exact-route config and ops-finance families: GET-only config reads
-  // (`profile:read`), exact config admin routes (`config:admin`, DEC-1 = A),
-  // and exact ops wallet credit routes (`finance:ops`, DEC-6 = C). Nothing in
-  // PROXY_RULES matches `/config`, `/flags`, or `/ops/wallet-credits`, so every
-  // unrouted method or path under them falls through to the gateway's own 404.
+  // Exact-route config, ops-finance, and push-device families: GET-only config
+  // reads (`profile:read`), exact config admin routes (`config:admin`, DEC-1 = A),
+  // exact ops wallet credit routes (`finance:ops`, DEC-6 = C), and exact push
+  // device registration/unregistration (`profile:read`, CC-B04). Nothing in
+  // PROXY_RULES matches `/config`, `/flags`, `/ops/wallet-credits`, or `/push`,
+  // so every unrouted method or path under them falls through to the gateway's
+  // own 404.
   api.route("/", configReadRoutes);
   api.route("/", configAdminRoutes);
   api.route("/", opsWalletCreditRoutes);
+  api.route("/", pushDeviceRoutes);
   api.route("/", proxyRoutes);
 
   // The gateway mounts /v1. `/api` is not a UBI prefix.

@@ -18,9 +18,13 @@ module.exports = {
   },
   ignorePatterns: [
     "node_modules/",
+    "android/",
+    "ios/",
     "babel.config.js",
+    "metro.config.js",
     "jest.config.js",
     ".eslintrc.js",
+    "index.js",
     "jest/",
   ],
   rules: {

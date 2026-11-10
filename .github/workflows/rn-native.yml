@@ -1,49 +1,34 @@
-# React Native native build + device E2E gate.
+# React Native native build + device E2E gate (CC-B02).
 #
 # This is the acceptance evidence the RN migration owner requires (handoff
 # rule 30): real iOS + Android builds of BOTH apps, plus device E2E. It is
 # SEPARATE from ci.yml and NOT part of the ci-success merge gate: nothing in
 # this file is (or should be made) a required branch-protection check, and no
-# job here is allowed to report success as evidence of a device build when it
-# did not actually produce one.
+# job here is allowed to report success as evidence of a signed store build or
+# device run when it did not actually produce one.
 #
-# Two external prerequisites are NOT met in this repository today, so the
-# real native builds and device E2E cannot run here — see
-# docs/ops/NATIVE_RELEASE.md for the exact, checkable list of what's missing:
+# What runs unconditionally and for real on every trigger:
+#   - `rn-verify`: install, build @ubi/contracts, typecheck shared mobile
+#     packages + both apps, run both apps' Jest suites, lint both apps, and
+#     produce real production Metro JS bundles (Android + iOS) for both apps.
+#   - `rn-android`: runs `./gradlew assembleDebug` (no release signing, debug
+#     applicationId `com.ubi.{rider,driver}.debug`, Google Services plugin
+#     skipped unless real `google-services.json` is injected) on ubuntu-latest
+#     for both apps as a real, non-gating native compilation check.
 #
-#   1. Neither apps/rider-mobile nor apps/driver-mobile has an android/ or
-#      ios/ native project directory yet. These are plain React Native CLI
-#      apps (react-native ^0.79 — there is no app.config.*, no `expo`
-#      dependency, so this is NOT an Expo project). The previous version of
-#      this file generated missing native dirs with `npx expo prebuild`,
-#      which does not apply here and would not have worked. The correct
-#      scaffold command is documented in NATIVE_RELEASE.md and is
-#      deliberately NOT run automatically in CI — it needs the real store
-#      bundle id / applicationId from the App Store Connect / Play consoles,
-#      which must never be invented here.
-#   2. Signing: bundle id / applicationId / provisioning must equal the
-#      existing Flutter app's (taken from the store consoles), and the actual
-#      keystore / distribution certificate must be supplied as CI secrets —
-#      never generated or hardcoded in this file.
-#
-# What this file DOES do, unconditionally and for real:
-#   - `rn-verify`: install, build @ubi/contracts, typecheck the shared mobile
-#     packages + both apps, run both apps' jest suites, and lint both apps.
-#     None of this needs a native project. Every command below was
-#     reproduced locally before this file was landed (docs/ops/CI_EVIDENCE.md
-#     records the exact output: rider 37/37 jest, driver 71/71 jest, lint
-#     0 errors on both). This deliberately overlaps ci.yml's `rn-mobile` job
-#     (the required merge-gate check) — this job additionally runs lint, and
-#     exists so the release lane's JS evidence lives alongside the
-#     (currently inert) native build jobs below, in the file the RN handoff
-#     names as the native/device gate.
-#   - `rn-android` / `rn-ios` / `rn-e2e`: run on every trigger, but each real
-#     build step is gated on the native project directory AND the relevant
-#     signing/runner secrets actually being present. When either is missing
-#     the job prints exactly what is missing and SUCCEEDS — that is a report
-#     of "not attempted", never a fabricated "device build passed", and this
-#     workflow is not wired into any required check, so that success cannot
-#     be mistaken for device coverage on a PR.
+# What stays guarded on external store/signing/device-farm credentials:
+#   - `rn-android-release` (`./gradlew assembleRelease`): requires real store
+#     `ANDROID_APPLICATION_ID_{RIDER,DRIVER}`, release keystore secrets, and
+#     real Firebase `GOOGLE_SERVICES_JSON_{RIDER,DRIVER}`.
+#   - `rn-ios` (`xcodebuild archive` on `macos-14`): requires real store
+#     `IOS_BUNDLE_ID_{RIDER,DRIVER}`, Apple distribution certificate/profile,
+#     and real Firebase `GOOGLE_SERVICE_INFO_PLIST_{RIDER,DRIVER}`.
+#   - `rn-e2e` (Maestro device farm): requires `MAESTRO_CLOUD_API_KEY` and real
+#     Maestro Cloud invocation.
+#   When credentials are absent, `gate` logs explicitly:
+#     "not attempted: no signing identity / no device farm"
+#   and the guarded jobs skip cleanly without allocating paid macOS/device
+#   runners or fabricating release/device coverage.
 name: RN Native
 
 on:
@@ -74,21 +59,14 @@ env:
 
 jobs:
   # ===========================================================================
-  # GATE: decide, on a cheap ubuntu runner, whether the real native jobs have
-  # their prerequisites. Secrets cannot be read in a job-level `if:`, so this
-  # job reads them and exposes plain "true"/"false" outputs the native jobs
-  # gate on. The effect: with no native projects / signing secrets (the state
-  # today) the native jobs are SKIPPED entirely — no macOS runner is ever
-  # allocated (rn-ios would otherwise burn 10x-cost minutes, or fail to start
-  # on an account with no macOS entitlement, just to print "skipped"). A
-  # skipped job is not a failure, so the workflow stays green on rn-verify
-  # alone, and no success is ever reported as device coverage.
+  # GATE: evaluate external signing / store / device-farm prerequisites
   # ===========================================================================
   gate:
     name: Native prerequisites gate
     runs-on: ubuntu-latest
     outputs:
-      android: ${{ steps.check.outputs.android }}
+      android_debug: ${{ steps.check.outputs.android_debug }}
+      android_release: ${{ steps.check.outputs.android_release }}
       ios: ${{ steps.check.outputs.ios }}
       e2e: ${{ steps.check.outputs.e2e }}
     steps:
@@ -97,24 +75,52 @@ jobs:
       - name: Evaluate prerequisites
         id: check
         run: |
-          android=false; ios=false; e2e=false
-          if { [ -d apps/rider-mobile/android ] || [ -d apps/driver-mobile/android ]; } && [ -n "$ANDROID_KEYSTORE" ]; then android=true; fi
-          if { [ -d apps/rider-mobile/ios ] || [ -d apps/driver-mobile/ios ]; } && [ -n "$IOS_CERT" ]; then ios=true; fi
-          if [ -n "$MAESTRO" ]; then e2e=true; fi
-          echo "android=$android" >> "$GITHUB_OUTPUT"
+          android_debug=false; android_release=false; ios=false; e2e=false
+          if [ -d apps/rider-mobile/android ] && [ -d apps/driver-mobile/android ]; then
+            android_debug=true
+          fi
+          if [ "$android_debug" = "true" ] && [ -n "$ANDROID_KEYSTORE" ] && \
+             [ -n "$ANDROID_APP_ID_RIDER" ] && [ -n "$ANDROID_APP_ID_DRIVER" ] && \
+             [ -n "$GOOGLE_SERVICES_RIDER" ] && [ -n "$GOOGLE_SERVICES_DRIVER" ]; then
+            android_release=true
+          else
+            echo "rn-android-release: not attempted: no signing identity / store applicationId / Firebase config"
+          fi
+          if [ -d apps/rider-mobile/ios ] && [ -d apps/driver-mobile/ios ] && \
+             [ -n "$IOS_CERT" ] && [ -n "$IOS_BUNDLE_RIDER" ] && [ -n "$IOS_BUNDLE_DRIVER" ] && \
+             [ -n "$GOOGLE_PLIST_RIDER" ] && [ -n "$GOOGLE_PLIST_DRIVER" ]; then
+            ios=true
+          else
+            echo "rn-ios: not attempted: no signing identity / store bundleId / Firebase plist"
+          fi
+          if [ -n "$MAESTRO" ]; then
+            e2e=true
+          else
+            echo "rn-e2e: not attempted: no device farm"
+          fi
+          echo "android_debug=$android_debug" >> "$GITHUB_OUTPUT"
+          echo "android_release=$android_release" >> "$GITHUB_OUTPUT"
           echo "ios=$ios" >> "$GITHUB_OUTPUT"
           echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
-          echo "native gate → android=$android ios=$ios e2e=$e2e (all false is expected today; native jobs skip)"
+          echo "native gate → android_debug=$android_debug android_release=$android_release ios=$ios e2e=$e2e"
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_APP_ID_RIDER: ${{ vars.ANDROID_APPLICATION_ID_RIDER }}
+          ANDROID_APP_ID_DRIVER: ${{ vars.ANDROID_APPLICATION_ID_DRIVER }}
+          GOOGLE_SERVICES_RIDER: ${{ secrets.GOOGLE_SERVICES_JSON_RIDER }}
+          GOOGLE_SERVICES_DRIVER: ${{ secrets.GOOGLE_SERVICES_JSON_DRIVER }}
           IOS_CERT: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12 }}
+          IOS_BUNDLE_RIDER: ${{ vars.IOS_BUNDLE_ID_RIDER }}
+          IOS_BUNDLE_DRIVER: ${{ vars.IOS_BUNDLE_ID_DRIVER }}
+          GOOGLE_PLIST_RIDER: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_RIDER }}
+          GOOGLE_PLIST_DRIVER: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_DRIVER }}
           MAESTRO: ${{ secrets.MAESTRO_CLOUD_API_KEY }}
 
   # ===========================================================================
-  # WHAT ACTUALLY RUNS: JS/TS verification, no native project required
+  # UNCONDITIONAL: JS/TS + Metro production bundle verification
   # ===========================================================================
   rn-verify:
-    name: RN Verify (typecheck + jest + lint; no native project required)
+    name: RN Verify (typecheck + jest + lint + Metro bundle)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -156,31 +162,38 @@ jobs:
           pnpm --filter @ubi/rider-mobile exec eslint . --ext .ts,.tsx
           pnpm --filter @ubi/driver-mobile exec eslint . --ext .ts,.tsx
 
-      - name: Bundler dry-run (documented gap, not enabled)
-        # A Metro bundle build (react-native bundle --platform android/ios)
-        # would be closer to real device evidence than tsc+jest, and needs no
-        # native project directory. It does NOT run here: verified locally
-        # (2026-09-21) that `react-native bundle` exits 1 in both apps with
-        # "react-native depends on @react-native-community/cli for cli
-        # commands" — that CLI package is not a devDependency of either app
-        # (react-native's own bin only re-exports to it, it does not vendor
-        # it). Adding it is an application package.json/lockfile change,
-        # outside this prompt's writable scope (.github/workflows/**,
-        # infrastructure/**, k8s/**, docs/**). Tracked in
-        # docs/ops/NATIVE_RELEASE.md and docs/launch/GAP_REGISTER.md instead
-        # of silently working around it or claiming this step passed.
+      - name: Metro JS bundle (Android + iOS, rider + driver)
         run: |
-          echo "SKIPPED: react-native bundle cannot run here today."
-          echo "Missing @react-native-community/cli devDependency in both apps' package.json."
-          echo "See docs/ops/NATIVE_RELEASE.md for the verified failure and the fix."
+          mkdir -p "$RUNNER_TEMP/rn-bundles/rider-android" "$RUNNER_TEMP/rn-bundles/rider-ios" \
+                   "$RUNNER_TEMP/rn-bundles/driver-android" "$RUNNER_TEMP/rn-bundles/driver-ios"
+          pnpm --filter @ubi/rider-mobile exec react-native bundle \
+            --platform android --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/rider-android/index.android.bundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/rider-android"
+          pnpm --filter @ubi/rider-mobile exec react-native bundle \
+            --platform ios --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/rider-ios/main.jsbundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/rider-ios"
+          pnpm --filter @ubi/driver-mobile exec react-native bundle \
+            --platform android --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/driver-android/index.android.bundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/driver-android"
+          pnpm --filter @ubi/driver-mobile exec react-native bundle \
+            --platform ios --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/driver-ios/main.jsbundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/driver-ios"
+          test -s "$RUNNER_TEMP/rn-bundles/rider-android/index.android.bundle"
+          test -s "$RUNNER_TEMP/rn-bundles/rider-ios/main.jsbundle"
+          test -s "$RUNNER_TEMP/rn-bundles/driver-android/index.android.bundle"
+          test -s "$RUNNER_TEMP/rn-bundles/driver-ios/main.jsbundle"
 
   # ===========================================================================
-  # GUARDED: real native builds, only when the prerequisites actually exist
+  # REAL NON-GATING CHECK: unsigned Android assembleDebug on ubuntu-latest
   # ===========================================================================
   rn-android:
-    name: RN Android (assembleRelease)
+    name: RN Android (assembleDebug, unsigned CI check)
     needs: gate
-    if: needs.gate.outputs.android == 'true'
+    if: needs.gate.outputs.android_debug == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -205,32 +218,103 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Decode signing keystore
+      - name: Build contracts
+        run: pnpm --filter @ubi/contracts build
+
+      - name: Gradle assembleDebug
         working-directory: apps/${{ matrix.app }}/android
-        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.keystore
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rn-android-debug-${{ matrix.app }}-${{ github.sha }}
+          path: apps/${{ matrix.app }}/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+  # ===========================================================================
+  # GUARDED: signed store release builds & device E2E (only when secrets exist)
+  # ===========================================================================
+  rn-android-release:
+    name: RN Android (assembleRelease, signed)
+    needs: gate
+    if: needs.gate.outputs.android_release == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [rider-mobile, driver-mobile]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build contracts
+        run: pnpm --filter @ubi/contracts build
+
+      - name: Materialize signing keystore and google-services.json
+        working-directory: apps/${{ matrix.app }}/android
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.keystore
+          if [ "${{ matrix.app }}" = "rider-mobile" ]; then
+            printf '%s' "$GOOGLE_SERVICES_RIDER" > app/google-services.json
+          else
+            printf '%s' "$GOOGLE_SERVICES_DRIVER" > app/google-services.json
+          fi
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE }}
+          GOOGLE_SERVICES_RIDER: ${{ secrets.GOOGLE_SERVICES_JSON_RIDER }}
+          GOOGLE_SERVICES_DRIVER: ${{ secrets.GOOGLE_SERVICES_JSON_DRIVER }}
 
       - name: Gradle assembleRelease
         working-directory: apps/${{ matrix.app }}/android
-        # Assumes android/app/build.gradle's signingConfigs.release reads
-        # these exact env var names once the project is scaffolded (see
-        # docs/ops/NATIVE_RELEASE.md) — set that wiring up there; never
-        # hardcode a keystore path/password/alias in this workflow file.
-        run: ./gradlew assembleRelease
+        run: |
+          if [ "${{ matrix.app }}" = "rider-mobile" ]; then
+            export ANDROID_APPLICATION_ID="${{ vars.ANDROID_APPLICATION_ID_RIDER }}"
+          else
+            export ANDROID_APPLICATION_ID="${{ vars.ANDROID_APPLICATION_ID_DRIVER }}"
+          fi
+          ./gradlew assembleRelease --no-daemon
         env:
-          ANDROID_KEYSTORE_PATH: release.keystore
+          REQUIRE_FIREBASE_CONFIG: "true"
+          ANDROID_KEYSTORE_PATH: ../release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Upload APK/AAB
+      - name: Upload signed APK/AAB
         uses: actions/upload-artifact@v4
         with:
-          name: rn-android-${{ matrix.app }}-${{ github.sha }}
+          name: rn-android-release-${{ matrix.app }}-${{ github.sha }}
           path: apps/${{ matrix.app }}/android/app/build/outputs/**/*.apk
           retention-days: 14
 
@@ -238,10 +322,6 @@ jobs:
     name: RN iOS (archive)
     needs: gate
     if: needs.gate.outputs.ios == 'true'
-    # Requires: a macOS runner (this repo has none self-hosted; macos-14 is a
-    # GitHub-hosted runner, billed at a materially higher per-minute rate
-    # than ubuntu-latest — see docs/ops/NATIVE_RELEASE.md). The gate job keeps
-    # this from ever allocating a macOS runner until the prerequisites exist.
     runs-on: macos-14
     strategy:
       fail-fast: false
@@ -263,33 +343,43 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build contracts
+        run: pnpm --filter @ubi/contracts build
+
+      - name: Materialize GoogleService-Info.plist
+        working-directory: apps/${{ matrix.app }}/ios
+        run: |
+          if [ "${{ matrix.app }}" = "rider-mobile" ]; then
+            printf '%s' "$GOOGLE_PLIST_RIDER" > UbiRiderMobile/GoogleService-Info.plist
+          else
+            printf '%s' "$GOOGLE_PLIST_DRIVER" > UbiDriverMobile/GoogleService-Info.plist
+          fi
+        env:
+          GOOGLE_PLIST_RIDER: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_RIDER }}
+          GOOGLE_PLIST_DRIVER: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_DRIVER }}
+
       - name: Pods
         working-directory: apps/${{ matrix.app }}/ios
         run: pod install
 
       - name: xcodebuild archive
         working-directory: apps/${{ matrix.app }}/ios
-        # The scheme is whatever `react-native-community/cli init` named the
-        # project during the scaffold in docs/ops/NATIVE_RELEASE.md — Xcode
-        # names the scheme after the project, NOT "Release" (a configuration
-        # name, not a scheme). The previous version of this file hardcoded
-        # `-scheme Release`, which would not have matched a real generated
-        # project. Set IOS_SCHEME_RIDER / IOS_SCHEME_DRIVER as repo variables
-        # once the projects are scaffolded; there is no safe default, so an
-        # unset variable fails loudly instead of silently building the wrong
-        # target.
         run: |
           if [ "${{ matrix.app }}" = "rider-mobile" ]; then
-            SCHEME="${{ vars.IOS_SCHEME_RIDER }}"
+            SCHEME="${{ vars.IOS_SCHEME_RIDER || 'UbiRiderMobile' }}"
+            BUNDLE_ID="${{ vars.IOS_BUNDLE_ID_RIDER }}"
           else
-            SCHEME="${{ vars.IOS_SCHEME_DRIVER }}"
+            SCHEME="${{ vars.IOS_SCHEME_DRIVER || 'UbiDriverMobile' }}"
+            BUNDLE_ID="${{ vars.IOS_BUNDLE_ID_DRIVER }}"
           fi
-          if [ -z "$SCHEME" ]; then
-            echo "IOS_SCHEME_RIDER / IOS_SCHEME_DRIVER repo variable is not set for ${{ matrix.app }}." >&2
+          if [ -z "$BUNDLE_ID" ]; then
+            echo "IOS_BUNDLE_ID_RIDER / IOS_BUNDLE_ID_DRIVER repo variable is not set for ${{ matrix.app }}." >&2
             exit 1
           fi
           WORKSPACE="$(ls ./*.xcworkspace | head -1)"
-          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+          REQUIRE_FIREBASE_CONFIG=true IOS_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+            IOS_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             -archivePath "$PWD/build/${{ matrix.app }}.xcarchive" archive
 
       - name: Upload archive
@@ -309,10 +399,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Maestro flows (placeholder — not wired even when the secret exists)
-        # Intentionally fails rather than fabricating a pass: nobody has
-        # wired the real `maestro cloud` / device-farm invocation yet. Do not
-        # remove this guard when adding MAESTRO_CLOUD_API_KEY — replace this
-        # step with the real command in the same change.
         run: |
           echo "MAESTRO_CLOUD_API_KEY is set but no Maestro invocation is wired up in this workflow yet." >&2
           exit 1

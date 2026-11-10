@@ -255,6 +255,8 @@ export const CONTRACT = {
   },
   "notification-service": {
     ...NODE_COMMON,
+    UBI_IDENTITY_SECRET: "required",
+    UBI_IDENTITY_SECRET_PREVIOUS: "optional",
     JWT_SECRET: "required",
     INTERNAL_SERVICE_KEY: "required",
     NOTIFICATION_SERVICE_KEY: "required",

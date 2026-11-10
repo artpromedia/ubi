@@ -1,0 +1,24 @@
+{
+  "_comment": "PLACEHOLDER_DO_NOT_USE — Never commit real Firebase API keys. Supply real android/app/google-services.json from Firebase Console matching the store applicationId (docs/ops/NATIVE_RELEASE.md). Release builds fail loudly if google-services.json is missing or contains PLACEHOLDER_DO_NOT_USE.",
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "PLACEHOLDER_DO_NOT_USE",
+    "storage_bucket": "PLACEHOLDER_DO_NOT_USE.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+        "android_client_info": {
+          "package_name": "REPLACE_WITH_STORE_APPLICATION_ID"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "PLACEHOLDER_DO_NOT_USE"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}

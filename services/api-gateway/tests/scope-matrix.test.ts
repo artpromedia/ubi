@@ -108,6 +108,27 @@ const MATRIX: readonly MatrixCase[] = [
   },
   {
     method: "POST",
+    path: "/v1/push/devices",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "DELETE",
+    path: "/v1/push/devices",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "DELETE",
+    path: "/v1/push/devices/fcm_tok_1",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
     path: "/v1/users/me",
     full: "allow",
     limited: "deny",

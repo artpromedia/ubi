@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PLACEHOLDER_DO_NOT_USE — Never commit real Firebase API keys or APNs config.
+  Supply real ios/UbiRiderMobile/GoogleService-Info.plist from Firebase Console
+  matching the App Store Connect bundle identifier (docs/ops/NATIVE_RELEASE.md).
+  Release builds fail loudly if GoogleService-Info.plist is missing or contains PLACEHOLDER_DO_NOT_USE.
+-->
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>PLACEHOLDER_DO_NOT_USE</string>
+	<key>GCM_SENDER_ID</key>
+	<string>000000000000</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>REPLACE_WITH_STORE_BUNDLE_IDENTIFIER</string>
+	<key>PROJECT_ID</key>
+	<string>PLACEHOLDER_DO_NOT_USE</string>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:000000000000:ios:0000000000000000</string>
+</dict>
+</plist>

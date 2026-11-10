@@ -42,3 +42,27 @@ jest.mock("react-native-safe-area-context", () => {
     initialWindowMetrics: { insets: inset, frame },
   };
 });
+
+// Firebase app + messaging — App.tsx wires createFirebaseMessagingAdapter at
+// module load; individual push tests override via setPushMessagingAdapter().
+jest.mock("@react-native-firebase/app", () => ({
+  __esModule: true,
+  default: () => ({ options: {} }),
+  firebase: { app: () => ({ options: {} }) },
+}));
+
+jest.mock("@react-native-firebase/messaging", () => {
+  const messaging = () => ({
+    requestPermission: jest.fn(async () => 1),
+    registerDeviceForRemoteMessages: jest.fn(async () => {}),
+    getToken: jest.fn(async () => "test-driver-fcm-token"),
+    onTokenRefresh: jest.fn(() => () => {}),
+    onMessage: jest.fn(() => () => {}),
+    onNotificationOpenedApp: jest.fn(() => () => {}),
+    getInitialNotification: jest.fn(async () => null),
+    setBackgroundMessageHandler: jest.fn(),
+    hasPermission: jest.fn(async () => 1),
+  });
+  messaging.AuthorizationStatus = { AUTHORIZED: 1, PROVISIONAL: 2, DENIED: 0 };
+  return { __esModule: true, default: messaging };
+});

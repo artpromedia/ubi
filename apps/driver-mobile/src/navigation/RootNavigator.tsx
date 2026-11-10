@@ -6,6 +6,8 @@ import {
   type BottomTabScreenProps,
 } from "@react-navigation/bottom-tabs";
 import { useTheme, FlagGate } from "@ubi/mobile-ui";
+import { usePushLifecycle } from "@ubi/mobile-core";
+import { linking } from "./linking";
 import type {
   RootStackParamList,
   MainTabParamList,
@@ -348,6 +350,7 @@ const GatedFleetAvailability = fleetGated(FleetAvailabilityScreen);
 const GatedFleetReportIssue = fleetGated(FleetReportIssueScreen);
 function MainTabs() {
   const t = useTheme();
+  usePushLifecycle({ enabled: true, role: "driver" });
   return (
     <Tabs.Navigator
       screenOptions={{
@@ -379,6 +382,7 @@ export function RootNavigator() {
   useSessionKeeper();
   return (
     <NavigationContainer
+      linking={linking}
       theme={{
         ...DarkTheme,
         colors: { ...DarkTheme.colors, background: t.colors.bg },

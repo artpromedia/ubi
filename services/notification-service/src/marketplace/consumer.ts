@@ -197,7 +197,10 @@ export function buildMarketplacePushPorts(
           .multi()
           .rpush(
             `${prefix}pending`,
-            JSON.stringify({ ...entry, at: new Date().toISOString() }),
+            JSON.stringify({
+              ...entry,
+              at: entry.at ?? new Date().toISOString(),
+            }),
           )
           .ltrim(`${prefix}pending`, -PENDING_MAX, -1)
           .exec();
@@ -340,4 +343,129 @@ export async function startMarketplacePush(
     await commands.quit().catch(() => undefined);
     throw err;
   }
+}
+
+/**
+ * Short-window flush window (15 minutes): events older than this are stale by
+ * the time a device registers (offer/trip state has moved on and REST snapshot
+ * refresh reconciles), so they are dropped rather than spammed.
+ */
+export const DEFAULT_PENDING_FLUSH_WINDOW_MS = 15 * 60_000;
+const FLUSH_SCAN_TAIL = 500;
+
+export interface FlushPendingResult {
+  readonly flushed: number;
+  readonly skippedExpired: number;
+  readonly skippedDuplicate: number;
+}
+
+/**
+ * Reconciles recent notifications deferred while `userId` had no active push
+ * device (`no_active_device` / `all_tokens_invalidated`, CC-B04 / P1-13).
+ *
+ * Guarantees:
+ * - Short-window only (`windowMs`, default 15 min): stale entries are removed
+ *   without pushing.
+ * - Zero duplicates: each `(userId, eventId)` is claimed atomically via
+ *   `SET notif:mp:flushed:<userId>:<eventId> 1 EX 86400 NX` before sending, so
+ *   concurrent or repeated `POST /push/devices` calls never send twice.
+ * - Preference-aware: honours `ports.prefs.allows` at flush time.
+ */
+export async function flushPendingForUser(
+  commands: Redis,
+  userId: string,
+  options: {
+    readonly overrides?: PushPortOverrides;
+    readonly windowMs?: number;
+    readonly now?: Date;
+  } = {},
+): Promise<FlushPendingResult> {
+  const ports = buildMarketplacePushPorts(commands, options.overrides);
+  const prefix = options.overrides?.keyPrefix ?? DEFAULT_KEY_PREFIX;
+  const windowMs = options.windowMs ?? DEFAULT_PENDING_FLUSH_WINDOW_MS;
+  const nowMs = (options.now ?? new Date()).getTime();
+
+  let tokens = await ports.devices.activeTokens(userId);
+  if (tokens.length === 0) {
+    return { flushed: 0, skippedExpired: 0, skippedDuplicate: 0 };
+  }
+
+  const rawItems = await commands.lrange(
+    `${prefix}pending`,
+    -FLUSH_SCAN_TAIL,
+    -1,
+  );
+  let flushed = 0;
+  let skippedExpired = 0;
+  let skippedDuplicate = 0;
+
+  for (const raw of rawItems) {
+    let entry: PendingEntry;
+    try {
+      entry = JSON.parse(raw) as PendingEntry;
+    } catch {
+      continue;
+    }
+    if (entry.userId !== userId || !entry.notification) {
+      continue;
+    }
+
+    const recordedMs = entry.at ? Date.parse(entry.at) : Number.NaN;
+    if (!Number.isFinite(recordedMs) || nowMs - recordedMs > windowMs) {
+      skippedExpired += 1;
+      await commands.lrem(`${prefix}pending`, 1, raw);
+      continue;
+    }
+
+    const category: PushPrefCategory = entry.prefCategory ?? "ride";
+    if (!(await ports.prefs.allows(userId, category))) {
+      await commands.lrem(`${prefix}pending`, 1, raw);
+      continue;
+    }
+
+    const claimKey = `${prefix}flushed:${userId}:${entry.eventId}`;
+    const claimed = await commands.set(
+      claimKey,
+      "1",
+      "EX",
+      SEEN_TTL_SECONDS,
+      "NX",
+    );
+    if (claimed !== "OK") {
+      skippedDuplicate += 1;
+      await commands.lrem(`${prefix}pending`, 1, raw);
+      continue;
+    }
+
+    let sendRes: PushSendResult;
+    try {
+      sendRes = await ports.sender.send(userId, tokens, entry.notification);
+    } catch (err) {
+      sendRes = {
+        success: false,
+        error: err instanceof Error ? err.message : "flush_send_threw",
+      };
+    }
+
+    if (sendRes.invalidTokens && sendRes.invalidTokens.length > 0) {
+      await ports.devices.deactivate(sendRes.invalidTokens);
+      const invalid = new Set(sendRes.invalidTokens);
+      tokens = tokens.filter((t) => !invalid.has(t));
+    }
+
+    if (sendRes.success) {
+      flushed += 1;
+      await commands.lrem(`${prefix}pending`, 1, raw);
+    } else {
+      // Release the claim so a subsequent registration within the window can
+      // still retry.
+      await commands.del(claimKey);
+    }
+
+    if (tokens.length === 0) {
+      break;
+    }
+  }
+
+  return { flushed, skippedExpired, skippedDuplicate };
 }

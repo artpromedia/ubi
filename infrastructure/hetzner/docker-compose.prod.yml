@@ -544,9 +544,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # User routes verify the client JWT (500 without it); service routes
-      # take X-Service-Key = NOTIFICATION_SERVICE_KEY for user-service and
-      # INTERNAL_SERVICE_KEY for other callers (refused without them).
+      # User routes verify gateway-signed x-ubi-identity in production
+      # (UBI_IDENTITY_SECRET); service routes take X-Service-Key =
+      # NOTIFICATION_SERVICE_KEY for user-service and INTERNAL_SERVICE_KEY for
+      # other callers (refused without them).
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
       NOTIFICATION_SERVICE_KEY: ${NOTIFICATION_SERVICE_KEY:?NOTIFICATION_SERVICE_KEY is required}

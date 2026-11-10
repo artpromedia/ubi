@@ -19,6 +19,7 @@ import {
   getOrCreateDeviceId,
   loadSession,
   saveSession,
+  unregisterPushDevice,
 } from "@ubi/mobile-core";
 
 /** user-service wraps every body as { success, data } (UbiError -> { success:false, error }). */
@@ -201,10 +202,11 @@ export const authApi = {
     return { cityId: r.data.cityId };
   },
 
-  /** Server-side session invalidation first; the local session goes regardless. */
+  /** Deactivate push device token first while access token is still valid, then invalidate session. */
   logout: async (): Promise<void> => {
     const existing = await loadSession();
     try {
+      await unregisterPushDevice();
       await api("POST", "/v1/auth/logout", {
         ...(existing?.refreshToken
           ? { refreshToken: existing.refreshToken }

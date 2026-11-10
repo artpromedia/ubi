@@ -6,8 +6,11 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { pushLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
+import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
+import { flushPendingForUser } from "../marketplace/consumer";
 import { auth, serviceAuth } from "../middleware/auth";
 import { firebaseService } from "../providers/firebase";
 import { NotificationPriority, NotificationStatus } from "../types";
@@ -18,12 +21,22 @@ const pushRoutes = new Hono();
 // Schemas
 // ============================================
 
-const registerDeviceSchema = z.object({
-  token: z.string().min(1),
-  platform: z.enum(["ios", "android", "web"]),
-  deviceId: z.string().optional(),
-  appVersion: z.string().optional(),
-});
+// `.strict()` rejects any client-supplied `userId` in the request body so device
+// registration can bind ONLY to `c.get("userId")` from verified auth context.
+const registerDeviceSchema = z
+  .object({
+    token: z.string().min(1).max(4096),
+    platform: z.enum(["ios", "android", "web"]),
+    deviceId: z.string().min(1).max(255).optional(),
+    appVersion: z.string().min(1).max(64).optional(),
+  })
+  .strict();
+
+const unregisterDeviceBodySchema = z
+  .object({
+    token: z.string().min(1).max(4096),
+  })
+  .strict();
 
 const sendPushSchema = z.object({
   userId: z.string(),
@@ -70,7 +83,7 @@ pushRoutes.post(
     // client hints are validated but not persisted. Accepted for forward-compat.
     const { token, platform } = c.req.valid("json");
 
-    // Upsert device token
+    // Upsert device token strictly for the authenticated principal (`userId`).
     await prisma.deviceToken.upsert({
       where: {
         userId_token: { userId, token },
@@ -89,19 +102,79 @@ pushRoutes.post(
       },
     });
 
+    // Best-effort short-window flush of notifications deferred while this user
+    // had no active device token (CC-B04 / P1-13). A Redis hiccup never fails
+    // token registration itself.
+    let flushed = 0;
+    try {
+      const flushResult = await flushPendingForUser(redis, userId);
+      flushed = flushResult.flushed;
+    } catch (err) {
+      pushLogger.warn(
+        {
+          userId,
+          err: err instanceof Error ? err.message : "pending_flush_failed",
+        },
+        "Short-window pending push flush failed on device registration",
+      );
+    }
+
     return c.json({
       success: true,
       message: "Device registered for push notifications",
+      data: { flushed },
     });
   },
 );
 
 /**
- * DELETE /push/devices/:token - Unregister device
+ * DELETE /push/devices - Unregister caller's device token via body or query
+ * (safe for FCM tokens containing `:` or `/` characters).
+ */
+pushRoutes.delete("/devices", auth, async (c) => {
+  const userId = c.get("userId");
+  let token = c.req.query("token")?.trim() ?? "";
+
+  if (token.length === 0) {
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      rawBody = undefined;
+    }
+    const parsed = unregisterDeviceBodySchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "A non-empty device token is required",
+          },
+        },
+        400,
+      );
+    }
+    token = parsed.data.token;
+  }
+
+  await prisma.deviceToken.updateMany({
+    where: { userId, token },
+    data: { isActive: false },
+  });
+
+  return c.json({
+    success: true,
+    message: "Device unregistered",
+  });
+});
+
+/**
+ * DELETE /push/devices/:token - Unregister caller's device token by URL segment
  */
 pushRoutes.delete("/devices/:token", auth, async (c) => {
   const userId = c.get("userId");
-  const token = c.req.param("token");
+  const token = decodeURIComponent(c.req.param("token"));
 
   await prisma.deviceToken.updateMany({
     where: { userId, token },

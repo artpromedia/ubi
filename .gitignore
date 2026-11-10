@@ -56,7 +56,7 @@ generated/
 # Prisma
 prisma/generated/
 
-# Mobile (Flutter)
+# Mobile (Flutter — frozen reference)
 mobile/**/build/
 mobile/**/.dart_tool/
 mobile/**/.flutter-plugins
@@ -66,6 +66,25 @@ mobile/**/ios/Pods/
 mobile/**/ios/.symlinks/
 mobile/**/android/.gradle/
 mobile/**/android/local.properties
+
+# Mobile (React Native CLI — apps/rider-mobile & apps/driver-mobile)
+apps/*-mobile/android/.gradle/
+apps/*-mobile/android/.cxx/
+apps/*-mobile/android/app/.cxx/
+apps/*-mobile/android/build/
+apps/*-mobile/android/app/build/
+apps/*-mobile/android/local.properties
+apps/*-mobile/android/*.keystore
+!apps/*-mobile/android/app/debug.keystore
+apps/*-mobile/android/app/*.keystore
+!apps/*-mobile/android/app/debug.keystore
+apps/*-mobile/android/app/google-services.json
+apps/*-mobile/ios/Pods/
+apps/*-mobile/ios/build/
+apps/*-mobile/ios/.xcode.env.local
+apps/*-mobile/ios/*.xcworkspace/
+apps/*-mobile/ios/**/GoogleService-Info.plist
+apps/*-mobile/vendor/bundle/
 
 # Go
 services/**/bin/

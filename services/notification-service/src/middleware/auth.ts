@@ -1,5 +1,14 @@
 /**
  * Authentication Middleware
+ *
+ * Trust model:
+ * - Client routes crossed via api-gateway carry `x-ubi-identity` (HS256 JWS
+ *   signed with `UBI_IDENTITY_SECRET`). When present, it is verified in every
+ *   environment and never falls back on failure.
+ * - In production, `x-ubi-identity` is required unconditionally on user routes
+ *   (api-gateway strips `Authorization` before forwarding).
+ * - In development/test, direct `Authorization: Bearer <JWT_SECRET>` remains
+ *   accepted when `x-ubi-identity` is absent so direct route unit tests work.
  */
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -7,6 +16,13 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { HTTPException } from "hono/http-exception";
 import { verify } from "jsonwebtoken";
 
+import { ContractError } from "@ubi/contracts";
+
+import {
+  IDENTITY_HEADER,
+  identityVerificationKeys,
+  verifyIdentityContext,
+} from "../lib/identity-context.js";
 import { authLogger } from "../lib/logger.js";
 
 import type { Context, Next } from "hono";
@@ -46,7 +62,7 @@ function constantTimeMatches(presented: string, expected: string): boolean {
 
 /**
  * Refuses to start notification-service in production without >= 32-character
- * `INTERNAL_SERVICE_KEY` and `NOTIFICATION_SERVICE_KEY`.
+ * `UBI_IDENTITY_SECRET`, `INTERNAL_SERVICE_KEY`, and `NOTIFICATION_SERVICE_KEY`.
  */
 export function assertServiceAuthConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -54,6 +70,7 @@ export function assertServiceAuthConfig(
   if (env.NODE_ENV !== "production") {
     return;
   }
+  identityVerificationKeys(env);
   const internalKey = env.INTERNAL_SERVICE_KEY;
   if (
     internalKey === undefined ||
@@ -107,14 +124,61 @@ export function verifyServiceCaller(
   return constantTimeMatches(presentedKey, expectedKey);
 }
 
+function applyVerifiedIdentity(
+  c: Context,
+  signedHeader: string,
+): { userId: string; role: string } {
+  let keys: readonly Buffer[];
+  try {
+    keys = identityVerificationKeys(process.env);
+  } catch {
+    throw new HTTPException(503, {
+      message: "Identity verification is not configured",
+    });
+  }
+  try {
+    const principal = verifyIdentityContext(signedHeader, keys);
+    const nowSec = Math.floor(Date.now() / 1000);
+    c.set("userId", principal.userId);
+    c.set("userRole", principal.role);
+    c.set("jwtPayload", {
+      sub: principal.userId,
+      role: principal.role,
+      type: "gateway_identity",
+      iat: nowSec,
+      exp: nowSec + 60,
+    });
+    return { userId: principal.userId, role: principal.role };
+  } catch (error) {
+    if (error instanceof ContractError) {
+      throw new HTTPException(401, {
+        message: "Invalid or untrusted identity context",
+      });
+    }
+    throw new HTTPException(503, {
+      message: "Identity verification failed",
+    });
+  }
+}
+
 // ============================================
-// JWT Auth Middleware
+// User Auth Middleware (Gateway JWS + Dev JWT)
 // ============================================
 
-/**
- * Standard JWT authentication
- */
 export async function auth(c: Context, next: Next): Promise<void> {
+  const signedIdentity = c.req.header(IDENTITY_HEADER);
+  if (signedIdentity !== undefined && signedIdentity.length > 0) {
+    applyVerifiedIdentity(c, signedIdentity);
+    await next();
+    return;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new HTTPException(401, {
+      message: "Signed gateway identity context is required",
+    });
+  }
+
   const authHeader = c.req.header("Authorization");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -133,7 +197,6 @@ export async function auth(c: Context, next: Next): Promise<void> {
 
     const payload = verify(token, secret) as JWTPayload;
 
-    // Set context variables
     c.set("userId", payload.sub);
     c.set("userRole", payload.role);
     c.set("jwtPayload", payload);
@@ -148,24 +211,32 @@ export async function auth(c: Context, next: Next): Promise<void> {
 }
 
 /**
- * Optional authentication (doesn't fail if no token)
+ * Optional authentication (doesn't fail if no credentials; still rejects a
+ * forged `x-ubi-identity` header if presented).
  */
 export async function optionalAuth(c: Context, next: Next): Promise<void> {
-  const authHeader = c.req.header("Authorization");
+  const signedIdentity = c.req.header(IDENTITY_HEADER);
+  if (signedIdentity !== undefined && signedIdentity.length > 0) {
+    applyVerifiedIdentity(c, signedIdentity);
+    await next();
+    return;
+  }
 
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-
-    try {
-      const secret = process.env.JWT_SECRET;
-      if (secret) {
-        const payload = verify(token, secret) as JWTPayload;
-        c.set("userId", payload.sub);
-        c.set("userRole", payload.role);
-        c.set("jwtPayload", payload);
+  if (process.env.NODE_ENV !== "production") {
+    const authHeader = c.req.header("Authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      try {
+        const secret = process.env.JWT_SECRET;
+        if (secret) {
+          const payload = verify(token, secret) as JWTPayload;
+          c.set("userId", payload.sub);
+          c.set("userRole", payload.role);
+          c.set("jwtPayload", payload);
+        }
+      } catch {
+        // Ignore invalid tokens for optional auth in non-production
       }
-    } catch {
-      // Ignore invalid tokens for optional auth
     }
   }
 
@@ -202,22 +273,22 @@ export async function serviceAuth(c: Context, next: Next): Promise<void> {
     throw new HTTPException(401, { message: "Invalid service key" });
   }
 
-  // Log service call for audit
   authLogger.debug({ serviceName }, "Service call received");
 
   await next();
 }
 
 /**
- * Combined auth - accepts either user JWT or service key
+ * Combined auth - accepts service key or verified user identity
  */
 export async function combinedAuth(c: Context, next: Next): Promise<void> {
+  const signedIdentity = c.req.header(IDENTITY_HEADER);
   const authHeader = c.req.header("Authorization");
   const serviceKey = c.req.header("X-Service-Key");
 
   if (serviceKey) {
     await serviceAuth(c, next);
-  } else if (authHeader) {
+  } else if (signedIdentity || authHeader) {
     await auth(c, next);
   } else {
     throw new HTTPException(401, { message: "Authentication required" });

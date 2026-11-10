@@ -1,0 +1,52 @@
+# notification-service route manifest: every METHOD + Hono path the production
+# app (src/app.ts) serves; middleware is left out.
+# GENERATED — do not edit by hand.
+# Regenerate: UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/notification-service exec vitest run tests/routes-manifest.test.ts
+# Read by services/api-gateway/tests/route-contract.test.ts.
+DELETE /api/v1/notifications
+DELETE /api/v1/notifications/:id
+DELETE /api/v1/push/devices
+DELETE /api/v1/push/devices/:token
+DELETE /api/v1/templates/:id
+GET /api/v1/notifications
+GET /api/v1/notifications/:id
+GET /api/v1/notifications/badge
+GET /api/v1/preferences
+GET /api/v1/preferences/check
+GET /api/v1/preferences/unsubscribe-token
+GET /api/v1/sms/status/:messageId
+GET /api/v1/templates
+GET /api/v1/templates/:id
+GET /api/v1/templates/by-type/:type/:channel
+GET /health
+GET /health/detailed
+GET /health/live
+GET /health/ready
+PATCH /api/v1/notifications/:id/read
+PATCH /api/v1/preferences
+PATCH /api/v1/templates/:id
+POST /api/v1/email/batch
+POST /api/v1/email/receipt
+POST /api/v1/email/send
+POST /api/v1/email/transactional
+POST /api/v1/email/welcome
+POST /api/v1/notifications
+POST /api/v1/notifications/bulk
+POST /api/v1/notifications/read-all
+POST /api/v1/preferences/reset
+POST /api/v1/preferences/unsubscribe
+POST /api/v1/push/batch
+POST /api/v1/push/devices
+POST /api/v1/push/send
+POST /api/v1/push/subscribe
+POST /api/v1/push/topic
+POST /api/v1/push/unsubscribe
+POST /api/v1/sms/batch
+POST /api/v1/sms/otp
+POST /api/v1/sms/otp/verify
+POST /api/v1/sms/send
+POST /api/v1/templates
+POST /api/v1/templates/:id/activate
+POST /api/v1/templates/:id/deactivate
+POST /api/v1/templates/:id/duplicate
+POST /api/v1/templates/:id/preview

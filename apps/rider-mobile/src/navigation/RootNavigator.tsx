@@ -7,6 +7,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useTheme, FlagGate } from "@ubi/mobile-ui";
+import { usePushLifecycle } from "@ubi/mobile-core";
 import { linking } from "./linking";
 import type {
   RootStackParamList,
@@ -188,6 +189,7 @@ function RideNavigator() {
 }
 function MainTabs() {
   const t = useTheme();
+  usePushLifecycle({ enabled: true, role: "rider" });
   return (
     <Tabs.Navigator
       screenOptions={{

@@ -464,19 +464,19 @@ jobs:
           node --test infrastructure/scripts/__tests__/checkers.test.mjs
 
   # ===========================================
-  # MOBILE (FLUTTER)
+  # MOBILE (REACT NATIVE)
   # ===========================================
   rn-mobile:
-    name: RN Mobile (typecheck + jest)
+    name: RN Mobile (typecheck + jest + metro bundle)
     needs: setup
     runs-on: ubuntu-latest
     # Owner instruction (docs/launch-readiness/handoff-rn/CLAUDE.md rule 13): the
     # delivery targets are the React Native apps apps/rider-mobile and
-    # apps/driver-mobile. This job is the JS/TS gate that CAN run on ubuntu:
-    # tsc for both apps and the shared mobile packages, and jest for both apps
-    # (native modules are mocked). It is REAL and fails on error — no
-    # continue-on-error. The native iOS/Android build + device E2E gate lives in
-    # rn-native.yml and requires macOS/Android runners (see FLUTTER_TO_RN_CUTOVER).
+    # apps/driver-mobile. This job is the JS/TS + Metro bundle gate on ubuntu:
+    # tsc for both apps and the shared mobile packages, jest for both apps
+    # (native modules are mocked), and production Android + iOS Metro bundles.
+    # It is REAL and fails on error — no continue-on-error. Native APK/archive
+    # compilation + device E2E live in rn-native.yml (see docs/ops/NATIVE_RELEASE.md).
     #
     # Flutter under mobile/ is a FROZEN behavioural reference until RN acceptance
     # and is no longer analysed here.
@@ -514,6 +514,31 @@ jobs:
         run: |
           pnpm --filter @ubi/rider-mobile exec jest
           pnpm --filter @ubi/driver-mobile exec jest
+
+      - name: Metro JS bundle (Android + iOS, rider + driver)
+        run: |
+          mkdir -p "$RUNNER_TEMP/rn-bundles/rider-android" "$RUNNER_TEMP/rn-bundles/rider-ios" \
+                   "$RUNNER_TEMP/rn-bundles/driver-android" "$RUNNER_TEMP/rn-bundles/driver-ios"
+          pnpm --filter @ubi/rider-mobile exec react-native bundle \
+            --platform android --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/rider-android/index.android.bundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/rider-android"
+          pnpm --filter @ubi/rider-mobile exec react-native bundle \
+            --platform ios --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/rider-ios/main.jsbundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/rider-ios"
+          pnpm --filter @ubi/driver-mobile exec react-native bundle \
+            --platform android --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/driver-android/index.android.bundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/driver-android"
+          pnpm --filter @ubi/driver-mobile exec react-native bundle \
+            --platform ios --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/rn-bundles/driver-ios/main.jsbundle" \
+            --assets-dest "$RUNNER_TEMP/rn-bundles/driver-ios"
+          test -s "$RUNNER_TEMP/rn-bundles/rider-android/index.android.bundle"
+          test -s "$RUNNER_TEMP/rn-bundles/rider-ios/main.jsbundle"
+          test -s "$RUNNER_TEMP/rn-bundles/driver-android/index.android.bundle"
+          test -s "$RUNNER_TEMP/rn-bundles/driver-ios/main.jsbundle"
 
   # ===========================================
   # MARKETING SITE E2E (Playwright)

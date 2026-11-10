@@ -122,6 +122,9 @@ export interface PendingEntry {
   readonly eventName: string;
   readonly userId: string;
   readonly reason: string;
+  readonly prefCategory?: PushPrefCategory;
+  readonly notification?: PushNotification;
+  readonly at?: string;
 }
 
 export interface PushLogger {
@@ -414,6 +417,13 @@ export class MarketplacePushDeliverer {
       return { userId, role, outcome: "suppressed_prefs", attempts: 0 };
     }
 
+    const notification: PushNotification = {
+      title: recipient.copy.title,
+      body: recipient.copy.body,
+      type: spec.type,
+      data,
+    };
+
     let tokens = await this.ports.devices.activeTokens(userId);
     if (tokens.length === 0) {
       // Offline / no registered device: record for later retry (a token
@@ -423,6 +433,8 @@ export class MarketplacePushDeliverer {
         eventName: envelope.name,
         userId,
         reason: "no_active_device",
+        prefCategory: spec.prefCategory,
+        notification,
       });
       const sms = await this.smsFallback(envelope, spec, recipient);
       return {
@@ -433,13 +445,6 @@ export class MarketplacePushDeliverer {
         ...(sms ? { sms } : {}),
       };
     }
-
-    const notification: PushNotification = {
-      title: recipient.copy.title,
-      body: recipient.copy.body,
-      type: spec.type,
-      data,
-    };
 
     let attempts = 0;
     let lastError = "";
@@ -475,6 +480,8 @@ export class MarketplacePushDeliverer {
           eventName: envelope.name,
           userId,
           reason: "all_tokens_invalidated",
+          prefCategory: spec.prefCategory,
+          notification,
         });
         const sms = await this.smsFallback(envelope, spec, recipient);
         return {

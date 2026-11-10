@@ -1,169 +1,70 @@
-# RN native release — what must exist before a real device build
+# RN native release — what is verified in-repo and what remains external
 
-Status as of this pass (C11): **JS-complete, natively unverified.** The RN
-apps' TypeScript, jest and lint all run and pass in CI today
-(`.github/workflows/ci.yml` `rn-mobile` job; `.github/workflows/rn-native.yml`
-`rn-verify` job). Neither app has ever produced an installable Android or iOS
-build in this environment, because neither has a native project directory.
-This document is the exact, checkable list of what closes that gap — see
-`docs/launch/GAP_REGISTER.md` row **G06** and
-`docs/launch-readiness/handoff-rn/FLUTTER_TO_RN_CUTOVER.md` §3–4 for the
-owner rules this must satisfy.
+Status after **CC-B02 + CC-B04**: **JS + Metro bundle + native project scaffolds verified in-repo; signed store builds and physical/emulator device runs remain external.**
+
+Both `apps/rider-mobile` (`UbiRiderMobile`, JS root `"UBI"`) and `apps/driver-mobile` (`UbiDriverMobile`, JS root `"UBIDriver"`) now carry:
+
+- `@react-native-community/cli@18.0.0`, `@react-native-community/cli-platform-android@18.0.0`, `@react-native-community/cli-platform-ios@18.0.0`, `@react-native/codegen`, `@react-native/gradle-plugin`, and `@babel/runtime` pinned in `package.json` and `pnpm-lock.yaml` (offline frozen lockfile install verified).
+- Monorepo-aware `metro.config.js` (`watchFolders`, `nodeModulesPaths`, `unstable_enableSymlinks: true`, and `extraNodeModules` pinning singletons `react`, `react-native`, `@babel/runtime`, and `@tanstack/react-query` to each app's `node_modules`).
+- Official React Native `0.79.7` `android/` and `ios/` project directories, `Gemfile`, `.watchmanconfig`, and `firebase.json`.
+- Loud build-time guards for store identifiers, signing credentials, and Firebase config files (`google-services.json` / `GoogleService-Info.plist`) so release builds fail immediately if real credentials are omitted or left at placeholder values.
 
 ## What is real today
 
-| Check                                     | Where it runs                                                                                           | Evidence                                |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| tsc (shared mobile packages + both apps)  | `ci.yml` → `rn-mobile`; `rn-native.yml` → `rn-verify`                                                   | 0 errors, both places, verified locally |
-| jest (both apps)                          | same two jobs                                                                                           | rider 37/37, driver 71/71               |
-| eslint (both apps)                        | `rn-native.yml` → `rn-verify` (new); repo-wide `lint` job in `ci.yml`/`test.yml` also covers these apps | 0 errors (98 and 45 warnings only)      |
-| Metro bundle dry-run                      | **not run** — see "Newly-found gap" below                                                               | fails today, documented not faked       |
-| Android `assembleRelease` / iOS `archive` | `rn-native.yml` → `rn-android` / `rn-ios` (guarded, inert)                                              | never executed — no native project      |
-| Device E2E (Maestro)                      | `rn-native.yml` → `rn-e2e` (guarded, inert)                                                             | never executed — no device farm         |
+| Check                                          | Where it runs                                                | Status / Evidence                                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile --offline`     | Local + CI                                                   | Verified locally (0 network calls, lockfile in sync)                                              |
+| `tsc --noEmit` (shared packages + both apps)   | `ci.yml` → `rn-mobile`; `rn-native.yml` → `rn-verify`        | 0 errors across `@ubi/mobile-tokens`, `@ubi/mobile-ui`, `@ubi/mobile-core`, rider & driver apps   |
+| `jest` (both apps)                             | `ci.yml` → `rn-mobile`; `rn-native.yml` → `rn-verify`        | Verified locally (native modules mocked honestly)                                                 |
+| `eslint` (both apps)                           | `ci.yml` → `lint`; `rn-native.yml` → `rn-verify`             | 0 errors on both apps                                                                             |
+| Production Metro JS bundle (`android` + `ios`) | `ci.yml` → `rn-mobile`; `rn-native.yml` → `rn-verify`        | Verified locally (`react-native bundle --dev false` produces Android & iOS bundles for both apps) |
+| Android `./gradlew assembleDebug` (unsigned)   | `rn-native.yml` → `rn-android` (`ubuntu-latest`, non-gating) | Wired on `ubuntu-latest` with `android-actions/setup-android@v3` + Temurin JDK 17                 |
+| Android `./gradlew assembleRelease` (signed)   | `rn-native.yml` → `rn-android-release` (guarded)             | Guarded — requires store `applicationId`, release keystore, and real `google-services.json`       |
+| iOS `xcodebuild archive` (`macos-14`, signed)  | `rn-native.yml` → `rn-ios` (guarded)                         | Guarded — requires store bundle id, Apple signing cert/profile, and `GoogleService-Info.plist`    |
+| Device E2E (Maestro)                           | `rn-native.yml` → `rn-e2e` (guarded)                         | Guarded — requires device farm / emulator (`MAESTRO_CLOUD_API_KEY`)                               |
 
-`rn-native.yml` is intentionally **not** part of the `ci-success` merge gate
-and is not a required branch-protection check. When the guarded jobs run
-without the prerequisites below, they print exactly what is missing and
-succeed — that is a report of "not attempted", never a fabricated pass.
+> **Honesty note:** No physical device or emulator run is claimed in this repository pass. `rn-native.yml` stays separate from `ci.yml`'s `ci-success` merge gate so guarded skips (`not attempted: no signing identity / no device farm`) can never be mistaken for signed store or device-run acceptance.
 
-## 1. Native project directories (do not exist)
+## 1. Native scaffolds & pnpm monorepo wiring
 
-Neither `apps/rider-mobile` nor `apps/driver-mobile` has an `android/` or
-`ios/` directory. **These are plain React Native CLI apps, not Expo** —
-there is no `app.config.*` and no `expo` dependency in either
-`package.json` (only `react-native ^0.79.0` + `react ^19.0.0`). The
-previous version of `rn-native.yml` generated missing native dirs with
-`npx expo prebuild`, which is wrong for a non-Expo project and has been
-removed.
+- **Android (`apps/{rider,driver}-mobile/android/`):**
+  - Generated from `@react-native-community/template@0.79.7` (`compileSdk 35`, `minSdk 24`, `targetSdk 35`, Kotlin `2.0.21`, Hermes + New Architecture enabled).
+  - `REACT_NATIVE_NODE_MODULES_DIR` is set on both `rootProject.ext` and `:app` so native modules resolved inside `node_modules/.pnpm` (`react-native-reanimated`, `react-native-svg`, `react-native-gesture-handler`, `@react-native-community/netinfo`) find the app's `react-native` package cleanly.
+  - `@notifee/react-native`'s bundled local Maven repository (`$rootDir/../node_modules/@notifee/react-native/android/libs`) is registered in `android/build.gradle`.
+  - Deep-link intent filters match `src/navigation/linking.ts` (`ubi://`, `https://ubi.africa`, `https://links.ubi.africa` for rider; `ubidriver://`, `https://driver.ubi.africa` for driver).
+- **iOS (`apps/{rider,driver}-mobile/ios/`):**
+  - Xcode projects/schemes `UbiRiderMobile` (`withModuleName: "UBI"`) and `UbiDriverMobile` (`withModuleName: "UBIDriver"`).
+  - `Podfile` resolves `react_native_pods.rb` via Node, sets `$RNFirebaseAsStaticFramework = true`, and enables modular headers for `GoogleUtilities` and `FirebaseCoreInternal`.
+  - `AppDelegate.swift` forwards URL schemes and Universal Links to `RCTLinkingManager` and calls `FirebaseApp.configure()` when a real `GoogleService-Info.plist` is bundled.
 
-The pinned generation command (from
-`docs/launch-readiness/handoff-rn/CLOSING_THE_GAPS.md` Gap 2, step 1 — do
-not deviate without recording why):
+## 2. Store identities & Firebase placeholders (never commit real keys)
 
-```
-npx @react-native-community/cli init UbiRiderMobile --skip-install
-# copy ios/, android/, metro.config.js, babel.config.js, Gemfile,
-# .watchmanconfig from the generated temp project into apps/rider-mobile/
-# repeat with a driver-named temp project into apps/driver-mobile/
-```
+Per `docs/launch-readiness/handoff-rn/FLUTTER_TO_RN_CUTOVER.md` §3, production builds must preserve the existing Flutter apps' store listings:
 
-Keep `App.tsx`, `index.js`, `app.json`, and `src/**` from this repo — only
-the native scaffolding and the four/five named config files are copied in.
-Set the bundle id / applicationId in the copied `android/app/build.gradle`
-and `ios/*/Info.plist` from the store consoles (§2), never left at the
-scaffold tool's placeholder values.
+- **Debug builds (`assembleDebug` / Xcode `Debug`):** default to explicit `.debug` identifiers (`com.ubi.rider.debug` / `com.ubi.driver.debug`) so an unsigned CI build can never collide with or masquerade as a store listing. If `google-services.json` / `GoogleService-Info.plist` is absent in `Debug` (and `REQUIRE_FIREBASE_CONFIG` is not `"true"`), the build logs a warning and skips Google Services resource injection.
+- **Release builds (`assembleRelease` / Xcode `Release`):** fail loudly (`GradleException` / Run Script `exit 1`) if any of the following are missing or left at placeholder values:
+  1. `ANDROID_APPLICATION_ID` (or `-PUBI_APPLICATION_ID`) / `IOS_BUNDLE_IDENTIFIER` matching Play Console / App Store Connect (`.debug` suffixes are rejected).
+  2. Release signing credentials (`ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` on Android; Apple signing certificate + provisioning profile on iOS).
+  3. Real untracked `android/app/google-services.json` / `ios/<Scheme>/GoogleService-Info.plist` copied from the tracked `.placeholder` templates and populated from Firebase Console (`PLACEHOLDER_DO_NOT_USE` sentinel is rejected; real filenames are gitignored).
 
-**Newly-found gap, discovered while implementing this pass:** neither app's
-`package.json` lists `@react-native-community/cli` as a dependency (it is
-what `npx react-native <command>` resolves to; `react-native`'s own bin only
-re-exports to it). Verified locally: `react-native bundle` and
-`react-native start`/`run-android`/`run-ios` all currently exit 1 with
-_"react-native depends on `@react-native-community/cli` for cli
-commands"_. The scaffold step above will pull that dependency into the
-_temporary_ project it generates; whoever runs it must also add it to
-`apps/rider-mobile/package.json` and `apps/driver-mobile/package.json`
-(and commit the lockfile) — a package.json/lockfile change, which is
-outside this prompt's writable scope (`.github/workflows/**`,
-`infrastructure/**`, `k8s/**`, `docs/**`), so it is recorded here rather
-than silently worked around. Until it lands, no Metro bundle dry-run can be
-added to CI as a real, passing step.
+## 3. External CI variables and secrets required for release & device gates
 
-## 2. Store identities to preserve (not in the repo; pull from the consoles)
+| Name                                                             | Kind          | Used by                      | Purpose                                                            |
+| ---------------------------------------------------------------- | ------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `ANDROID_APPLICATION_ID_RIDER` / `ANDROID_APPLICATION_ID_DRIVER` | repo variable | `rn-android-release`         | Exact Play Console `applicationId` matching the Flutter listings   |
+| `ANDROID_KEYSTORE`                                               | secret        | `gate`, `rn-android-release` | Base64-encoded upload/release keystore                             |
+| `ANDROID_KEYSTORE_PASSWORD`                                      | secret        | `rn-android-release`         | Keystore password                                                  |
+| `ANDROID_KEY_ALIAS`                                              | secret        | `rn-android-release`         | Signing key alias                                                  |
+| `ANDROID_KEY_PASSWORD`                                           | secret        | `rn-android-release`         | Signing key password                                               |
+| `GOOGLE_SERVICES_JSON_RIDER` / `GOOGLE_SERVICES_JSON_DRIVER`     | secret        | `gate`, `rn-android-release` | Real Firebase `google-services.json` contents for each Android app |
+| `IOS_BUNDLE_ID_RIDER` / `IOS_BUNDLE_ID_DRIVER`                   | repo variable | `gate`, `rn-ios`             | Exact App Store Connect bundle identifiers                         |
+| `IOS_SCHEME_RIDER` / `IOS_SCHEME_DRIVER`                         | repo variable | `rn-ios` (optional override) | Defaults to `UbiRiderMobile` / `UbiDriverMobile`                   |
+| `IOS_DISTRIBUTION_CERTIFICATE_P12`                               | secret        | `gate`, `rn-ios`             | Apple distribution certificate                                     |
+| `IOS_CERTIFICATE_PASSWORD`                                       | secret        | `rn-ios`                     | `.p12` password                                                    |
+| `IOS_PROVISIONING_PROFILE`                                       | secret        | `rn-ios`                     | Provisioning profile matching the store bundle identifier          |
+| `GOOGLE_SERVICE_INFO_PLIST_RIDER` / `..._DRIVER`                 | secret        | `gate`, `rn-ios`             | Real Firebase `GoogleService-Info.plist` contents for each iOS app |
+| `MAESTRO_CLOUD_API_KEY`                                          | secret        | `gate`, `rn-e2e`             | Device farm / Maestro Cloud API credential                         |
 
-Per `FLUTTER_TO_RN_CUTOVER.md` §3, the RN apps must ship under **exactly**
-the Flutter apps' existing identifiers — never a newly generated identifier
-of any kind:
+## 4. Definition of done for full native cutover (`G06` / `P0-02` ops half)
 
-- Bundle id (iOS) / `applicationId` (Android)
-- Signing certificate / keystore (see §3 below)
-- URL schemes and Universal Link / App Link domains
-- Push sender IDs (FCM/APNs)
-
-The repo only has display names today: rider `app.json` → `"UBI"`
-(`_note`: "Keep the store-facing name identical to the Flutter listing"),
-driver `app.json` → `"UBIDriver"` / `"UBI Driver"`. None of the actual
-identifiers are checked in anywhere in this repo (`mobile/` — the frozen
-Flutter reference — does not contain native `Info.plist`/`build.gradle`
-files either; this environment cannot read the store consoles or the
-signing store). Pull them from App Store Connect, Play Console, and the
-signing store, and put the values in release config, not in code, per the
-cutover doc.
-
-## 3. CI secrets and variables required (none exist in this repo today)
-
-| Name                                     | Kind          | Used by                        | Purpose                                                       |
-| ---------------------------------------- | ------------- | ------------------------------ | ------------------------------------------------------------- |
-| `ANDROID_KEYSTORE`                       | secret        | `rn-native.yml` → `rn-android` | base64-encoded release keystore (gate + decode)               |
-| `ANDROID_KEYSTORE_PASSWORD`              | secret        | `rn-android`                   | keystore password                                             |
-| `ANDROID_KEY_ALIAS`                      | secret        | `rn-android`                   | signing key alias                                             |
-| `ANDROID_KEY_PASSWORD`                   | secret        | `rn-android`                   | signing key password                                          |
-| `IOS_DISTRIBUTION_CERTIFICATE_P12`       | secret        | `rn-ios`                       | Apple distribution certificate (gate check)                   |
-| `IOS_CERTIFICATE_PASSWORD`               | secret        | `rn-ios`                       | .p12 password                                                 |
-| `IOS_PROVISIONING_PROFILE`               | secret        | `rn-ios`                       | provisioning profile matching the bundle id                   |
-| `IOS_SCHEME_RIDER` / `IOS_SCHEME_DRIVER` | repo variable | `rn-ios`                       | the Xcode scheme name the scaffold actually produced (see §4) |
-| `MAESTRO_CLOUD_API_KEY`                  | secret        | `rn-e2e`                       | device farm / Maestro Cloud credential                        |
-
-None of these are set. `rn-native.yml`'s guarded jobs check for them at
-runtime and never invent, hardcode, or fall back to a placeholder value for
-any of them — an unset value fails the archive step loudly (`IOS_SCHEME_*`)
-or leaves the job in "skipped: here's exactly why" success (everything
-else).
-
-## 4. Wrong assumptions in the previous `rn-native.yml`, corrected in this pass
-
-1. **`npx expo prebuild`** — removed. This is not an Expo project (§1).
-2. **`-scheme Release`** in the iOS archive step — `Release` is a build
-   _configuration_, not a _scheme_; Xcode names the scheme after the
-   project passed to `react-native-community/cli init` (e.g.
-   `UbiRiderMobile`), not "Release". Replaced with `IOS_SCHEME_RIDER` /
-   `IOS_SCHEME_DRIVER` repo variables that must be set once the real scheme
-   name is known — there is no safe literal to default to, so an unset
-   variable now fails the step instead of silently building whatever
-   Xcode's default resolution picks.
-3. **Implicit working directory via a leading `cd`** — replaced with the
-   `working-directory:` step field in both the Android and iOS jobs, so the
-   directory a step runs in is visible from its declaration.
-4. **No signing wiring at all** — `assembleRelease` was previously invoked
-   with no keystore, which would have produced an unsigned/debug-signed
-   build even if the `android/` project had existed. Signing secrets are
-   now decoded to a keystore file and passed as env vars; `build.gradle`'s
-   `signingConfigs.release` must read those exact env var names once the
-   project is scaffolded (§1).
-
-## 5. The macOS / device-runner dependency
-
-- `rn-ios` requires `runs-on: macos-14` — a GitHub-hosted macOS runner.
-  These are billed at a materially higher per-minute rate than
-  `ubuntu-latest` and were not exercised in this environment (no macOS
-  runner is available here to prove the job green; only its structure and
-  YAML validity were verified).
-- `rn-e2e` requires an Android emulator or a device farm (Maestro Cloud or
-  equivalent) — none is configured. No self-hosted or GitHub-hosted device
-  runner was available in this environment either.
-- Both are genuine external dependencies, not something this pass can
-  close from within the sandbox it ran in.
-
-## 6. Other decisions already made that native acceptance depends on
-
-From `CLOSING_THE_GAPS.md` Gap 5 (recorded so this stays consistent going
-forward, not re-litigated here):
-
-- **RN version / React pairing**: RN latest stable paired with React 19
-  (matches web) — already reflected in both apps' `package.json`
-  (`react-native ^0.79.0`, `react ^19.0.0`).
-- **Driver background location library**: `react-native-background-geolocation`
-  (commercial licence) was the default decision over the alternatives. The
-  licence has not been purchased in this environment; this blocks G05
-  (driver location telemetry) independently of the native build gate, and
-  is a real spend decision for the project owner, not something to
-  substitute a free fork for silently.
-
-## Definition of done for this gap (G06)
-
-Per `FLUTTER_TO_RN_CUTOVER.md` §4 / `CLAUDE.md` rule 30: `rn-android`,
-`rn-ios` and `rn-e2e` green with artifact names carrying the commit SHA,
-for **both** apps, on real signing and a real device/emulator — no
-`continue-on-error`, no skipped suites, no manual pass override. Until
-then, this migration stays reported as **JS-complete but not natively
-accepted**, exactly as `docs/launch-readiness/rn-migration-status.md`
-already states.
+Per `FLUTTER_TO_RN_CUTOVER.md` §4 / `CLAUDE.md` rule 30: `rn-android-release`, `rn-ios`, and `rn-e2e` green with commit-SHA artifacts for **both** apps on real signing credentials, real FCM/APNs credentials, and a real device/emulator.

@@ -401,6 +401,23 @@ const CITY_SCOPED_USER_ROLES: ReadonlySet<string> = new Set([
  */
 export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/devices", anyOf: ["device:enroll"] },
+  // Exact push device token registration & unregistration
+  // (routes/push-devices.ts, CC-B04 / P1-13): gated by `profile:read` so every
+  // authenticated role (and a new `limited`-mode device) can register/remove
+  // its own FCM token while service-only `/push/send`, `/push/batch`, and
+  // `/push/topic` stay unrouted.
+  {
+    methods: ["POST", "DELETE"],
+    prefix: "/v1/push/devices",
+    exact: true,
+    anyOf: ["profile:read"],
+  },
+  {
+    methods: ["DELETE"],
+    prefix: "/v1/push/devices/:token",
+    pattern: /^\/v1\/push\/devices\/[^/]+$/,
+    anyOf: ["profile:read"],
+  },
   { methods: ["POST"], prefix: "/v1/auth/city", anyOf: ["profile:read"] },
   { methods: ["POST"], prefix: "/v1/auth/logout", anyOf: ["profile:read"] },
   { methods: "*", prefix: "/v1/auth/step-up", anyOf: ["auth:step_up"] },

@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Screen, Text, Card, Row, Button } from "@ubi/mobile-ui";
-import { useFlag } from "@ubi/mobile-core";
+import { useFlag, usePushPermissionBanner } from "@ubi/mobile-core";
 import { TEST_IDS } from "@ubi/contracts";
 import { accountApi } from "../../api/account";
 import { authApi } from "../../api/auth";
@@ -22,11 +22,28 @@ export function ProfileScreen() {
     Nav & { reset: Reset; navigate: (name: string) => void }
   >();
   const fleetOn = useFlag("fleet");
+  const pushBanner = usePushPermissionBanner();
   const q = useQuery({ queryKey: ["account", "me"], queryFn: accountApi.me });
   const [loggingOut, setLoggingOut] = useState(false);
   const p = q.data;
   return (
     <Screen title="Profile">
+      {pushBanner.isOff ? (
+        <Card testID="driver.profile.notificationsOff">
+          <Text variant="title">Notifications are off</Text>
+          <Text variant="bodySm" tone="text2">
+            Ride invitations, booking reminders, and route-change alerts won’t
+            appear while notifications are turned off in your device settings.
+          </Text>
+          <Button
+            testID="driver.profile.openNotificationSettings"
+            label="Open settings"
+            kind="secondary"
+            accessibilityLabel="Open notification settings"
+            onPress={() => void pushBanner.openSettings()}
+          />
+        </Card>
+      ) : null}
       {q.isError ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : !p ? (

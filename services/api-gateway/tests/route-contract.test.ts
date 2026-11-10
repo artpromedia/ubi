@@ -66,6 +66,7 @@ import {
   type ProxyRule,
   type ServiceName,
 } from "../src/routes/proxy-map";
+import { PUSH_DEVICE_ROUTES } from "../src/routes/push-devices";
 import {
   TRIP_ACCESS_ROUTES,
   resetTripAccessLimiter,
@@ -134,6 +135,12 @@ const MANIFEST_SOURCES: Partial<Record<ServiceName, ManifestSource>> = {
     style: "hono",
     regenerate:
       "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/config-service exec vitest run tests/unit/routes-manifest.test.ts",
+  },
+  "notification-service": {
+    file: "services/notification-service/tests/routes.manifest",
+    style: "hono",
+    regenerate:
+      "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/notification-service exec vitest run tests/routes-manifest.test.ts",
   },
 };
 
@@ -1684,6 +1691,28 @@ const SERVICE_ONLY_ROUTES: readonly {
     reason:
       "internal contract B: payment-service reads signed remittance terms and hours by service key (FLEET_PAYMENT_SERVICE_KEY); never a client route",
   },
+  {
+    service: "notification-service",
+    method: "POST",
+    path: "/v1/push/send",
+    servicePath: "/api/v1/push/send",
+    reason:
+      "service-to-service push dispatch (serviceAuth); clients may register/unregister only their own device token via exact /v1/push/devices routes (CC-B04)",
+  },
+  {
+    service: "notification-service",
+    method: "POST",
+    path: "/v1/push/batch",
+    servicePath: "/api/v1/push/batch",
+    reason: "service-to-service batch push dispatch (serviceAuth), as above",
+  },
+  {
+    service: "notification-service",
+    method: "POST",
+    path: "/v1/push/topic",
+    servicePath: "/api/v1/push/topic",
+    reason: "service-to-service topic push dispatch (serviceAuth), as above",
+  },
 ];
 
 /**
@@ -2295,6 +2324,94 @@ describe("the exact ops wallet-credit family reaches payment-service", () => {
     ]),
   )(
     "answers 404 for unrouted %s %s (no wildcard on /ops/wallet-credits/*)",
+    async (method, clientPath) => {
+      const result = await sendThroughGateway(method, clientPath);
+      expect(result.status).toBe(404);
+      expect(result.code).toBe("NOT_FOUND");
+      expect(result.arrivals).toEqual([]);
+    },
+  );
+});
+
+const PUSH_DEVICES: readonly {
+  readonly method: "POST" | "DELETE";
+  readonly pattern: string;
+  readonly path: string;
+  readonly downstream: string;
+  readonly source: string;
+}[] = [
+  {
+    method: "POST",
+    pattern: "/push/devices",
+    path: "/v1/push/devices",
+    downstream: "/api/v1/push/devices",
+    source: "packages/mobile-core src/push.ts",
+  },
+  {
+    method: "DELETE",
+    pattern: "/push/devices",
+    path: "/v1/push/devices?token=fcm_tok_1",
+    downstream: "/api/v1/push/devices",
+    source: "packages/mobile-core src/push.ts",
+  },
+  {
+    method: "DELETE",
+    pattern: "/push/devices/:token{[^/]+}",
+    path: "/v1/push/devices/fcm%3Atok%2F1",
+    downstream: "/api/v1/push/devices/fcm%3Atok%2F1",
+    source: "packages/mobile-core src/push.ts",
+  },
+];
+
+const PUSH_DEVICE_UNROUTED_PROBES: readonly {
+  readonly method: string;
+  readonly path: string;
+}[] = [
+  { method: "GET", path: "/v1/push/devices" },
+  { method: "PUT", path: "/v1/push/devices/fcm_tok_1" },
+  { method: "POST", path: "/v1/push/subscribe" },
+  { method: "POST", path: "/v1/push/unsubscribe" },
+];
+
+describe("the exact push device family reaches notification-service", () => {
+  it("has a case for every push device route", () => {
+    expect(
+      PUSH_DEVICES.map(
+        (testCase) => `${testCase.method} ${testCase.pattern}`,
+      ).sort(),
+    ).toEqual(
+      PUSH_DEVICE_ROUTES.map(
+        (route) => `${route.method} ${route.pattern}`,
+      ).sort(),
+    );
+  });
+
+  it.each(
+    PUSH_DEVICES.map((testCase) => [testCase.method, testCase.path, testCase]),
+  )("%s %s", async (method, _path, testCase) => {
+    const manifest = loadManifest("notification-service");
+    expect(manifest).toBeDefined();
+    if (manifest === undefined) return;
+    expect(
+      manifestServes(manifest, method, testCase.downstream),
+      `${method} ${testCase.path} (${testCase.source}) maps to notification-service ${method} ${testCase.downstream}, which ${manifest.source.file} does not serve`,
+    ).toBe(true);
+
+    const result = await sendThroughGateway(method, testCase.path);
+    expect(result.status).toBe(200);
+    expect(result.arrivals).toEqual([
+      {
+        service: "notification-service",
+        url: `${testCase.downstream}${queryOf(testCase.path)}`,
+        method,
+      },
+    ]);
+  });
+
+  it.each(
+    PUSH_DEVICE_UNROUTED_PROBES.map((entry) => [entry.method, entry.path]),
+  )(
+    "answers 404 for unrouted %s %s (no wildcard on /push/*)",
     async (method, clientPath) => {
       const result = await sendThroughGateway(method, clientPath);
       expect(result.status).toBe(404);

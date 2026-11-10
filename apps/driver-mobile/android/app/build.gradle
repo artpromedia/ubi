@@ -1,0 +1,125 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+// pnpm monorepo: native modules resolved inside node_modules/.pnpm read this extension property
+// to locate the app's react-native installation instead of walking up .pnpm.
+project.ext.set("REACT_NATIVE_NODE_MODULES_DIR", file("../../node_modules/react-native"))
+
+react {
+    root = file("../../")
+    reactNativeDir = file("../../node_modules/react-native")
+    codegenDir = file("../../node_modules/@react-native/codegen")
+    cliFile = file("../../node_modules/react-native/cli.js")
+    autolinkLibrariesWithApp()
+}
+
+def enableProguardInReleaseBuilds = false
+def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+
+// Store applicationId MUST come from Play Console release config on release builds
+// (docs/ops/NATIVE_RELEASE.md §2). Debug builds use an explicit .debug suffix so
+// an unsigned CI check never masquerades as a store binary.
+def configuredApplicationId = (System.getenv("ANDROID_APPLICATION_ID") ?: project.findProperty("UBI_APPLICATION_ID")?.toString())?.trim()
+def effectiveApplicationId = (configuredApplicationId != null && !configuredApplicationId.isEmpty())
+    ? configuredApplicationId
+    : "com.ubi.driver.debug"
+
+def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")?.trim()
+def keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+def keyAliasValue = System.getenv("ANDROID_KEY_ALIAS")?.trim()
+def keyPasswordValue = System.getenv("ANDROID_KEY_PASSWORD")
+def hasReleaseSigning = keystorePath && keystorePassword && keyAliasValue && keyPasswordValue
+
+def googleServicesJson = file("google-services.json")
+def hasRealGoogleServices = googleServicesJson.exists() && !googleServicesJson.getText("UTF-8").contains("PLACEHOLDER_DO_NOT_USE")
+
+def requestedTasks = gradle.startParameter.taskNames.collect { it.toLowerCase() }
+def isReleaseTaskRequested = requestedTasks.any { it.contains("release") }
+def requireFirebaseConfig = isReleaseTaskRequested || System.getenv("REQUIRE_FIREBASE_CONFIG") == "true"
+
+if (googleServicesJson.exists() && !hasRealGoogleServices) {
+    throw new GradleException(
+        "apps/driver-mobile/android/app/google-services.json contains placeholder values. " +
+        "Supply the real Firebase configuration from Firebase Console (never commit real keys) — see docs/ops/NATIVE_RELEASE.md."
+    )
+}
+
+if (requireFirebaseConfig && !hasRealGoogleServices) {
+    throw new GradleException(
+        "Missing apps/driver-mobile/android/app/google-services.json. " +
+        "Copy from google-services.json.placeholder and populate from Firebase Console via CI secrets or local untracked config — see docs/ops/NATIVE_RELEASE.md."
+    )
+}
+
+if (isReleaseTaskRequested) {
+    if (!configuredApplicationId || configuredApplicationId.endsWith(".debug")) {
+        throw new GradleException(
+            "Release build for driver-mobile requires ANDROID_APPLICATION_ID (or -PUBI_APPLICATION_ID) matching the existing Play Console listing — see docs/ops/NATIVE_RELEASE.md §2."
+        )
+    }
+    if (!hasReleaseSigning) {
+        throw new GradleException(
+            "Release build for driver-mobile requires ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD — see docs/ops/NATIVE_RELEASE.md §3."
+        )
+    }
+}
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    namespace "africa.ubi.driver"
+    defaultConfig {
+        applicationId effectiveApplicationId
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "0.0.1"
+    }
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+dependencies {
+    implementation("com.facebook.react:react-android")
+
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}
+
+if (hasRealGoogleServices) {
+    apply plugin: "com.google.gms.google-services"
+} else {
+    logger.warn("WARNING [driver-mobile]: android/app/google-services.json not present; Google Services plugin skipped for debug build (FCM inactive until real config is supplied).")
+}
