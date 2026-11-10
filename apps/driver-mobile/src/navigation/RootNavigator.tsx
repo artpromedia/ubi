@@ -20,6 +20,8 @@ import { HomeScreen } from "../screens/home/HomeScreen";
 import { IncentivesScreen } from "../screens/incentives/IncentivesScreen";
 import { CommissionDetailScreen } from "../screens/incentives/CommissionDetailScreen";
 import { StatementScreen } from "../screens/earnings/StatementScreen";
+import { PayoutsScreen } from "../screens/earnings/PayoutsScreen";
+import { CashoutScreen } from "../screens/earnings/CashoutScreen";
 import { MarketplaceGate } from "../screens/marketplace/MarketplaceGate";
 import { RequestFeedContainer } from "../screens/marketplace/RequestFeedContainer";
 import { RequestDetailContainer } from "../screens/marketplace/RequestDetailContainer";
@@ -124,16 +126,10 @@ function EarningsNavigator() {
         component={FeatureUnavailableScreen}
         initialParams={{ feature: "TripDetail" } as never}
       />
-      <Earn.Screen
-        name="Payouts"
-        component={FeatureUnavailableScreen}
-        initialParams={{ feature: "Payouts" } as never}
-      />
-      <Earn.Screen
-        name="Cashout"
-        component={FeatureUnavailableScreen}
-        initialParams={{ feature: "Cashout" } as never}
-      />
+      {/* CC-B03: PayoutsScreen gates on provider_payments; CashoutScreen gates
+          on provider_payments + wallet_nip. */}
+      <Earn.Screen name="Payouts" component={PayoutsScreen} />
+      <Earn.Screen name="Cashout" component={CashoutScreen} />
     </Earn.Navigator>
   );
 }

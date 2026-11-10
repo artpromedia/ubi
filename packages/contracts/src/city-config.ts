@@ -176,6 +176,35 @@ export const MarketplacePolicySchema = z.object({
 });
 export type MarketplacePolicy = z.infer<typeof MarketplacePolicySchema>;
 
+export const OpsCreditPolicySchema = z
+  .object({
+    /** Ceiling on a single ops credit to a driver's commission wallet (minor units). */
+    maxPerCreditMinor: z.number().int().positive(),
+    /** Ceiling on one driver's cumulative ops credits in a city calendar day. */
+    maxDriverDailyMinor: z.number().int().positive(),
+    /** Ceiling on cumulative ops credits across the city in a city calendar day. */
+    maxCityDailyMinor: z.number().int().positive(),
+    /** Closed per-city reason codes operators must choose from. */
+    reasonCodes: z.array(z.string().min(1).max(64)).min(1),
+  })
+  .superRefine((policy, ctx) => {
+    if (policy.maxPerCreditMinor > policy.maxDriverDailyMinor) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maxPerCreditMinor"],
+        message: "maxPerCreditMinor cannot exceed maxDriverDailyMinor",
+      });
+    }
+    if (policy.maxDriverDailyMinor > policy.maxCityDailyMinor) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maxDriverDailyMinor"],
+        message: "maxDriverDailyMinor cannot exceed maxCityDailyMinor",
+      });
+    }
+  });
+export type OpsCreditPolicy = z.infer<typeof OpsCreditPolicySchema>;
+
 export const CityConfigSchema = z.object({
   cityId: z.string().min(1),
   version: z.number().int().positive(),
@@ -208,9 +237,23 @@ export const CityConfigSchema = z.object({
   // Fleet availability calendar policy (A05); without it config-service
   // strips the block and fleet-service falls back to its defaults.
   fleet: FleetPolicySchema.optional(),
+  /** Absent ⇒ audited pilot ops wallet credits are unconfigured here: fail closed. */
+  opsCreditPolicy: OpsCreditPolicySchema.optional(),
 });
 
 export type CityConfig = z.infer<typeof CityConfigSchema>;
+
+/**
+ * Reads the city's audited ops-credit policy or fails closed when absent.
+ */
+export function opsCreditPolicyFor(config: CityConfig): OpsCreditPolicy {
+  if (config.opsCreditPolicy === undefined) {
+    throw new Error(
+      `city ${config.cityId} v${config.version} has no opsCreditPolicy — failing closed`,
+    );
+  }
+  return config.opsCreditPolicy;
+}
 
 /**
  * The only way to read marketplace fare bounds. Throws the fail-closed error

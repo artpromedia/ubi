@@ -148,6 +148,20 @@ export function lagosConfig(version: number): CityConfig {
       },
     },
     taxes: { vat: 7.5 },
+    // PROVISIONAL, pending ops/finance sign-off — pilot driver ops credit caps
+    // (CC-B03, DEC-6=C), in NGN kobo. Gated by `ops_driver_wallet_credit`, which
+    // stays OFF in LAGOS_ENABLED_FLAGS.
+    opsCreditPolicy: {
+      maxPerCreditMinor: 2_500_000, // ₦25,000 per single credit
+      maxDriverDailyMinor: 5_000_000, // ₦50,000 per driver per Lagos calendar day
+      maxCityDailyMinor: 100_000_000, // ₦1,000,000 across Lagos per calendar day
+      reasonCodes: [
+        "pilot_onboarding_float",
+        "bank_deposit_verified",
+        "goodwill_commission_relief",
+        "ops_settlement_adjustment",
+      ],
+    },
   });
 }
 

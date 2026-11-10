@@ -57,6 +57,7 @@ import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { configAdminRoutes } from "./routes/config-admin";
 import { configReadRoutes } from "./routes/config-read";
 import { healthRoutes } from "./routes/health";
+import { opsWalletCreditRoutes } from "./routes/ops-wallet-credits";
 import { proxyRoutes } from "./routes/proxy";
 import { tripAccessRoutes } from "./routes/trip-access";
 
@@ -160,12 +161,14 @@ export function createApp(
   api.use("*", identityContextMiddleware);
   api.use("*", scopeEnforcementMiddleware);
 
-  // Exact-route config families: GET-only reads (`profile:read`) and exact
-  // admin routes (`config:admin`, DEC-1 = A). Nothing in PROXY_RULES matches
-  // `/config` or `/flags`, so every unrouted method or path under them falls
-  // through to the gateway's own 404.
+  // Exact-route config and ops-finance families: GET-only config reads
+  // (`profile:read`), exact config admin routes (`config:admin`, DEC-1 = A),
+  // and exact ops wallet credit routes (`finance:ops`, DEC-6 = C). Nothing in
+  // PROXY_RULES matches `/config`, `/flags`, or `/ops/wallet-credits`, so every
+  // unrouted method or path under them falls through to the gateway's own 404.
   api.route("/", configReadRoutes);
   api.route("/", configAdminRoutes);
+  api.route("/", opsWalletCreditRoutes);
   api.route("/", proxyRoutes);
 
   // The gateway mounts /v1. `/api` is not a UBI prefix.

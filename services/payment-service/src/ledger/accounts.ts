@@ -172,6 +172,17 @@ export const ENTRY_KINDS = [
    * week — never a rewrite of the closed week's entry.
    */
   "fleet_remittance_adjustment",
+  /**
+   * Audited dual-approval ops credit to a driver's commission wallet (CC-B03,
+   * DEC-6 Part B): `ubi_float` → driver's `wallet`, posted only upon approval
+   * behind `ops_driver_wallet_credit`. Never touches rider funds or commission.
+   */
+  "ops_driver_credit",
+  /**
+   * Linked compensating reversal of an approved ops driver credit: driver's
+   * `wallet` → `ubi_float`, spendable-checked so active holds stay covered.
+   */
+  "ops_driver_credit_reversal",
 ] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];

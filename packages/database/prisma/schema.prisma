@@ -1898,6 +1898,7 @@ model Wallet {
   /// Set only on a business budget wallet (owner_type `org_budget`, A06 part C).
   orgBudgetAccount    OrgBudgetAccount?
   orgBudgetHolds      OrgBudgetReservation[]
+  opsCredits          OpsWalletCredit[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -2040,7 +2041,7 @@ model Topup {
   amountMinor    BigInt   @map("amount_minor")
   currency       String
   status         String
-  pspRef         String?  @map("psp_ref")
+  pspRef         String?  @unique @map("psp_ref")
   entryId        String?  @map("entry_id")
   sagaTransferId String?  @map("saga_transfer_id")
   idempotencyKey String?  @unique @map("idempotency_key")
@@ -2053,6 +2054,78 @@ model Topup {
   @@index([walletId, createdAt])
   @@index([status])
   @@map("topups")
+}
+
+/// Audited operator-initiated credit to a driver's commission wallet (CC-B03,
+/// DEC-6=C). Requires two-person approval (`createdBy != approvedBy`), enforces
+/// city-config per-credit / per-driver-day / per-city-day caps, journals only
+/// upon approval (`ops_driver_credit`: `ubi_float` -> driver `wallet`), never
+/// touches rider wallets, and supports linked spendable-checked reversal
+/// (`ops_driver_credit_reversal`).
+model OpsWalletCredit {
+  id                    String    @id
+  cityId                String    @map("city_id")
+  driverUserId          String    @map("driver_user_id")
+  walletId              String    @map("wallet_id")
+  amountMinor           BigInt    @map("amount_minor")
+  currency              String
+  reasonCode            String    @map("reason_code")
+  note                  String?
+  referenceRef          String?   @map("reference_ref")
+  /// pending_approval | approved | rejected | reversed
+  status                String
+  createdBy             String    @map("created_by")
+  createdByRole         String    @map("created_by_role")
+  requestPayloadHash    String    @map("request_payload_hash")
+  requestIdempotencyKey String    @unique @map("request_idempotency_key")
+  approvedBy            String?   @map("approved_by")
+  approvedByRole        String?   @map("approved_by_role")
+  approvalNote          String?   @map("approval_note")
+  approvedAt            DateTime? @map("approved_at")
+  approvePayloadHash    String?   @map("approve_payload_hash")
+  approveIdempotencyKey String?   @unique @map("approve_idempotency_key")
+  rejectedBy            String?   @map("rejected_by")
+  rejectedByRole        String?   @map("rejected_by_role")
+  rejectedReason        String?   @map("rejected_reason")
+  rejectedAt            DateTime? @map("rejected_at")
+  rejectPayloadHash     String?   @map("reject_payload_hash")
+  rejectIdempotencyKey  String?   @unique @map("reject_idempotency_key")
+  reversedBy            String?   @map("reversed_by")
+  reversedByRole        String?   @map("reversed_by_role")
+  reversalReason        String?   @map("reversal_reason")
+  reversedAt            DateTime? @map("reversed_at")
+  reversePayloadHash    String?   @map("reverse_payload_hash")
+  reverseIdempotencyKey String?   @unique @map("reverse_idempotency_key")
+  entryId               String?   @map("entry_id")
+  reversalEntryId       String?   @map("reversal_entry_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([cityId, status, createdAt])
+  @@index([driverUserId, createdAt])
+  @@index([cityId, createdAt])
+  @@map("ops_wallet_credits")
+}
+
+/// Durable receipt log of verified PSP webhook callbacks (CC-B03, DEC-6=C) so
+/// duplicate deliveries of the same provider event/reference are idempotent.
+model PspWebhookEvent {
+  id          String   @id
+  provider    String
+  eventType   String   @map("event_type")
+  externalRef String   @map("external_ref")
+  payloadHash String   @map("payload_hash")
+  outcome     String
+  topupId     String?  @map("topup_id")
+  nipId       String?  @map("nip_id")
+  entryId     String?  @map("entry_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([provider, eventType, externalRef])
+  @@index([provider, externalRef])
+  @@map("psp_webhook_events")
 }
 
 /// Marketplace commission reservation (M04). A hold is NOT a journal movement:

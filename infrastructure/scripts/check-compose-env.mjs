@@ -226,6 +226,7 @@ export const CONTRACT = {
     TOPUP_BASE_URL: "optional",
     TOPUP_API_KEY: "optional",
     // Provider credentials reachable from src/index.ts (payouts, admin).
+    PAYSTACK_BASE_URL: "optional",
     PAYSTACK_SECRET_KEY: "optional",
     PAYSTACK_PUBLIC_KEY: "optional",
     PAYSTACK_WEBHOOK_SECRET: "optional",

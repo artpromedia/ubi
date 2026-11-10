@@ -99,6 +99,11 @@ export const SCOPES = [
   // marketplace_rides kill switch). Held ONLY by CONFIG_ADMIN_ROLES and never
   // in LIMITED_MODE_SCOPES (DEC-1 = A, CC-B01).
   "config:admin",
+  // Audited dual-approval operations credits to driver commission wallets
+  // (DEC-6 = C, CC-B03). Held ONLY by OPS_CREDIT_ROLES (`finance_ops`,
+  // `ops_admin`, `admin`, `super_admin`), excluded from `service`, and never in
+  // `LIMITED_MODE_SCOPES`.
+  "finance:ops",
   "admin:all",
 ] as const;
 
@@ -203,7 +208,13 @@ const OPS_SCOPES: readonly Scope[] = [
   "history:read",
 ];
 
-const OPS_ADMIN_SCOPES: readonly Scope[] = [...OPS_SCOPES, "config:admin"];
+const OPS_ADMIN_SCOPES: readonly Scope[] = [
+  ...OPS_SCOPES,
+  "config:admin",
+  "finance:ops",
+];
+
+const FINANCE_OPS_SCOPES: readonly Scope[] = [...OPS_SCOPES, "finance:ops"];
 
 const SUPPORT_OPS_SCOPES: readonly Scope[] = [
   "profile:read",
@@ -230,6 +241,7 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   merchant: MERCHANT_SCOPES,
   restaurant: MERCHANT_SCOPES,
   ops_admin: OPS_ADMIN_SCOPES,
+  finance_ops: FINANCE_OPS_SCOPES,
   ops: OPS_SCOPES,
   config_admin: [
     "profile:read",
@@ -272,7 +284,9 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   ai_ops: GROWTH_OPS_SCOPES,
   admin: [...SCOPES],
   super_admin: [...SCOPES],
-  service: SCOPES.filter((scope) => scope !== "config:admin"),
+  service: SCOPES.filter(
+    (scope) => scope !== "config:admin" && scope !== "finance:ops",
+  ),
 };
 
 /**
@@ -335,6 +349,13 @@ export const SAFE_MODE_DENIED_SCOPES: readonly Scope[] = [
 
 export const CONFIG_ADMIN_ROLES = [
   "config_admin",
+  "ops_admin",
+  "admin",
+  "super_admin",
+] as const;
+
+export const OPS_CREDIT_ROLES = [
+  "finance_ops",
   "ops_admin",
   "admin",
   "super_admin",
@@ -527,12 +548,36 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   },
   { methods: ["POST"], prefix: "/v1/wallets/topup", anyOf: ["wallet:topup"] },
   { methods: ["POST"], prefix: "/v1/wallet/topup", anyOf: ["wallet:topup"] },
+  { methods: ["POST"], prefix: "/v1/wallet/topups", anyOf: ["wallet:topup"] },
   {
     methods: ["POST"],
     prefix: "/v1/wallet/pin",
     anyOf: ["security:pin:change"],
   },
   { methods: "*", prefix: "/v1/payments", anyOf: ["wallet:read"] },
+  // Audited dual-approval operations driver wallet credits
+  // (routes/ops-wallet-credits.ts, DEC-6 = C, CC-B03): exact method + path
+  // only, gated by `finance:ops` (held ONLY by OPS_CREDIT_ROLES, excluded from
+  // `service` and `LIMITED_MODE_SCOPES`).
+  {
+    methods: ["GET", "POST"],
+    prefix: "/v1/ops/wallet-credits",
+    exact: true,
+    anyOf: ["finance:ops"],
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/ops/wallet-credits/:id",
+    pattern: /^\/v1\/ops\/wallet-credits\/[A-Za-z0-9_-]+$/,
+    anyOf: ["finance:ops"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/ops/wallet-credits/:id/action",
+    pattern:
+      /^\/v1\/ops\/wallet-credits\/[A-Za-z0-9_-]+\/(approve|reject|reverse)$/,
+    anyOf: ["finance:ops"],
+  },
   // Marketplace (negotiated fares). GET on the request family serves both the
   // owner snapshot/award poll (mp:request) and the driver-view (mp:bid); the
   // downstream engine enforces ownership. Writes on the request family are

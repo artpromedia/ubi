@@ -78,6 +78,7 @@ import { SosScreen } from "../screens/safety/SosScreen";
 import { SecureConfirmScreen } from "../screens/safety/SecureConfirmScreen";
 import { WalletHomeScreen } from "../screens/wallet/WalletHomeScreen";
 import { WalletStatementScreen } from "../screens/wallet/WalletStatementScreen";
+import { TopUpScreen } from "../screens/wallet/TopUpScreen";
 import { ProfileScreen } from "../screens/account/ProfileScreen";
 import { EditProfileScreen } from "../screens/account/EditProfileScreen";
 import { FeatureUnavailableScreen } from "../screens/FeatureUnavailableScreen";
@@ -136,9 +137,8 @@ function WalletNavigator() {
     <WalletStack.Navigator screenOptions={{ headerShown: false }}>
       <WalletStack.Screen name="Home" component={WalletHomeScreen} />
       <WalletStack.Screen name="Statement" component={WalletStatementScreen} />
-      {/* Money-movement flows (send/request/NIP transfer/top-up) exist
-          server-side but are out of this read-only wallet slice — gated
-          honestly rather than wired to a mutation this app hasn't earned. */}
+      {/* CC-B03: TopUpScreen self-gates on provider_payments + wallet_p2p.
+          Send/Request/NIP transfers stay honestly gated until built. */}
       <WalletStack.Screen
         name="Send"
         component={FeatureUnavailableScreen}
@@ -154,11 +154,7 @@ function WalletNavigator() {
         component={FeatureUnavailableScreen}
         initialParams={{ feature: "WalletNip" } as never}
       />
-      <WalletStack.Screen
-        name="TopUp"
-        component={FeatureUnavailableScreen}
-        initialParams={{ feature: "WalletTopUp" } as never}
-      />
+      <WalletStack.Screen name="TopUp" component={TopUpScreen} />
     </WalletStack.Navigator>
   );
 }

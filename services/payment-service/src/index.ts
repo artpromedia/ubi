@@ -31,11 +31,18 @@ import { analyticsService } from "./lib/analytics";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
-import { errorHandler, paymentRateLimit, serviceAuth } from "./middleware";
+import {
+  errorHandler,
+  paymentRateLimit,
+  serviceAuth,
+  webhookRateLimit,
+} from "./middleware";
 import { adminRoutes } from "./routes/admin";
 import fraudRoutes from "./routes/fraud";
 import { healthRoutes } from "./routes/health";
 import { createMpHoldRoutes } from "./routes/mp-holds";
+import { createOpsWalletCreditRoutes } from "./routes/ops-wallet-credits";
+import { createPspWebhookRoutes } from "./routes/psp-webhooks";
 import { safetyRoutes } from "./routes/safety";
 import { createWalletV1Routes } from "./routes/wallet-v1";
 import { startSettlementWorker } from "./settlement-worker";
@@ -110,6 +117,9 @@ app.use("/admin/*", serviceAuth);
 app.use("/v1/wallet/*", paymentRateLimit);
 app.use("/v1/finance/*", paymentRateLimit);
 app.use("/v1/business/*", paymentRateLimit);
+app.use("/v1/ops/wallet-credits", paymentRateLimit);
+app.use("/v1/ops/wallet-credits/*", paymentRateLimit);
+app.use("/v1/psp/webhooks/*", webhookRateLimit);
 
 // ===========================================
 // ROUTER REGISTRY — the single place a router is mounted (G14).
@@ -176,6 +186,17 @@ const ROUTER_REGISTRY: ReadonlyArray<{
   // identity context only. Rebuilt on the canonical ledger; the quarantined
   // /b2b float-money surface stays unmounted.
   { prefix: "/v1/business", router: createBusinessRoutes(ledgerDeps) },
+  // Audited dual-approval ops driver wallet credits (CC-B03, DEC-6 Part B):
+  // signed identity only (`finance_ops` / `ops_admin` / `admin` / `super_admin`),
+  // behind deny-by-default `ops_driver_wallet_credit`.
+  {
+    prefix: "/v1/ops/wallet-credits",
+    router: createOpsWalletCreditRoutes(ledgerDeps),
+  },
+  // Canonical PSP supplier webhooks (CC-B03, DEC-6 Part A): raw-body HMAC
+  // verification, never proxied by `api-gateway` (routed via hooks.ubi.africa).
+  // Distinct from the quarantined legacy `/webhooks` surface.
+  { prefix: "/v1/psp/webhooks", router: createPspWebhookRoutes(ledgerDeps) },
 ];
 
 for (const { prefix, router } of ROUTER_REGISTRY) {

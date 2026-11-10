@@ -40,6 +40,7 @@ describe("feature flags", () => {
       "driver_commission_rebates",
       "referrals",
       "ai_marketing",
+      "ops_driver_wallet_credit",
     ] as const;
     for (const key of newFlags) {
       expect(FLAG_KEYS).toContain(key);

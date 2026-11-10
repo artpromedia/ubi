@@ -66,6 +66,13 @@ export interface WalletPolicyOverrides {
   readonly reconBreakSlaHours?: number;
 }
 
+export interface OpsCreditPolicyOverrides {
+  readonly maxPerCreditMinor?: number;
+  readonly maxDriverDailyMinor?: number;
+  readonly maxCityDailyMinor?: number;
+  readonly reasonCodes?: readonly string[];
+}
+
 export interface SeedCityOptions {
   readonly currency?: string;
   readonly timezone?: string;
@@ -79,6 +86,8 @@ export interface SeedCityOptions {
   readonly flags?: Readonly<Record<string, boolean>>;
   readonly policy?: WalletPolicyOverrides;
   readonly omitWalletPolicy?: boolean;
+  readonly opsCreditPolicy?: OpsCreditPolicyOverrides;
+  readonly omitOpsCreditPolicy?: boolean;
 }
 
 export interface SeededCity {
@@ -189,6 +198,23 @@ export async function seedCity(
     };
   }
 
+  if (!options.omitOpsCreditPolicy) {
+    config.opsCreditPolicy = {
+      maxPerCreditMinor:
+        options.opsCreditPolicy?.maxPerCreditMinor ?? 2_500_000,
+      maxDriverDailyMinor:
+        options.opsCreditPolicy?.maxDriverDailyMinor ?? 5_000_000,
+      maxCityDailyMinor:
+        options.opsCreditPolicy?.maxCityDailyMinor ?? 100_000_000,
+      reasonCodes: options.opsCreditPolicy?.reasonCodes ?? [
+        "pilot_commission_seed",
+        "goodwill_adjustment",
+        "dispute_settlement",
+        "manual_reconciliation",
+      ],
+    };
+  }
+
   await db.city.create({
     data: { id: cityId, name: cityId, country: "NG", timezone, active: true },
   });
@@ -258,6 +284,33 @@ export async function seedUser(
   return { id: user.id, phone, displayName: `${name} Tester` };
 }
 
+export async function seedDriverUser(
+  db: LedgerDb,
+  name = "Chidi",
+): Promise<SeededUser> {
+  counter += 1;
+  const suffix = uid("drv").replace(/[^a-z0-9]/gi, "");
+  const digits = [
+    String(Date.now() % 1_000_000).padStart(6, "0"),
+    String(process.pid % 1_000).padStart(3, "0"),
+    String(counter % 1_000).padStart(3, "0"),
+  ].join("");
+  const phone = `+234${digits}`;
+  const user = await db.user.create({
+    data: {
+      email: `${suffix}@example.test`,
+      phone,
+      passwordHash: "not-a-real-hash",
+      firstName: name,
+      lastName: "Driver",
+      role: "DRIVER",
+      country: "NG",
+      status: "ACTIVE",
+    },
+  });
+  return { id: user.id, phone, displayName: `${name} Driver` };
+}
+
 /** Records every call so a test can prove the compensation actually happened. */
 export class RecordingTopupRail implements TopupProvider {
   readonly captures: TopupCaptureRequest[] = [];
@@ -271,7 +324,7 @@ export class RecordingTopupRail implements TopupProvider {
     }
     this.captures.push(request);
     return {
-      pspRef: `psp_${this.captures.length}_${request.idempotencyKey.slice(-8)}`,
+      pspRef: `psp_${this.captures.length}_${uid("cap")}`,
     };
   }
 

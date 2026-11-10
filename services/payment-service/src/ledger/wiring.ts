@@ -8,6 +8,7 @@
 
 import { createCityConfigProvider } from "./city-config";
 import { createPrismaDirectory } from "./directory";
+import { paystackBankRailProvider, paystackTopupProvider } from "./paystack";
 import { httpBankRailProvider, httpTopupProvider } from "./providers";
 import { prisma } from "../lib/prisma";
 
@@ -19,8 +20,8 @@ export function createWalletDeps(db: LedgerDb): WalletDeps {
     db,
     config: createCityConfigProvider(db),
     directory: createPrismaDirectory(db),
-    bankRail: httpBankRailProvider(),
-    topupRail: httpTopupProvider(),
+    bankRail: httpBankRailProvider() ?? paystackBankRailProvider(),
+    topupRail: httpTopupProvider() ?? paystackTopupProvider(),
     now: () => new Date(),
   };
 }

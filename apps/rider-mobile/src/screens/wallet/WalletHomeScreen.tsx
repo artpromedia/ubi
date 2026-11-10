@@ -1,10 +1,11 @@
-// Wallet.Home (C05 / G12): a read view of GET /v1/wallet. Balance, limits and
-// safety states are server Money/flags rendered verbatim. Transfers, top-ups
-// and PIN management exist server-side but are money-moving flows outside this
-// slice — their rows say "not in this app yet" instead of implying them.
+// Wallet.Home (C05 / G12, CC-B03): a read view of GET /v1/wallet, plus a
+// flag-gated entry to Wallet.TopUp when both `provider_payments` and
+// `wallet_p2p` are enabled for the rider's city. Balance, limits and safety
+// states are server Money/flags rendered verbatim.
 import React from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
+import { useFlag } from "@ubi/mobile-core";
 import {
   Screen,
   Text,
@@ -21,6 +22,9 @@ export function WalletHomeScreen() {
   const nav = useNavigation<{
     navigate: (n: string, p?: unknown) => void;
   }>();
+  const providerPaymentsOn = useFlag("provider_payments");
+  const walletP2pOn = useFlag("wallet_p2p");
+  const canTopUp = providerPaymentsOn && walletP2pOn;
   const q = useQuery({
     queryKey: ["wallet", "overview"],
     queryFn: walletApi.overview,
@@ -94,6 +98,14 @@ export function WalletHomeScreen() {
               last
             />
           </Card>
+          {canTopUp && !w.locked ? (
+            <Button
+              testID="rider.wallet.topup"
+              label="Top up wallet"
+              accessibilityLabel="Top up wallet"
+              onPress={() => nav.navigate("TopUp")}
+            />
+          ) : null}
           <Button
             testID="rider.wallet.statement"
             label="View statement"
@@ -102,7 +114,9 @@ export function WalletHomeScreen() {
             onPress={() => nav.navigate("Statement")}
           />
           <Text variant="caption" tone="text3" align="center">
-            Sending money, top-ups and PIN changes aren’t in this app yet.
+            {canTopUp
+              ? "Sending money and PIN changes aren’t in this app yet."
+              : "Sending money, top-ups and PIN changes aren’t in this app yet."}
           </Text>
         </>
       )}

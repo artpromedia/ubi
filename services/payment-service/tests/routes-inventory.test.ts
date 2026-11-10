@@ -45,6 +45,12 @@ const ALLOWED_ROUTE_PREFIXES = [
   // signed identity only. A REBUILD on the canonical ledger, not the
   // quarantined /b2b surface, which stays in the list below.
   "/v1/business",
+  // Audited dual-approval ops driver wallet credits (CC-B03, DEC-6 Part B) —
+  // signed identity only (`finance_ops` / `ops_admin` / `admin` / `super_admin`).
+  "/v1/ops/wallet-credits",
+  // Canonical PSP supplier webhooks (CC-B03, DEC-6 Part A) — raw-body HMAC,
+  // never proxied by api-gateway; distinct from quarantined legacy `/webhooks`.
+  "/v1/psp/webhooks",
 ] as const;
 
 /**
@@ -202,6 +208,27 @@ describe("payment-service route inventory", () => {
       }),
     );
     expect(read.status).toBe(401);
+  });
+
+  it("guards /v1/ops/wallet-credits with signed identity and /v1/psp/webhooks/paystack with HMAC (CC-B03)", async () => {
+    const opsForged = await app.fetch(
+      new Request("http://payment-service.test/v1/ops/wallet-credits", {
+        headers: { "x-user-id": "usr_forged", "x-user-role": "admin" },
+      }),
+    );
+    expect(opsForged.status).toBe(401);
+
+    const unsignedWebhook = await app.fetch(
+      new Request("http://payment-service.test/v1/psp/webhooks/paystack", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          event: "charge.success",
+          data: { reference: "ref_1" },
+        }),
+      }),
+    );
+    expect([401, 503]).toContain(unsignedWebhook.status);
   });
 
   it.each([

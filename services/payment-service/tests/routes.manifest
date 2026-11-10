@@ -45,6 +45,8 @@ GET /v1/finance/fleet/carry-forward/:fleetId/:driverId
 GET /v1/finance/fleet/settlements/:cityId/:weekStart
 GET /v1/finance/recon/:date
 GET /v1/finance/travel/orders/:orderId
+GET /v1/ops/wallet-credits
+GET /v1/ops/wallet-credits/:id
 GET /v1/wallet
 GET /v1/wallet/mp/holds/overview
 GET /v1/wallet/mp/overview
@@ -121,6 +123,11 @@ POST /v1/finance/travel/authorize
 POST /v1/finance/travel/capture
 POST /v1/finance/travel/refund
 POST /v1/finance/travel/release
+POST /v1/ops/wallet-credits
+POST /v1/ops/wallet-credits/:id/approve
+POST /v1/ops/wallet-credits/:id/reject
+POST /v1/ops/wallet-credits/:id/reverse
+POST /v1/psp/webhooks/paystack
 POST /v1/wallet/disputes
 POST /v1/wallet/lock
 POST /v1/wallet/mp/funding/authorize

@@ -18,6 +18,8 @@ export * from "./minor-units";
 export * from "./mp-holds";
 export * from "./mp-commission-deltas";
 export * from "./nip";
+export * from "./ops-credits";
+export * from "./paystack";
 export * from "./pin";
 export * from "./post-entry";
 export * from "./providers";

@@ -57,6 +57,7 @@ import { createApp } from "../src/app";
 import { setIdentityStateStore } from "../src/lib/redis";
 import { CONFIG_ADMIN_ROUTES } from "../src/routes/config-admin";
 import { CONFIG_READ_ROUTES } from "../src/routes/config-read";
+import { OPS_WALLET_CREDIT_ROUTES } from "../src/routes/ops-wallet-credits";
 import { forwardToServicePath } from "../src/routes/proxy";
 import {
   PROXY_RULES,
@@ -1080,7 +1081,21 @@ const REACHABLE: readonly ReachableCase[] = [
     method: "POST",
     path: "/v1/wallet/topups",
     downstream: "/v1/wallet/topups",
-    source: "payment-service src/routes/wallet-v1.ts",
+    source: `${RIDER} src/api/wallet.ts (CC-B03)`,
+  },
+  {
+    rule: "/wallet/*",
+    method: "GET",
+    path: "/v1/wallet/nip/name-enquiry?bankCode=058&accountNumber=0123456789",
+    downstream: "/v1/wallet/nip/name-enquiry",
+    source: `${DRIVER} src/api/wallet.ts (CC-B03)`,
+  },
+  {
+    rule: "/wallet/*",
+    method: "POST",
+    path: "/v1/wallet/nip",
+    downstream: "/v1/wallet/nip",
+    source: `${DRIVER} src/api/wallet.ts (CC-B03)`,
   },
   // Business travel money (payment-service src/business/routes.ts, the
   // signed-context client router — never /v1/finance/business).
@@ -1625,6 +1640,13 @@ const SERVICE_ONLY_ROUTES: readonly {
     reason: "as above (reconciliation status)",
   },
   {
+    service: "payment-service",
+    method: "POST",
+    path: "/v1/psp/webhooks/paystack",
+    reason:
+      "PSP webhooks (Paystack) are verified by HMAC-SHA512 over raw UTF-8 bytes and enter through hooks.ubi.africa straight to payment-service, never through the client gateway (CC-B03)",
+  },
+  {
     service: "user-service",
     method: "POST",
     path: "/v1/internal/grants",
@@ -2165,6 +2187,121 @@ describe("the exact config read and admin families reach config-service", () => 
       ).toHaveLength(1);
     }
   });
+});
+
+const OPS_WALLET_CREDITS: readonly {
+  readonly method: "GET" | "POST";
+  readonly pattern: string;
+  readonly path: string;
+  readonly downstream: string;
+  readonly source: string;
+}[] = [
+  {
+    method: "GET",
+    pattern: "/ops/wallet-credits",
+    path: "/v1/ops/wallet-credits?cityId=LOS&status=pending_approval",
+    downstream: "/v1/ops/wallet-credits",
+    source: "apps/admin-dashboard src/lib/ops-credits-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/ops/wallet-credits",
+    path: "/v1/ops/wallet-credits",
+    downstream: "/v1/ops/wallet-credits",
+    source: "apps/admin-dashboard src/lib/ops-credits-api.ts",
+  },
+  {
+    method: "GET",
+    pattern: "/ops/wallet-credits/:id{[A-Za-z0-9_-]+}",
+    path: "/v1/ops/wallet-credits/ocrd_1",
+    downstream: "/v1/ops/wallet-credits/ocrd_1",
+    source: "apps/admin-dashboard src/lib/ops-credits-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/ops/wallet-credits/:id{[A-Za-z0-9_-]+}/approve",
+    path: "/v1/ops/wallet-credits/ocrd_1/approve",
+    downstream: "/v1/ops/wallet-credits/ocrd_1/approve",
+    source: "apps/admin-dashboard src/lib/ops-credits-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/ops/wallet-credits/:id{[A-Za-z0-9_-]+}/reject",
+    path: "/v1/ops/wallet-credits/ocrd_1/reject",
+    downstream: "/v1/ops/wallet-credits/ocrd_1/reject",
+    source: "apps/admin-dashboard src/lib/ops-credits-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/ops/wallet-credits/:id{[A-Za-z0-9_-]+}/reverse",
+    path: "/v1/ops/wallet-credits/ocrd_1/reverse",
+    downstream: "/v1/ops/wallet-credits/ocrd_1/reverse",
+    source: "apps/admin-dashboard src/lib/ops-credits-api.ts",
+  },
+];
+
+const OPS_WALLET_CREDIT_UNROUTED_PROBES: readonly {
+  readonly method: string;
+  readonly path: string;
+}[] = [
+  { method: "DELETE", path: "/v1/ops/wallet-credits/ocrd_1" },
+  { method: "PUT", path: "/v1/ops/wallet-credits/ocrd_1" },
+  { method: "POST", path: "/v1/ops/wallet-credits/ocrd_1/unknown" },
+];
+
+describe("the exact ops wallet-credit family reaches payment-service", () => {
+  it("has a case for every ops wallet-credit route", () => {
+    expect(
+      OPS_WALLET_CREDITS.map(
+        (testCase) => `${testCase.method} ${testCase.pattern}`,
+      ).sort(),
+    ).toEqual(
+      OPS_WALLET_CREDIT_ROUTES.map(
+        (route) => `${route.method} ${route.pattern}`,
+      ).sort(),
+    );
+  });
+
+  it.each(
+    OPS_WALLET_CREDITS.map((testCase) => [
+      testCase.method,
+      testCase.path,
+      testCase,
+    ]),
+  )("%s %s", async (method, _path, testCase) => {
+    const manifest = loadManifest("payment-service");
+    expect(manifest).toBeDefined();
+    if (manifest === undefined) return;
+    expect(
+      manifestServes(manifest, method, testCase.downstream),
+      `${method} ${testCase.path} (${testCase.source}) maps to payment-service ${method} ${testCase.downstream}, which ${manifest.source.file} does not serve`,
+    ).toBe(true);
+
+    const result = await sendThroughGateway(method, testCase.path);
+    expect(result.status).toBe(200);
+    expect(result.arrivals).toEqual([
+      {
+        service: "payment-service",
+        url: `${testCase.downstream}${queryOf(testCase.path)}`,
+        method,
+      },
+    ]);
+  });
+
+  it.each(
+    OPS_WALLET_CREDIT_UNROUTED_PROBES.map((entry) => [
+      entry.method,
+      entry.path,
+    ]),
+  )(
+    "answers 404 for unrouted %s %s (no wildcard on /ops/wallet-credits/*)",
+    async (method, clientPath) => {
+      const result = await sendThroughGateway(method, clientPath);
+      expect(result.status).toBe(404);
+      expect(result.code).toBe("NOT_FOUND");
+      expect(result.arrivals).toEqual([]);
+    },
+  );
 });
 
 describe("unbacked rules stay honest", () => {

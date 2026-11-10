@@ -1125,5 +1125,51 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     expect(
       (await call("full", "PUT", "/v1/flags/marketplace_rides", "ops")).code,
     ).toBe("forbidden");
+
+    // finance:ops routes (CC-B03, DEC-6 = C): finance_ops, ops_admin, admin, super_admin in full mode; denied in limited mode and denied to ops / config_admin / rider / driver
+    for (const role of ["finance_ops", "ops_admin", "admin", "super_admin"]) {
+      for (const [method, path] of [
+        ["GET", "/v1/ops/wallet-credits"],
+        ["POST", "/v1/ops/wallet-credits"],
+        ["GET", "/v1/ops/wallet-credits/ocrd_1"],
+        ["POST", "/v1/ops/wallet-credits/ocrd_1/approve"],
+        ["POST", "/v1/ops/wallet-credits/ocrd_1/reject"],
+        ["POST", "/v1/ops/wallet-credits/ocrd_1/reverse"],
+      ] as const) {
+        expect((await call("full", method, path, role)).status).toBe(200);
+        expect((await call("limited", method, path, role)).code).toBe(
+          "limited_mode",
+        );
+      }
+    }
+    for (const role of ["ops", "config_admin", "rider", "driver", "merchant"]) {
+      expect(
+        (await call("full", "POST", "/v1/ops/wallet-credits", role)).code,
+      ).toBe("forbidden");
+      expect(
+        (
+          await call(
+            "full",
+            "POST",
+            "/v1/ops/wallet-credits/ocrd_1/approve",
+            role,
+          )
+        ).code,
+      ).toBe("forbidden");
+    }
+
+    // POST /v1/wallet/topups enforces wallet:topup (allowed for rider/driver in full, denied in limited, denied for merchant)
+    expect(
+      (await call("full", "POST", "/v1/wallet/topups", "rider")).status,
+    ).toBe(200);
+    expect(
+      (await call("full", "POST", "/v1/wallet/topups", "driver")).status,
+    ).toBe(200);
+    expect(
+      (await call("limited", "POST", "/v1/wallet/topups", "rider")).code,
+    ).toBe("limited_mode");
+    expect(
+      (await call("full", "POST", "/v1/wallet/topups", "merchant")).code,
+    ).toBe("forbidden");
   });
 });

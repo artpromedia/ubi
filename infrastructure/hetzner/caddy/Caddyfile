@@ -118,16 +118,13 @@
 
 # Supplier Webhooks (travel-service)
 #
-# A dedicated ingress, straight to travel-service and NEVER through the client
-# API gateway (which does not proxy /v1/travel/webhooks/* at all). Suppliers
-# (Duffel, LiteAPI) authenticate each callback with their own signature over
-# the raw body, verified by travel-service (src/routes/webhooks.ts), so this
-# host carries no client identity: the gateway's reserved identity headers are
-# removed before forwarding, the body is passed through byte for byte, and
-# anything but `POST /v1/travel/webhooks/<supplierId>` is a 404. Register
-# https://{$WEBHOOKS_DOMAIN}/v1/travel/webhooks/<supplierId> with each
-# supplier; the per-supplier signing secret is injected into travel-service as
-# TRAVEL_SECRET_<REF> (docs/ops/DEPLOY_ENV_MATRIX.md).
+# A dedicated ingress, straight to travel-service / payment-service and NEVER
+# through the client API gateway (which proxies neither /v1/travel/webhooks/*
+# nor /v1/psp/webhooks/*). Suppliers (Duffel, LiteAPI, Paystack) authenticate
+# each callback with their own cryptographic signature over the raw body,
+# verified by the target service, so this host carries no client identity: the
+# gateway's reserved identity headers are removed before forwarding, the body is
+# passed through byte for byte, and anything else is a 404.
 {$WEBHOOKS_DOMAIN:hooks.ubi.africa} {
     header {
         X-Content-Type-Options nosniff
@@ -147,6 +144,41 @@
 
     handle @supplier_webhook {
         reverse_proxy travel-service:4012 {
+            header_up X-Real-IP {remote_host}
+
+            # Identity is the gateway's to issue; none may enter here.
+            header_up -X-UBI-Identity
+            header_up -X-UBI-City-Id
+            header_up -X-UBI-Tenant-Id
+            header_up -X-UBI-Scopes
+            header_up -X-UBI-Modes
+            header_up -X-Auth-User-Id
+            header_up -X-Auth-User-Role
+            header_up -X-Auth-User-Email
+            header_up -X-Auth-City-Id
+            header_up -X-Auth-Issued-At
+            header_up -X-Auth-Signature
+            header_up -X-User-Id
+            header_up -X-User-Role
+            header_up -X-User-Email
+            header_up -X-Session-Id
+            header_up -X-Internal-Service
+            header_up -X-Service-Key
+
+            transport http {
+                read_timeout 30s
+                write_timeout 30s
+            }
+        }
+    }
+
+    @psp_webhook {
+        method POST
+        path_regexp psp ^/v1/psp/webhooks/[A-Za-z0-9_-]+$
+    }
+
+    handle @psp_webhook {
+        reverse_proxy payment-service:4003 {
             header_up X-Real-IP {remote_host}
 
             # Identity is the gateway's to issue; none may enter here.

@@ -150,17 +150,14 @@ pilot has not been deployed, so this applies to a fresh volume. If a 15 volume
 exists anywhere, dump it with the old image and restore into 16 (`pg_dump` /
 `psql`, `HETZNER_PILOT.md` §6) — do not point 16 at it.
 
-## 4. Supplier webhooks ingress
+## 4. Supplier & PSP webhooks ingress
 
-Caddy site `{$WEBHOOKS_DOMAIN}` accepts exactly `POST /v1/travel/webhooks/<id>`
-and proxies it straight to `travel-service:4012`; everything else is a 404,
-bodies over 1 MB are refused (413), and the gateway's reserved identity headers
-(`X-UBI-*`, `X-Auth-*`, `X-User-*`, `X-Session-Id`, `X-Internal-Service`,
-`X-Service-Key`) are removed before forwarding. The body is forwarded byte for
-byte, so the supplier's own signature (`X-Duffel-Signature`, LiteAPI's
-`authorization`) still verifies in travel-service. The API host's routing is
-unchanged (only its CORS preflight short-circuit was removed, §2 item 12) — the
-gateway never proxies `/v1/travel/webhooks/*` (it answers 404 there).
+Caddy site `{$WEBHOOKS_DOMAIN}` accepts two exact webhook families and returns `404` for everything else:
+
+- `POST /v1/travel/webhooks/<id>` → `travel-service:4012`
+- `POST /v1/psp/webhooks/<provider>` (e.g. `POST /v1/psp/webhooks/paystack`) → `payment-service:4003` (`CC-B03`)
+
+Bodies over 1 MB are refused (`413`), and the gateway's reserved identity headers (`X-UBI-*`, `X-Auth-*`, `X-User-*`, `X-Session-Id`, `X-Internal-Service`, `X-Service-Key`) are stripped before forwarding. The request body is forwarded byte-for-byte so provider signatures (`X-Duffel-Signature`, LiteAPI's `authorization`, Paystack's HMAC-SHA512 `X-Paystack-Signature`) verify against raw bytes in the downstream service. `api-gateway` never proxies `/v1/travel/webhooks/*` or `/v1/psp/webhooks/*` (both answer `404` on the public API host).
 
 ## 5. Trusted proxies
 
@@ -214,7 +211,7 @@ daemon was not permitted), so no `docker build` ran. Instead:
 | `docker compose -f infrastructure/hetzner/docker-compose.prod.yml --env-file <filled scratch env> config -q`                                                                                                                                   | exit 0; 24 services (+ `migrate`, `minio-init` under `--profile tools`). With `.env.example` as-is it refuses (`FLEET_PAYMENT_SERVICE_KEY is required`), as designed.                                                                       |
 | `node infrastructure/scripts/check-dockerfiles.mjs`                                                                                                                                                                                            | 17 / 17 Dockerfiles pass (`node:22-alpine`, `pnpm prune --prod`, writable `.next/cache`).                                                                                                                                                   |
 | **Dockerfile replay** (scratch tool): each Dockerfile's COPY/RUN sequence executed in per-stage directories holding only what the file copies, then the production-stage layout booted in production mode against a scratch database and Redis | All 14 composed backends built and answered `GET /health` 200 in production mode (ride-service: `environment: production`, database and Redis connected). The web apps' `next build` was not replayed (memory); they pass the static check. |
-| `node infrastructure/scripts/check-compose-env.mjs`                                                                                                                                                                                            | PASS — 16 services, 168 classified variables, 85/85 pooled DB connections, zero dead `.env.example` keys, `location-service` pinned uncomposed.                                                                                             |
+| `node infrastructure/scripts/check-compose-env.mjs`                                                                                                                                                                                            | PASS — 16 services, 169 classified variables, 85/85 pooled DB connections, zero dead `.env.example` keys, `location-service` pinned uncomposed.                                                                                             |
 | `caddy validate` with Caddy 2.8.4 + caddy-ratelimit v0.1.0                                                                                                                                                                                     | Valid configuration; Grafana host enforces `@blocked not remote_ip {$GRAFANA_ALLOWED_IPS:127.0.0.1/32}` -> `403`.                                                                                                                           |
 | Webhook ingress exercised on a local Caddy against an echo upstream                                                                                                                                                                            | signed POST forwarded with body intact and no identity headers; GET, other paths, `..` traversal → 404; 1.1 MB body → 413.                                                                                                                  |
 | `init-db.sql` through `psql -v ON_ERROR_STOP=1` (in a rolled-back transaction)                                                                                                                                                                 | HEAD: exit 3 at line 1. Fixed: exit 0.                                                                                                                                                                                                      |
@@ -249,3 +246,19 @@ Independent verification (same constraints, no Docker daemon):
 - **realtime-gateway** declares no `@ubi/typescript-config` devDependency; it
   builds because pnpm links the root project's copy.
 - The capacity measurement and restore drill of `HETZNER_PILOT.md` remain open.
+
+## 11. Pilot driver wallet funding procedure (`CC-B03` / `DEC-6 = C`)
+
+Every live marketplace bid holds 10% commission against **cleared** driver wallet balance (`mp-holds.ts`). Two mechanisms exist in code (`CC-B03`), both **deny-by-default**:
+
+### A. Audited two-person ops driver wallet credit (no external PSP keys required)
+
+1. **Preconditions:** Confirm the pilot city's `opsCreditPolicy` in `config-service` (`maxPerCreditMinor <= maxDriverDailyMinor <= maxCityDailyMinor`, allowed `reasonCodes`), then enable `ops_driver_wallet_credit` for the pilot city via the Admin Policy Console (`PUT /v1/flags/ops_driver_wallet_credit`).
+2. **Request (Operator 1):** An authenticated operator with `finance_ops`, `ops_admin`, `admin`, or `super_admin` on a verified `full`-mode device opens Admin Console **Payments › Ops Wallet Credits** (`/payments/ops-credits` → `POST /v1/ops/wallet-credits`) and enters `driverUserId`, whole-currency amount, `reasonCode` (e.g. `bank_deposit_verified` or `pilot_onboarding_float`), bank slip `reference`, and audit `note`. No ledger money moves at request creation (`status = pending_approval`).
+3. **Approve (Operator 2 — distinct operator required):** A second operator (`userId !== createdBy`, enforced in both `payment-service` and Postgres `CHECK (approved_by IS NULL OR approved_by <> created_by)`) verifies the deposit slip and approves (`POST /v1/ops/wallet-credits/:id/approve`). Under a city-level transaction advisory lock (`pg_advisory_xact_lock`), `payment-service` re-verifies per-credit, per-driver-daily, and per-city-daily caps in the city's IANA timezone, posts a balanced `ops_driver_credit` journal entry (`ubi_float` → driver `wallet`), writes an `AuditLog` row, and emits `wallet.ops_credit.approved`.
+4. **Reversal (if needed):** `POST /v1/ops/wallet-credits/:id/reverse` requires a reason (`>= 5` chars), locks the driver wallet, verifies `assertSufficientFunds` against **spendable** balance (refusing if funds are locked in an active commission hold), and posts `ops_driver_credit_reversal` (`wallet` → `ubi_float`).
+
+### B. Paystack PSP top-up & NIP bank payout rail (requires live Paystack credentials)
+
+1. Provision `PAYSTACK_SECRET_KEY` and `PAYSTACK_WEBHOOK_SECRET` in `payment-service`'s `.env` (`PAYSTACK_BASE_URL` optional override) and register `https://$WEBHOOKS_DOMAIN/v1/psp/webhooks/paystack` in Paystack (`X-Paystack-Signature` HMAC-SHA512 verified over raw bytes, deduplicated via `psp_webhook_events`).
+2. Only after verifying live settlement in staging/sandbox, enable `provider_payments` + `wallet_p2p` (Rider `Wallet.TopUp`) and/or `provider_payments` + `wallet_nip` (Driver `Earnings.Payouts` / `Earnings.Cashout`) for the target city. Until enabled, those mobile screens remain behind `<FlagGate>` (`TID.common.flagOff.screen`).

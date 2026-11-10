@@ -88,6 +88,10 @@ describe("event envelope", () => {
       "marketing.proposal.created",
       "ai.action.logged",
       "support.case.opened",
+      "wallet.ops_credit.requested",
+      "wallet.ops_credit.approved",
+      "wallet.ops_credit.rejected",
+      "wallet.ops_credit.reversed",
     ]) {
       expect(isKnownEventName(name), `missing event ${name}`).toBe(true);
     }

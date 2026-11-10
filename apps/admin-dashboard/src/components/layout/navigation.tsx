@@ -87,6 +87,7 @@ const navigation = [
       { name: "Transactions", href: "/payments" },
       { name: "Payouts", href: "/payments/payouts" },
       { name: "Refunds", href: "/payments/refunds" },
+      { name: "Ops Wallet Credits", href: "/payments/ops-credits" },
     ],
   },
   {

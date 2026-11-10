@@ -124,6 +124,14 @@ export const FLAG_KEYS = [
   // city while the AI is not authorised to act in it. Nothing enables this; it
   // stays off until the C10 deterministic suite gates it on per city.
   "ai_marketplace",
+  // Audited pilot ops credit to a driver's commission wallet (CC-B03, DEC-6=C).
+  // Per city, deny-by-default: gates requesting and approving an operator credit
+  // (`ubi_float` -> driver wallet) bounded by city-config caps and two-person
+  // approval (`author !== approver`). Switching it off stops new requests and
+  // approvals while keeping read, rejection, and reversal available so pending
+  // items and money are never stranded. Never touches rider funds; nothing
+  // enables it by default.
+  "ops_driver_wallet_credit",
 ] as const;
 
 export type FlagKey = (typeof FLAG_KEYS)[number];

@@ -2,6 +2,12 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { api } from "./api";
 
+export type CityPaymentMethod = {
+  id: string;
+  available: boolean;
+  reason?: string;
+};
+
 export type CityConfig = {
   cityId: string;
   countryCode: string;
@@ -9,12 +15,14 @@ export type CityConfig = {
   currency: string;
   currencySymbol: string;
   minorDigitsShown: number;
+  currencyFractionDigits?: number;
   locale: string;
   emergencyNumber: string;
   offerTtlSec: number;
   quoteTtlSec: number;
   reservationFreeCancelMin: number;
   supportPhone: string;
+  paymentMethods?: ReadonlyArray<CityPaymentMethod>;
 };
 const Ctx = createContext<{
   config?: CityConfig;

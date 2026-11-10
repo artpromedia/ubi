@@ -1,11 +1,10 @@
-// Wallet READ surface against payment-service THROUGH the gateway (C05 / G12).
+// Wallet surface against payment-service THROUGH the gateway (C05 / G12, CC-B03).
 // Routes verified in services/payment-service/src/routes/wallet-v1.ts (mounted
-// at /v1/wallet in src/index.ts; gateway proxies /wallet/* to payment-service):
-//   GET /v1/wallet                       -> WalletOverview (bare JSON, no envelope)
-//   GET /v1/wallet/statements?from&to    -> Statement (from/to are YYYY-MM-DD)
+// at /v1/wallet in src/index.ts; gateway proxies /v1/wallet/* to payment-service):
+//   GET  /v1/wallet                      -> WalletOverview (bare JSON, no envelope)
+//   GET  /v1/wallet/statements?from&to   -> Statement (from/to are YYYY-MM-DD)
+//   POST /v1/wallet/topups               -> TopupResult (gated by provider_payments + wallet_p2p)
 // Every amount is a server Money object; this file only names the shapes.
-// Transfers/top-ups/PIN routes exist server-side but are money-moving flows
-// outside C05's read-only wallet scope — deliberately not consumed here.
 import { api, type Money } from "@ubi/mobile-core";
 
 export type WalletOverview = {
@@ -51,6 +50,20 @@ export type WalletStatement = {
   lines: StatementLine[];
 };
 
+export type CreateTopupBody = {
+  methodId: string;
+  amountMinor: number;
+};
+
+export type TopupResult = {
+  topupId: string;
+  amount: Money;
+  status: string;
+  entryId: string | null;
+  balanceAfter: Money;
+  replayed: boolean;
+};
+
 /** Bare statement integers + the statement's own currency, for display only. */
 export const statementMoney = (
   s: Pick<WalletStatement, "currency">,
@@ -67,4 +80,9 @@ export const walletApi = {
         "&to=" +
         encodeURIComponent(to),
     ),
+  createTopup: (body: CreateTopupBody, idempotencyKey?: string) =>
+    api<TopupResult>("POST", "/v1/wallet/topups", body, {
+      idempotent: true,
+      idempotencyKey,
+    }),
 };
