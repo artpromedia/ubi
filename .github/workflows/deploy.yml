@@ -33,7 +33,7 @@ concurrency:
 env:
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
   PNPM_VERSION: "9"
   AWS_REGION: af-south-1
 
@@ -204,8 +204,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          cd services/api-gateway
-          docker build -t $ECR_REGISTRY/ubi-api-gateway:$IMAGE_TAG .
+          docker build -f services/api-gateway/Dockerfile -t $ECR_REGISTRY/ubi-api-gateway:$IMAGE_TAG .
           docker push $ECR_REGISTRY/ubi-api-gateway:$IMAGE_TAG
           docker tag $ECR_REGISTRY/ubi-api-gateway:$IMAGE_TAG $ECR_REGISTRY/ubi-api-gateway:latest
           docker push $ECR_REGISTRY/ubi-api-gateway:latest
@@ -230,7 +229,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -248,8 +247,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          cd services/ride-service
-          docker build -t $ECR_REGISTRY/ubi-ride-service:$IMAGE_TAG .
+          docker build -f services/ride-service/Dockerfile -t $ECR_REGISTRY/ubi-ride-service:$IMAGE_TAG .
           docker push $ECR_REGISTRY/ubi-ride-service:$IMAGE_TAG
           docker tag $ECR_REGISTRY/ubi-ride-service:$IMAGE_TAG $ECR_REGISTRY/ubi-ride-service:latest
           docker push $ECR_REGISTRY/ubi-ride-service:latest

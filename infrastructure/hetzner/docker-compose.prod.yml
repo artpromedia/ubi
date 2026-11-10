@@ -48,6 +48,9 @@ services:
       # Supplier webhooks ingress (straight to travel-service, never the
       # client gateway) — see caddy/Caddyfile.
       - WEBHOOKS_DOMAIN=${WEBHOOKS_DOMAIN:-hooks.ubi.africa}
+      # Space-separated IPs/CIDRs allowed to reach grafana.$DOMAIN (fail-closed
+      # to loopback until an operator sets VPN/office CIDRs in .env).
+      - GRAFANA_ALLOWED_IPS=${GRAFANA_ALLOWED_IPS:-127.0.0.1/32}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -149,7 +152,7 @@ services:
   # unit-go jobs do it. scripts/deploy.sh `migrate` / `deploy` run exactly
   # this (docs/deploy/HETZNER_PILOT.md "Migrations").
   migrate:
-    image: node:20-alpine
+    image: node:22-alpine
     container_name: ubi-migrate
     profiles: ["tools"]
     working_dir: /workspace
@@ -282,7 +285,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
@@ -344,7 +347,7 @@ services:
       # every stored PIN unreadable. Keep it separate and stable.
       RIDE_PIN_VAULT_SECRET: ${RIDE_PIN_VAULT_SECRET:?RIDE_PIN_VAULT_SECRET is required}
       PORT: "3002"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable&pool_max_conns=20
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # X-Forwarded-For is believed only from the gateway and, behind it,
@@ -398,7 +401,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3003
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=4
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
@@ -437,7 +440,7 @@ services:
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PORT: "3004"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable&pool_max_conns=8
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DELIVERY_TRUSTED_PROXIES: ${DELIVERY_TRUSTED_PROXIES:-172.28.0.10,172.28.0.11}
@@ -482,7 +485,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3005
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Internal trust boundary: verifies x-ubi-identity on /v1/finance and
@@ -507,8 +510,11 @@ services:
       # Payment Provider Keys (Stripe, Paystack, M-Pesa, etc.)
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      PAYSTACK_WEBHOOK_SECRET: ${PAYSTACK_WEBHOOK_SECRET:-}
       MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-}
       MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-}
+      MPESA_SHORT_CODE: ${MPESA_SHORT_CODE:-}
+      MPESA_PASSKEY: ${MPESA_PASSKEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -535,7 +541,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3006
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # User routes verify the client JWT (500 without it); service routes
@@ -588,9 +594,8 @@ services:
   # host. growth-service, support-service and realtime-gateway have NO public
   # HTTP route at all; config-service is reached only through the gateway's
   # exact read (`config-read.ts`) and `config:admin` (`config-admin.ts`) routes.
-  # connection_limit bounds each new Prisma pool: Postgres allows 100
-  # connections and the pools of the older services are unbounded
-  # (docs/ops/PILOT_RUNBOOK_DELTAS.md, "Connection budget").
+  # Every DB-connecting service carries an explicit pool bound summing to 85
+  # against Postgres `max_connections = 100` (docs/ops/PILOT_RUNBOOK_DELTAS.md §6).
   # ---------------------------------------------------------------------------
 
   config-service:
@@ -641,7 +646,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4013
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Verifies the gateway-signed x-ubi-identity on every route.
@@ -688,7 +693,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4012
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Boot refuses production without a usable identity secret, with a
@@ -731,7 +736,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4015
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Refuses to start in production without it; client routes read the
@@ -770,7 +775,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4014
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=4
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
@@ -805,7 +810,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4011
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=4
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Ledger remedies (payment-service) and SOS notifications, by service key.

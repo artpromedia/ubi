@@ -371,11 +371,31 @@ function checkNode(target, dockerfileText, workspace) {
     }
   }
 
-  // Production prune, when present.
+  // Node 22 LTS minimum on every stage (Node 20 reached EOL 2026-04-30).
+  for (const stage of [builder, final]) {
+    const nodeMatch = /^node:(\d+)-alpine\b/.exec(stage.from);
+    if (!nodeMatch || Number(nodeMatch[1]) < 22) {
+      problems.push(
+        `stage "${stage.name}" uses ${stage.from}; require node:22-alpine (Node >= 22 LTS)`,
+      );
+    }
+  }
+
+  // Production prune: must unlink both root and workspace devDependencies and
+  // garbage-collect .pnpm without touching the network or running husky.
+  if (builderRuns.some((r) => /pnpm install/.test(r) && /--prod\b/.test(r))) {
+    problems.push(
+      "uses `pnpm install --prod ... --filter`, which leaves root devDependencies in node_modules/.pnpm; use `pnpm prune --prod --ignore-scripts --config.confirmModulesPurge=false`",
+    );
+  }
   const prune = builderRuns.find(
-    (r) => /pnpm install/.test(r) && /--prod\b/.test(r),
+    (r) => /pnpm prune\b/.test(r) && /--prod\b/.test(r),
   );
-  if (prune !== undefined) {
+  if (prune === undefined) {
+    problems.push(
+      "builder never runs `pnpm prune --prod --ignore-scripts --config.confirmModulesPurge=false`",
+    );
+  } else {
     if (!/confirmModulesPurge=false/.test(prune)) {
       problems.push(
         "the --prod prune does not pre-confirm the modules purge (without a TTY it prunes nothing)",
@@ -408,6 +428,17 @@ function checkNode(target, dockerfileText, workspace) {
   }
   if (needsPrisma && !copied(fromBuilder, "packages/database/prisma")) {
     problems.push("final stage does not COPY packages/database/prisma");
+  }
+  if (isNextApp(manifest)) {
+    const finalRuns = runs(final);
+    const cacheRe = new RegExp(
+      `chown\\b.*${dir.replace("/", "\\/")}\\/\\.next\\/cache\\b`,
+    );
+    if (!finalRuns.some((r) => cacheRe.test(r))) {
+      problems.push(
+        `final stage does not chown ${dir}/.next/cache to the non-root user (Next.js cannot write runtime cache entries)`,
+      );
+    }
   }
 
   // Imports vs. declared dependencies.

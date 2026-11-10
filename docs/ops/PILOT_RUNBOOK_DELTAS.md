@@ -176,17 +176,13 @@ ever put in front of Caddy, add its address to `GATEWAY_TRUSTED_PROXIES`.
 
 ## 6. Connection budget
 
-Postgres allows 100 connections by default. Each Prisma client opens up to
-`2 × vCPU + 1` connections unless `connection_limit` is set; ride-service and
-delivery-service each allow 25 (pgx). The round-9 services therefore carry
-`connection_limit` (ask, travel, fleet 10; config, growth, support 5 — 45 in
-total); user, food, payment and notification stay unbounded as before
-(api-gateway and realtime-gateway do not connect). On a CX41 (8 vCPU) the
-worst case is 4 × 17 + 25 + 25 + 45 = 163 — above 100, as the pre-round-9
-stack (118) already was. **Estimate, pending measurement.** Before load
-testing, either set `connection_limit` on the older services or raise
-`max_connections` (`init-db.sql` has the commented setting), and record the
-choice here.
+Postgres allows `max_connections = 100` (`3` reserved by `superuser_reserved_connections`, leaving `97` non-superuser slots). Every database-connecting service in `docker-compose.prod.yml` now sets an explicit pool cap in `DATABASE_URL` (`ride-service` and `delivery-service` honour `pool_max_conns` when present instead of overwriting `MaxConns`):
+
+- **Go (`pgxpool` `pool_max_conns`, 28 total):** `ride-service = 20`, `delivery-service = 8` (`MinConns = 2` each).
+- **Node (`Prisma` `connection_limit`, 57 total):** `user-service = 10`, `payment-service = 10`, `notification-service = 5`, `config-service = 5`, `ask-service = 5`, `travel-service = 5`, `fleet-service = 5`, `food-service = 4`, `growth-service = 4`, `support-service = 4`.
+- **Non-connecting services (0):** `api-gateway` (`DATABASE_URL` unread, no `@ubi/database`), `realtime-gateway` (Redis only), `web-app`, `admin-dashboard`.
+
+**Arithmetic:** `28 + 57 = 85` pooled connections + `3` `superuser_reserved_connections` + `12` headroom for one-off `migrate`, `pg_dump`, and operator `psql` sessions = `100`. `infrastructure/scripts/check-compose-env.mjs` fails CI if any Prisma service omits `connection_limit`, any Go DB service omits `pool_max_conns`, or the sum exceeds `85`.
 
 ## 7. Memory
 
@@ -197,14 +193,16 @@ floor — a sizing-table inference, not a measurement.
 ## 8. Kubernetes
 
 Not the pilot. Only `infrastructure/kubernetes/services/api-gateway` exists; its
-Deployment now carries `ASK_SERVICE_URL`, `TRAVEL_SERVICE_URL`,
-`FLEET_SERVICE_URL`, `GATEWAY_TRUSTED_PROXIES` (ConfigMap, dev VPC CIDR as the
-widest safe default), the identity secrets from an externally provisioned
-`api-gateway-secrets` Secret and `REDIS_URL` (the gateway never read the
-`REDIS_HOST/PORT/PASSWORD` triple). No other service was given a manifest.
-`.github/workflows/deploy.yml` (the ECS track) still builds from the service
-directory (`cd services/<svc> && docker build .`), which does not match the
-repository-root context every Dockerfile now uses — see "Open items".
+Deployment carries `ASK_SERVICE_URL`, `TRAVEL_SERVICE_URL`,
+`FLEET_SERVICE_URL`, `GATEWAY_TRUSTED_PROXIES=REPLACE_WITH_INGRESS_CIDR`
+(ConfigMap placeholder that `client-address.ts` rejects as non-IP/CIDR, failing
+closed with zero trusted proxies until an environment overlay sets exact ingress
+CIDRs), the identity secrets from an externally provisioned
+`api-gateway-secrets` Secret and `REDIS_URL`. Both `base` and
+`services/api-gateway` are rendered with `kustomize` and validated with
+`kubeconform -strict` in `.github/workflows/infrastructure.yml`.
+`.github/workflows/deploy.yml` builds images from the repository root with
+`docker build -f services/<svc>/Dockerfile .`.
 
 ## 9. Verification performed here
 
@@ -214,10 +212,10 @@ daemon was not permitted), so no `docker build` ran. Instead:
 | Check                                                                                                                                                                                                                                          | Result                                                                                                                                                                                                                                      |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `docker compose -f infrastructure/hetzner/docker-compose.prod.yml --env-file <filled scratch env> config -q`                                                                                                                                   | exit 0; 24 services (+ `migrate`, `minio-init` under `--profile tools`). With `.env.example` as-is it refuses (`FLEET_PAYMENT_SERVICE_KEY is required`), as designed.                                                                       |
-| `node infrastructure/scripts/check-dockerfiles.mjs`                                                                                                                                                                                            | 17 / 17 Dockerfiles pass. The same checker over the HEAD versions of the 11 pre-existing Dockerfiles: 0 / 11.                                                                                                                               |
+| `node infrastructure/scripts/check-dockerfiles.mjs`                                                                                                                                                                                            | 17 / 17 Dockerfiles pass (`node:22-alpine`, `pnpm prune --prod`, writable `.next/cache`).                                                                                                                                                   |
 | **Dockerfile replay** (scratch tool): each Dockerfile's COPY/RUN sequence executed in per-stage directories holding only what the file copies, then the production-stage layout booted in production mode against a scratch database and Redis | All 14 composed backends built and answered `GET /health` 200 in production mode (ride-service: `environment: production`, database and Redis connected). The web apps' `next build` was not replayed (memory); they pass the static check. |
-| `node infrastructure/scripts/check-compose-env.mjs`                                                                                                                                                                                            | PASS — 16 services, 165 classified variables. Against the HEAD compose file: 45 problems (among them the missing `RIDE_QUOTE_SIGNING_SECRET`, `CONFIG_SERVICE_URL`, notification `JWT_SECRET`).                                             |
-| `caddy validate` with Caddy 2.8.4 + caddy-ratelimit v0.1.0                                                                                                                                                                                     | Valid configuration. Stock 2.8.4 rejects it (`unrecognized directive: rate_limit`).                                                                                                                                                         |
+| `node infrastructure/scripts/check-compose-env.mjs`                                                                                                                                                                                            | PASS — 16 services, 168 classified variables, 85/85 pooled DB connections, zero dead `.env.example` keys, `location-service` pinned uncomposed.                                                                                             |
+| `caddy validate` with Caddy 2.8.4 + caddy-ratelimit v0.1.0                                                                                                                                                                                     | Valid configuration; Grafana host enforces `@blocked not remote_ip {$GRAFANA_ALLOWED_IPS:127.0.0.1/32}` -> `403`.                                                                                                                           |
 | Webhook ingress exercised on a local Caddy against an echo upstream                                                                                                                                                                            | signed POST forwarded with body intact and no identity headers; GET, other paths, `..` traversal → 404; 1.1 MB body → 413.                                                                                                                  |
 | `init-db.sql` through `psql -v ON_ERROR_STOP=1` (in a rolled-back transaction)                                                                                                                                                                 | HEAD: exit 3 at line 1. Fixed: exit 0.                                                                                                                                                                                                      |
 | `deploy.sh preflight`                                                                                                                                                                                                                          | Passes a filled env; fails `.env.example` (CHANGE_ME lines, short keys, compose interpolation) and a shared secret pair.                                                                                                                    |
@@ -241,13 +239,10 @@ Independent verification (same constraints, no Docker daemon):
 
 ## 10. Open items (not configuration, or outside this slice)
 
-- **user-service → notification-service OTP SMS**: user-service's client sends
-  `Authorization: Bearer $SERVICE_API_KEY`; notification-service's service routes
-  take `X-Service-Key`. OTP SMS cannot authenticate whatever is configured.
-- **`.github/workflows/deploy.yml`** must build with
-  `docker build -f services/<svc>/Dockerfile .` from the repository root.
+- ~~**user-service → notification-service OTP SMS**~~: Resolved (`CC-A06` / `3d254c3` — `user-service` sends `X-Service-Key: $NOTIFICATION_SERVICE_KEY`).
+- ~~**`.github/workflows/deploy.yml`**~~: Resolved (`CC-A07` — builds from the repository root with `docker build -f services/<svc>/Dockerfile .`).
 - **`docker/docker-compose.realtime.yml`** builds with contexts relative to
-  `docker/` that do not exist; it was already broken.
+  `docker/` that do not exist; it was already broken (legacy local compose, not used by the pilot).
 - **No `.dockerignore` at the repository root.** The Dockerfiles name every file
   they copy, so none is needed for correctness; the per-service `.dockerignore`
   files are not consulted when the context is the root.

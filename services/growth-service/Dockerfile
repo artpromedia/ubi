@@ -24,9 +24,9 @@
 # ===========================================
 # Build Stage
 # ===========================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
-# Prisma's query engine needs OpenSSL 3; node:20-alpine already ships libssl3,
+# Prisma's query engine needs OpenSSL 3; node:22-alpine already ships libssl3,
 # which Prisma detects (it generates the linux-musl-openssl-3.0.x engine).
 
 # pnpm, pinned to the repository's packageManager version.
@@ -83,13 +83,12 @@ RUN pnpm --filter "@ubi/growth-service..." run build
 # question silently ends the step with nothing pruned — so the purge is
 # pre-confirmed. Lifecycle scripts are skipped: the root `prepare` (husky)
 # would fail once its devDependency is gone, and nothing needs to run again.
-RUN pnpm install --prod --frozen-lockfile --offline --ignore-scripts \
-      --config.confirmModulesPurge=false --filter "@ubi/growth-service..."
+RUN pnpm prune --prod --ignore-scripts --config.confirmModulesPurge=false
 
 # ===========================================
 # Production Stage
 # ===========================================
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 WORKDIR /app
 

@@ -17,7 +17,7 @@ concurrency:
 env:
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 jobs:
   # ===========================================
@@ -453,6 +453,15 @@ jobs:
         run: |
           pnpm --filter @ubi/contracts codegen
           git diff --exit-code packages/contracts/src/state-machines/machines.generated.ts
+
+      - name: Validate Dockerfiles and compose environment contract
+        # Static guards against workspace closure drift, Node version / prune /
+        # cache-ownership regressions, unclassified process.env reads, missing
+        # Postgres pool bounds, and dead .env.example keys.
+        run: |
+          node infrastructure/scripts/check-dockerfiles.mjs
+          node infrastructure/scripts/check-compose-env.mjs
+          node --test infrastructure/scripts/__tests__/checkers.test.mjs
 
   # ===========================================
   # MOBILE (FLUTTER)

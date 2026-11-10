@@ -240,9 +240,11 @@ grafana.{$DOMAIN:ubi.africa} {
         -Server
     }
     
-    # IP allowlist for monitoring (adjust as needed)
-    @blocked not remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1
-    # respond @blocked "Access denied" 403
+    # IP allowlist for monitoring (space-separated IPs / CIDRs in
+    # GRAFANA_ALLOWED_IPS; defaults to 127.0.0.1/32 so external access is
+    # denied until configured in .env)
+    @blocked not remote_ip {$GRAFANA_ALLOWED_IPS:127.0.0.1/32}
+    respond @blocked "Access denied" 403
     
     reverse_proxy grafana:3000 {
         header_up Host {host}

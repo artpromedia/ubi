@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -100,14 +101,10 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		return nil, fmt.Errorf("RIDE_QUOTE_SIGNING_SECRET: %w", err)
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(config.DatabaseURL)
+	poolConfig, err := parsePoolConfig(config.DatabaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse DATABASE_URL: %w", err)
+		return nil, err
 	}
-	poolConfig.MaxConns = 25
-	poolConfig.MinConns = 2
-	poolConfig.MaxConnLifetime = 30 * time.Minute
-	poolConfig.MaxConnIdleTime = 5 * time.Minute
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
@@ -279,4 +276,40 @@ func (r *Runtime) Close() {
 			r.logger.Warn().Err(err).Msg("failed to close Redis")
 		}
 	}
+}
+
+const (
+	defaultPoolMaxConns = 20
+	defaultPoolMinConns = 2
+)
+
+func hasPoolParam(databaseURL, key string) bool {
+	if u, err := url.Parse(databaseURL); err == nil && u.Scheme != "" {
+		return u.Query().Has(key)
+	}
+	for _, field := range strings.Fields(databaseURL) {
+		if strings.HasPrefix(field, key+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+func parsePoolConfig(databaseURL string) (*pgxpool.Config, error) {
+	poolConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse DATABASE_URL: %w", err)
+	}
+	if !hasPoolParam(databaseURL, "pool_max_conns") {
+		poolConfig.MaxConns = defaultPoolMaxConns
+	}
+	if !hasPoolParam(databaseURL, "pool_min_conns") {
+		poolConfig.MinConns = defaultPoolMinConns
+	}
+	if poolConfig.MinConns > poolConfig.MaxConns {
+		poolConfig.MinConns = poolConfig.MaxConns
+	}
+	poolConfig.MaxConnLifetime = 30 * time.Minute
+	poolConfig.MaxConnIdleTime = 5 * time.Minute
+	return poolConfig, nil
 }

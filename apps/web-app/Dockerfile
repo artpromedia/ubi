@@ -25,7 +25,7 @@
 # ===========================================
 # Build Stage
 # ===========================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # pnpm, pinned to the repository's packageManager version.
 RUN corepack enable && corepack prepare pnpm@9.14.2 --activate
@@ -71,15 +71,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # order.
 RUN pnpm --filter "@ubi/web-app..." run build
 
-# Unlink devDependencies (see services/notification-service/Dockerfile for
-# why the purge is pre-confirmed and lifecycle scripts are skipped).
-RUN pnpm install --prod --frozen-lockfile --offline --ignore-scripts \
-      --config.confirmModulesPurge=false --filter "@ubi/web-app..."
+# Unlink devDependencies from both the workspace root and every package in the
+# closure, and garbage-collect unreferenced dev packages from .pnpm.
+RUN pnpm prune --prod --ignore-scripts --config.confirmModulesPurge=false
 
 # ===========================================
 # Production Stage
 # ===========================================
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 WORKDIR /app
 
@@ -105,9 +104,11 @@ COPY --from=builder /app/apps/web-app/next.config.mjs ./apps/web-app/next.config
 COPY --from=builder /app/apps/web-app/.next ./apps/web-app/.next
 COPY --from=builder /app/apps/web-app/node_modules ./apps/web-app/node_modules
 
-# Create non-root user for security
+# Create non-root user and ensure Next.js runtime cache directory is writable
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+    adduser -S nodejs -u 1001 -G nodejs && \
+    mkdir -p /app/apps/web-app/.next/cache && \
+    chown -R nodejs:nodejs /app/apps/web-app/.next/cache
 
 USER nodejs
 

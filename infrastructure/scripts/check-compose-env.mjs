@@ -612,6 +612,23 @@ function envExampleKeys() {
 // Main
 // ---------------------------------------------------------------------------
 
+/**
+ * Dockerfiles intentionally excluded from docker-compose.prod.yml.
+ * - services/location-service/Dockerfile: /v1/locations/* routes to
+ *   ride-service, and location-service exposes an unauthenticated internal API
+ *   (P3-11; docs/security/INTERNAL_IDENTITY.md).
+ */
+export const INTENTIONALLY_UNCOMPOSED_DOCKERFILES = new Set([
+  "services/location-service/Dockerfile",
+]);
+
+/**
+ * Maximum sum of pooled Postgres connections across composed services against
+ * Postgres's default `max_connections = 100` (leaves 3 superuser_reserved +
+ * 12 headroom for `migrate`, `pg_dump`, and operator `psql` — P1-08).
+ */
+export const MAX_POOLED_DB_CONNECTIONS = 85;
+
 function sourceDirOf(name, service) {
   const dockerfile = service.build?.dockerfile;
   if (typeof dockerfile !== "string" || !/^(services|apps)\//.test(dockerfile))
@@ -629,7 +646,8 @@ function main() {
   const problems = [];
   const fail = (svc, msg) => problems.push(`${svc}: ${msg}`);
 
-  // 6. Dockerfiles exist.
+  // 6. Dockerfiles exist + uncomposed Dockerfile pin + migrate Node LTS check.
+  const composedDockerfiles = new Set();
   for (const [name, service] of Object.entries(compose.services)) {
     if (service.build === undefined) continue;
     const context = path.resolve(HETZNER, service.build.context ?? ".");
@@ -637,12 +655,44 @@ function main() {
       context,
       service.build.dockerfile ?? "Dockerfile",
     );
+    const rel = path.relative(ROOT, dockerfile).replace(/\\/g, "/");
+    composedDockerfiles.add(rel);
     if (!fs.existsSync(dockerfile))
-      fail(
-        name,
-        `build.dockerfile ${path.relative(ROOT, dockerfile)} does not exist`,
-      );
+      fail(name, `build.dockerfile ${rel} does not exist`);
   }
+  if (!discoverOnly) {
+    for (const top of ["services", "apps"]) {
+      const topAbs = path.join(ROOT, top);
+      if (!fs.existsSync(topAbs)) continue;
+      for (const entry of fs.readdirSync(topAbs).sort()) {
+        const rel = `${top}/${entry}/Dockerfile`;
+        if (!fs.existsSync(path.join(ROOT, rel))) continue;
+        if (INTENTIONALLY_UNCOMPOSED_DOCKERFILES.has(rel)) {
+          if (composedDockerfiles.has(rel)) {
+            fail(
+              "compose",
+              `includes ${rel}, which is pinned in INTENTIONALLY_UNCOMPOSED_DOCKERFILES`,
+            );
+          }
+        } else if (!composedDockerfiles.has(rel)) {
+          fail(
+            "compose",
+            `${rel} is not in docker-compose.prod.yml (compose it or pin it in INTENTIONALLY_UNCOMPOSED_DOCKERFILES)`,
+          );
+        }
+      }
+    }
+    const migrateImage = compose.services.migrate?.image ?? "";
+    const migrateNode = /^node:(\d+)-alpine\b/.exec(migrateImage);
+    if (!migrateNode || Number(migrateNode[1]) < 22) {
+      fail(
+        "migrate",
+        `image "${migrateImage}" must use node:22-alpine (Node >= 22 LTS)`,
+      );
+    }
+  }
+
+  let totalPooledConnections = 0;
 
   for (const [name, service] of Object.entries(compose.services)) {
     const dir = sourceDirOf(name, service);
@@ -704,21 +754,69 @@ function main() {
           `compose sets ${v}, which the service never reads (and CONTRACT does not list as unread)`,
         );
     }
+    // 7. Postgres pool budget (P1-08): every active DB-connecting service must
+    // bound its pool explicitly in DATABASE_URL.
+    if (contract.DATABASE_URL === "required") {
+      const dbUrl = composeEnv.DATABASE_URL ?? "";
+      const isGo = fs.existsSync(path.join(ROOT, dir, "go.mod"));
+      if (isGo) {
+        const m = /[?&]pool_max_conns=([1-9]\d*)(?:&|$)/.exec(dbUrl);
+        if (!m) {
+          fail(
+            name,
+            "DATABASE_URL must include explicit pool_max_conns=<positive int> (P1-08 connection budget)",
+          );
+        } else {
+          totalPooledConnections += Number(m[1]);
+        }
+      } else {
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(ROOT, dir, "package.json"), "utf8"),
+        );
+        if (runtimeWorkspacePackages(manifest).has("@ubi/database")) {
+          const m = /[?&]connection_limit=([1-9]\d*)(?:&|$)/.exec(dbUrl);
+          if (!m) {
+            fail(
+              name,
+              "Prisma service DATABASE_URL must include explicit connection_limit=<positive int> (P1-08 connection budget)",
+            );
+          } else {
+            totalPooledConnections += Number(m[1]);
+          }
+        }
+      }
+    }
   }
 
   if (!discoverOnly) {
-    // 4. Interpolations documented.
+    if (totalPooledConnections > MAX_POOLED_DB_CONNECTIONS) {
+      fail(
+        "compose",
+        `pooled Postgres connections sum to ${totalPooledConnections}, exceeding budget ${MAX_POOLED_DB_CONNECTIONS} (max_connections=100)`,
+      );
+    }
+    // 4. Interpolations documented, and no dead .env.example keys.
     const documented = envExampleKeys();
+    const interpolated = new Set();
     for (const m of composeText.matchAll(
       /\$\{([A-Z0-9_]+)(:?[-?])?([^}]*)\}/g,
     )) {
       const [, v, op, rest] = m;
+      interpolated.add(v);
       const hasDefault = op === ":-" && rest !== "";
       if (!documented.has(v) && !hasDefault)
         fail(
           "compose",
           `interpolates \${${v}} with no default and .env.example does not document it`,
         );
+    }
+    for (const k of documented) {
+      if (!interpolated.has(k)) {
+        fail(
+          "env-example",
+          `documents ${k}, which compose never interpolates (remove dead key or wire it in docker-compose.prod.yml)`,
+        );
+      }
     }
     // 5. The matrix names every classified variable.
     const matrix = fs.existsSync(MATRIX) ? fs.readFileSync(MATRIX, "utf8") : "";
@@ -739,7 +837,7 @@ function main() {
     const vars = new Set(Object.values(CONTRACT).flatMap((c) => Object.keys(c)))
       .size;
     console.log(
-      `PASS  ${services} services, ${vars} classified variables, compose + .env.example + matrix consistent`,
+      `PASS  ${services} services, ${vars} classified variables, ${totalPooledConnections}/${MAX_POOLED_DB_CONNECTIONS} pooled DB connections, compose + .env.example + matrix consistent`,
     );
     process.exit(0);
   }

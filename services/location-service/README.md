@@ -2,6 +2,8 @@
 
 High-performance driver location tracking service with H3 geospatial indexing.
 
+> **Deployment status (`P3-11`):** `location-service` is **intentionally not deployed** in the Hetzner pilot stack (`infrastructure/hetzner/docker-compose.prod.yml`), and `infrastructure/scripts/check-compose-env.mjs` pins `services/location-service/Dockerfile` in `INTENTIONALLY_UNCOMPOSED_DOCKERFILES`. Client `/v1/locations/*` traffic routes to `ride-service` (`services/api-gateway/src/routes/proxy-map.ts`), while `location-service` exposes an unauthenticated internal API (`docs/security/INTERNAL_IDENTITY.md`) and remains a standalone Go binary built and unit-tested in CI until internal service authentication is added.
+
 ## Features
 
 - **H3 Geospatial Indexing**: Ultra-fast driver discovery using Uber's H3 hexagonal grid system
@@ -160,10 +162,10 @@ go build -o location-service cmd/server/main.go
 ./location-service
 ```
 
-### Docker
+### Docker (from repository root)
 
 ```bash
-docker build -t ubi-location-service .
+docker build -f services/location-service/Dockerfile -t ubi-location-service .
 docker run -p 4011:4011 ubi-location-service
 ```
 

@@ -227,6 +227,34 @@ jobs:
         working-directory: infrastructure/terraform/environments/dev
 
   # ===========================================
+  # HETZNER COMPOSE & DOCKERFILE VALIDATION
+  # ===========================================
+  deploy-config-validate:
+    name: Validate Dockerfiles & Compose Contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Dockerfiles and compose environment contract
+        run: |
+          node infrastructure/scripts/check-dockerfiles.mjs
+          node infrastructure/scripts/check-compose-env.mjs
+          node --test infrastructure/scripts/__tests__/checkers.test.mjs
+
+  # ===========================================
   # KUBERNETES VALIDATION
   # ===========================================
   kubernetes-validate:
@@ -245,8 +273,10 @@ jobs:
       # a runner with no cluster. kubeconform validates against published
       # Kubernetes JSON schemas with no cluster, which is the correct tool for
       # a stateless CI check.
-      - name: Build base manifests
-        run: kustomize build infrastructure/kubernetes/base > /tmp/base.yaml
+      - name: Build base and service overlay manifests
+        run: |
+          kustomize build infrastructure/kubernetes/base > /tmp/base.yaml
+          kustomize build infrastructure/kubernetes/services/api-gateway > /tmp/api-gateway.yaml
 
       - name: Install kubeconform
         run: |
@@ -258,7 +288,8 @@ jobs:
           kubeconform -summary -output json \
             -kubernetes-version 1.29.0 \
             -strict \
-            /tmp/base.yaml
+            /tmp/base.yaml \
+            /tmp/api-gateway.yaml
 
   # ===========================================
   # ARGOCD SYNC (Dev)

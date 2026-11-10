@@ -27,7 +27,7 @@
 # ===========================================
 # Build Stage
 # ===========================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # pnpm, pinned to the repository's packageManager version.
 RUN corepack enable && corepack prepare pnpm@9.14.2 --activate
@@ -77,13 +77,12 @@ RUN pnpm --filter "@ubi/realtime-gateway..." run build
 # question silently ends the step with nothing pruned — so the purge is
 # pre-confirmed. Lifecycle scripts are skipped: the root `prepare` (husky)
 # would fail once its devDependency is gone, and nothing needs to run again.
-RUN pnpm install --prod --frozen-lockfile --offline --ignore-scripts \
-      --config.confirmModulesPurge=false --filter "@ubi/realtime-gateway..."
+RUN pnpm prune --prod --ignore-scripts --config.confirmModulesPurge=false
 
 # ===========================================
 # Production Stage
 # ===========================================
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 WORKDIR /app
 
