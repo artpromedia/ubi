@@ -221,7 +221,15 @@ export const WeekMoneyPanel = ({
       data-testid={FLEET_TEST_IDS.vehicle.weekMoney}
       className="rounded-xl border border-[#222] bg-[#1A1A1A] p-4 text-sm"
     >
-      <h2 className="mb-2 font-semibold text-zinc-100">This week</h2>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="font-semibold text-zinc-100">This week</h2>
+        <Link
+          href="/remittance"
+          className="text-xs font-medium text-[#1DB954] hover:underline"
+        >
+          Remittance statement →
+        </Link>
+      </div>
       <dl className="space-y-1.5">
         {view.lines.map((line) => (
           <div key={line.label} className="flex justify-between gap-3">

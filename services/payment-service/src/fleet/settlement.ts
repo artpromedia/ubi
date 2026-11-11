@@ -101,7 +101,7 @@ import {
   weeksBetween,
 } from "./model";
 import { publishEvent, writeAudit } from "../ledger/audit";
-import { spendableOf } from "../ledger/balances";
+import { balanceOf, spendableOf } from "../ledger/balances";
 import { assertFlagEnabled } from "../ledger/city-config";
 import { lockWallet, type WalletDeps } from "../ledger/context";
 import { rangeWindow, type DayWindow } from "../ledger/day-window";
@@ -109,6 +109,7 @@ import { payloadHashOf } from "../ledger/mp-holds";
 import { postEntry } from "../ledger/post-entry";
 import {
   ensureWallet,
+  findWallet,
   requireWallet,
   type WalletRecord,
 } from "../ledger/wallets";
@@ -1224,6 +1225,70 @@ export interface FleetWeekMoneyAssignmentSlice {
   readonly vehicleId: string;
   readonly activeFrom: string;
   readonly activeTo: string | null;
+  readonly termsVersion?: number | undefined;
+  readonly termsType?: "weekly_fixed" | "percent_of_net" | undefined;
+  readonly shiftHours?: number | undefined;
+  readonly plannedMaintenanceHours?: number | undefined;
+}
+
+export interface FleetWalletSummary {
+  readonly walletId: string | null;
+  readonly balance: { readonly amountMinor: number; readonly currency: string };
+  readonly asOf: string;
+  readonly cashOutAvailable: false;
+  readonly cashOutStatus: string;
+}
+
+export interface FleetRemittanceAdjustmentView {
+  readonly sequence: number;
+  readonly closedWeekStart: string;
+  readonly appliesToWeekStart: string;
+  readonly previousDue: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly adjustedDue: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly deltaDue: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly settlementEntryId: string | null;
+  readonly journalEntryId: string | null;
+  readonly journalReference: string;
+  readonly recordedAt: string;
+}
+
+export interface FleetAssignmentStatementItem {
+  readonly assignmentId: string;
+  readonly driverId: string;
+  readonly vehicleId: string;
+  readonly settled: boolean;
+  readonly settledAt: string | null;
+  readonly termsVersion: number | null;
+  readonly termsType: "weekly_fixed" | "percent_of_net" | null;
+  readonly shiftHours: number | null;
+  readonly plannedMaintenanceHours: number | null;
+  readonly capApplied: boolean;
+  readonly weekGross: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly ubiCommission: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly fleetRemittance: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly remittanceStatus: string;
+  readonly remittance: FleetMoneySummary["remittance"];
+  readonly journalEntryId: string | null;
+  readonly journalReference: string | null;
+  readonly adjustments: readonly FleetRemittanceAdjustmentView[];
 }
 
 export interface FleetWeekMoneyInput {
@@ -1244,19 +1309,31 @@ export interface FleetWeekMoneyView {
   readonly fleet: FleetMoneySummary;
   readonly vehicles: Readonly<Record<string, FleetMoneySummary>>;
   readonly assignments: Readonly<Record<string, FleetMoneySummary>>;
+  readonly wallet: FleetWalletSummary;
+  readonly statementItems: readonly FleetAssignmentStatementItem[];
 }
 
 interface AssignmentAccum {
   readonly assignmentId: string;
+  readonly driverId: string;
   readonly vehicleId: string;
   readonly grossMinor: number;
   readonly ubiCommissionMinor: number;
   readonly settled: boolean;
+  readonly settledAt: string | null;
+  readonly termsVersion: number | null;
+  readonly termsType: "weekly_fixed" | "percent_of_net" | null;
+  readonly shiftHours: number | null;
+  readonly plannedMaintenanceHours: number | null;
+  readonly capApplied: boolean;
   readonly dueMinor: number;
   readonly collectedMinor: number;
   readonly shortfallMinor: number;
   readonly carriedMinor: number;
   readonly refundedMinor: number;
+  readonly journalEntryId: string | null;
+  readonly journalReference: string | null;
+  readonly adjustments: readonly FleetRemittanceAdjustmentView[];
 }
 
 function summariseMoney(
@@ -1332,10 +1409,11 @@ function summariseMoney(
 }
 
 /**
- * Service-keyed internal read for `fleet-service` (CC-A02 / P1-09, DEC-9 = A).
+ * Service-keyed internal read for `fleet-service` (CC-A02 / CC-C03 / P1-09, DEC-9 = A).
  * Returns week gross (`NET_EARNING_KINDS`), UBI commission
- * (`NET_COMMISSION_KINDS`), and settled remittance figures per fleet, vehicle,
- * and assignment — never a driver's net earnings or a per-trip split.
+ * (`NET_COMMISSION_KINDS`), settled remittance figures per fleet, vehicle,
+ * and assignment, closed-week adjustments, and the fleet wallet balance —
+ * never a driver's net earnings or a per-trip split.
  */
 export async function fleetWeekMoney(
   deps: WalletDeps,
@@ -1362,9 +1440,18 @@ export async function fleetWeekMoney(
   const fleetSettlements = weekRecords.settlements.filter(
     (record) => record.fleetId === input.fleetId,
   );
+  const fleetAdjustments = weekRecords.adjustments.filter(
+    (record) => record.fleetId === input.fleetId,
+  );
   const settledByAssignment = new Map<string, RemittanceRecord>(
     fleetSettlements.map((record) => [record.assignmentId, record]),
   );
+  const adjustmentsByAssignment = new Map<string, AdjustmentRecord[]>();
+  for (const adj of fleetAdjustments) {
+    const existing = adjustmentsByAssignment.get(adj.assignmentId) ?? [];
+    existing.push(adj);
+    adjustmentsByAssignment.set(adj.assignmentId, existing);
+  }
 
   const slicesById = new Map<string, FleetWeekMoneyAssignmentSlice>();
   if (input.assignments !== undefined) {
@@ -1382,6 +1469,10 @@ export async function fleetWeekMoney(
             vehicleId: item.vehicleId,
             activeFrom: item.activeFrom,
             activeTo: item.activeTo,
+            termsVersion: item.termsVersion,
+            termsType: item.terms.type,
+            shiftHours: item.shiftHoursInWeek,
+            plannedMaintenanceHours: item.plannedMaintenanceHoursInWeek,
           });
         }
       }
@@ -1404,26 +1495,36 @@ export async function fleetWeekMoney(
         vehicleId: settled.vehicleId,
         activeFrom: window.start.toISOString(),
         activeTo: window.end.toISOString(),
+        termsVersion: settled.termsVersion,
+        termsType: settled.termsType,
+        shiftHours: settled.shiftHours,
+        plannedMaintenanceHours: settled.plannedMaintenanceHours,
       });
     }
   }
 
   const slices = [...slicesById.values()];
   const driverIds = [...new Set(slices.map((slice) => slice.driverId))];
-  const walletRows =
+  const [walletRows, fleetWallet] = await Promise.all([
     driverIds.length === 0
-      ? []
-      : await deps.db.wallet.findMany({
+      ? Promise.resolve([])
+      : deps.db.wallet.findMany({
           where: {
             ownerType: "user",
             ownerId: { in: driverIds },
             currency: city.currency,
           },
           select: { id: true, ownerId: true },
-        });
+        }),
+    findWallet(deps.db, FLEET_WALLET_OWNER, input.fleetId, city.currency),
+  ]);
   const walletByDriver = new Map<string, string>(
     walletRows.map((row) => [row.ownerId, row.id]),
   );
+  const fleetWalletBalance =
+    fleetWallet === null
+      ? money(0, city.currency)
+      : await balanceOf(deps.db, fleetWallet.id, city.currency);
 
   const accums: AssignmentAccum[] = [];
   for (const slice of slices) {
@@ -1446,26 +1547,84 @@ export async function fleetWeekMoney(
             },
           );
     const settled = settledByAssignment.get(slice.assignmentId);
+    const rawAdjustments =
+      adjustmentsByAssignment.get(slice.assignmentId) ?? [];
+    const adjustments: FleetRemittanceAdjustmentView[] = rawAdjustments.map(
+      (adj) => ({
+        sequence: adj.sequence,
+        closedWeekStart: adj.closedWeekStart,
+        appliesToWeekStart: adj.appliesToWeekStart,
+        previousDue: money(adj.previousDueMinor, city.currency),
+        adjustedDue: money(adj.dueMinor, city.currency),
+        deltaDue: money(adj.deltaMinor, city.currency),
+        settlementEntryId: adj.settlementEntryId,
+        journalEntryId: adj.journalEntryId,
+        journalReference: adjustmentReference(
+          adj.assignmentId,
+          adj.closedWeekStart,
+          adj.sequence,
+        ),
+        recordedAt: adj.recordedAt,
+      }),
+    );
     accums.push({
       assignmentId: slice.assignmentId,
+      driverId: slice.driverId,
       vehicleId: slice.vehicleId,
       grossMinor,
       ubiCommissionMinor,
       settled: settled !== undefined,
+      settledAt: settled?.settledAt ?? null,
+      termsVersion: settled?.termsVersion ?? slice.termsVersion ?? null,
+      termsType: settled?.termsType ?? slice.termsType ?? null,
+      shiftHours: settled?.shiftHours ?? slice.shiftHours ?? null,
+      plannedMaintenanceHours:
+        settled?.plannedMaintenanceHours ??
+        slice.plannedMaintenanceHours ??
+        null,
+      capApplied: settled?.capApplied ?? false,
       dueMinor: settled?.dueMinor ?? 0,
       collectedMinor: settled?.collectedMinor ?? 0,
       shortfallMinor: settled?.shortfallMinor ?? 0,
       carriedMinor: settled?.carryOutMinor ?? 0,
       refundedMinor: settled?.refundedMinor ?? 0,
+      journalEntryId: settled?.journalEntryId ?? null,
+      journalReference:
+        settled !== undefined
+          ? settlementReference(slice.assignmentId, input.weekStart)
+          : null,
+      adjustments,
     });
   }
 
   const assignmentsView: Record<string, FleetMoneySummary> = {};
+  const statementItems: FleetAssignmentStatementItem[] = [];
   for (const accum of accums) {
-    assignmentsView[accum.assignmentId] = summariseMoney(
-      [accum],
-      city.currency,
-    );
+    const summary = summariseMoney([accum], city.currency);
+    assignmentsView[accum.assignmentId] = summary;
+    statementItems.push({
+      assignmentId: accum.assignmentId,
+      driverId: accum.driverId,
+      vehicleId: accum.vehicleId,
+      settled: accum.settled,
+      settledAt: accum.settledAt,
+      termsVersion: accum.termsVersion,
+      termsType: accum.termsType,
+      shiftHours: accum.shiftHours,
+      plannedMaintenanceHours: accum.plannedMaintenanceHours,
+      capApplied: accum.capApplied,
+      weekGross: summary.weekGross,
+      ubiCommission: summary.ubiCommission,
+      fleetRemittance: summary.fleetRemittance,
+      remittanceStatus:
+        accum.adjustments.length > 0 && summary.remittanceStatus === "Settled"
+          ? "Adjusted"
+          : summary.remittanceStatus,
+      remittance: summary.remittance,
+      journalEntryId: accum.journalEntryId,
+      journalReference: accum.journalReference,
+      adjustments: accum.adjustments,
+    });
   }
 
   const allVehicleIds = new Set<string>([
@@ -1480,16 +1639,26 @@ export async function fleetWeekMoney(
     vehiclesView[vehicleId] = summariseMoney(vehicleAccums, city.currency);
   }
 
+  const asOf = deps.now().toISOString();
   return {
     fleetId: input.fleetId,
     cityId: input.cityId,
     weekStart: input.weekStart,
     weekEnd,
-    asOf: deps.now().toISOString(),
+    asOf,
     excludes: FLEET_MONEY_EXCLUDES,
     fleet: summariseMoney(accums, city.currency),
     vehicles: vehiclesView,
     assignments: assignmentsView,
+    wallet: {
+      walletId: fleetWallet?.id ?? null,
+      balance: fleetWalletBalance,
+      asOf,
+      cashOutAvailable: false,
+      cashOutStatus:
+        "Cash-out is not available yet. Settled remittance is credited to your UBI fleet wallet.",
+    },
+    statementItems,
   };
 }
 

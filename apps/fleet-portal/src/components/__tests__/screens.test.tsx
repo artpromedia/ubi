@@ -49,12 +49,21 @@ import {
 } from "../maintenance/MaintenanceEditor";
 import { OffRoadPanel } from "../maintenance/OffRoadPanel";
 import { OverviewView } from "../overview/Overview";
+import {
+  recentWeekOptions,
+  RemittanceStatementView,
+} from "../remittance/RemittanceStatement";
 import { StaffRolesView } from "../staff/StaffRoles";
 import { UtilisationView } from "../utilisation/Utilisation";
 import { VehicleDetailView, WeekMoneyPanel } from "../vehicle/VehicleDetail";
 import { VehiclesListView } from "../vehicle/VehiclesList";
 
-import type { FleetVehicleList, FleetView } from "@/lib/fleet-types";
+import type {
+  FleetRemittanceStatementAvailable,
+  FleetRemittanceStatementUnavailable,
+  FleetVehicleList,
+  FleetView,
+} from "@/lib/fleet-types";
 import type { MaintenanceForm } from "@/lib/maintenance-model";
 import type { ReactElement } from "react";
 
@@ -1324,5 +1333,196 @@ describe("CC-C02 — KYB onboarding, staff invitations & vehicle documents", () 
     expect(markup).toContain(
       `href="/vehicles/${encodeURIComponent(VEH.ab)}#documents"`,
     );
+  });
+});
+
+describe("CC-C03 RemittanceStatementView (P1-09, DEC-9 = A)", () => {
+  const weekOptions = recentWeekOptions(NOW, owner.zone);
+  const sampleStatement: FleetRemittanceStatementAvailable = {
+    available: true,
+    fleetId: owner.fleetId,
+    zone: owner.zone,
+    weekStart: "2026-09-28",
+    weekEnd: "2026-10-04",
+    asOf: "2026-09-30T10:00:00.000Z",
+    excludes: ["cash_fares", "tips"],
+    wallet: {
+      walletId: "wlt_flt_example",
+      balance: { amountMinor: 4_500_000, currency: "NGN" },
+      asOf: "2026-09-30T10:00:00.000Z",
+      cashOutAvailable: false,
+      cashOutStatus: "not_available_yet",
+    },
+    fleet: {
+      weekGross: { amountMinor: 18_450_000, currency: "NGN" },
+      ubiCommission: { amountMinor: 1_845_000, currency: "NGN" },
+      fleetRemittance: { amountMinor: 4_500_000, currency: "NGN" },
+      remittanceStatus: "Settled",
+      remittance: {
+        due: { amountMinor: 4_500_000, currency: "NGN" },
+        collected: { amountMinor: 4_500_000, currency: "NGN" },
+        shortfall: { amountMinor: 0, currency: "NGN" },
+        carried: { amountMinor: 0, currency: "NGN" },
+        refunded: { amountMinor: 0, currency: "NGN" },
+      },
+    },
+    assignments: [
+      {
+        assignmentId: "asg_1",
+        driverId: "drv_1",
+        driverDisplayName: "Chidi O.",
+        vehicleId: VEH.ab,
+        plate: "LAG-118-AB",
+        settled: true,
+        settledAt: "2026-10-05T00:00:00.000Z",
+        termsVersion: 2,
+        termsType: "weekly_fixed",
+        shiftHours: 84,
+        plannedMaintenanceHours: 4,
+        capApplied: true,
+        weekGross: { amountMinor: 18_450_000, currency: "NGN" },
+        ubiCommission: { amountMinor: 1_845_000, currency: "NGN" },
+        fleetRemittance: { amountMinor: 4_500_000, currency: "NGN" },
+        remittanceStatus: "Settled",
+        remittance: {
+          due: { amountMinor: 4_500_000, currency: "NGN" },
+          collected: { amountMinor: 4_500_000, currency: "NGN" },
+          shortfall: { amountMinor: 0, currency: "NGN" },
+          carried: { amountMinor: 0, currency: "NGN" },
+          refunded: { amountMinor: 200_000, currency: "NGN" },
+        },
+        journalEntryId: "je_1",
+        journalReference: "fleet_settlement:asg_1:2026-09-28",
+        adjustments: [
+          {
+            adjustmentId: "adj_1",
+            sequence: 1,
+            closedWeekStart: "2026-09-21",
+            appliesToWeekStart: "2026-09-28",
+            previousDue: { amountMinor: 4_700_000, currency: "NGN" },
+            adjustedDue: { amountMinor: 4_500_000, currency: "NGN" },
+            deltaDue: { amountMinor: -200_000, currency: "NGN" },
+            previousPlannedMaintenanceHours: 0,
+            adjustedPlannedMaintenanceHours: 4,
+            journalEntryId: "je_adj_1",
+            journalReference: "fleet_settlement_adj:asg_1:2026-09-21:1",
+            createdAt: "2026-09-29T10:00:00.000Z",
+          },
+        ],
+      },
+    ],
+  };
+
+  it("renders wallet card, weekly summary, assignment rows, adjustments, and testIDs without driverNet", () => {
+    const markup = html(
+      <RemittanceStatementView
+        fleet={owner}
+        state={ready(sampleStatement)}
+        selectedWeekStart="2026-09-28"
+        weekOptions={weekOptions}
+        now={NOW}
+      />,
+    );
+    expect(count(markup, FLEET_ACCOUNT_TEST_IDS.remittance.statement)).toBe(1);
+    expect(count(markup, FLEET_ACCOUNT_TEST_IDS.remittance.weekSelect)).toBe(1);
+    expect(count(markup, FLEET_ACCOUNT_TEST_IDS.remittance.walletCard)).toBe(1);
+    expect(count(markup, FLEET_ACCOUNT_TEST_IDS.remittance.assignmentRow)).toBe(
+      1,
+    );
+    const shown = text(markup);
+    expect(shown).toContain("₦45,000.00");
+    expect(shown).toContain("₦184,500.00");
+    expect(shown).toContain("₦18,450.00");
+    expect(shown).toContain("Cash-out not available yet");
+    expect(shown).toContain(
+      "Fleets never see a driver's net earnings or per-trip split.",
+    );
+    expect(shown).toContain("Chidi O.");
+    expect(shown).toContain("LAG-118-AB");
+    expect(shown).toContain(
+      "Weekly fixed · v2 · 84h signed shift · 4h planned maintenance",
+    );
+    expect(shown).toContain("70% cap applied");
+    expect(shown).toContain("fleet_settlement:asg_1:2026-09-28");
+    expect(shown).toContain("Closed-week adjustment #1");
+    expect(shown).toContain("−₦2,000.00");
+    expectNoForbidden(
+      html(
+        <RemittanceStatementView
+          fleet={owner}
+          state={ready(polluted(sampleStatement))}
+          selectedWeekStart="2026-09-28"
+          weekOptions={weekOptions}
+          now={NOW}
+        />,
+      ),
+    );
+  });
+
+  it("renders honest unavailable, empty, loading, and flag-off states", () => {
+    const unavailable: FleetRemittanceStatementUnavailable = {
+      available: false,
+      fleetId: owner.fleetId,
+      zone: owner.zone,
+      weekStart: "2026-09-28",
+      weekEnd: "2026-10-04",
+      reason: "payment_service_unavailable",
+      source: "payment-service",
+    };
+    expect(
+      text(
+        html(
+          <RemittanceStatementView
+            fleet={owner}
+            state={ready(unavailable)}
+            selectedWeekStart="2026-09-28"
+            weekOptions={weekOptions}
+            now={NOW}
+          />,
+        ),
+      ),
+    ).toContain("Nothing is estimated in the browser");
+
+    expect(
+      text(
+        html(
+          <RemittanceStatementView
+            fleet={owner}
+            state={ready({ ...sampleStatement, assignments: [] })}
+            selectedWeekStart="2026-09-28"
+            weekOptions={weekOptions}
+            now={NOW}
+          />,
+        ),
+      ),
+    ).toContain("No active arrangements in this week");
+
+    expect(
+      text(
+        html(
+          <RemittanceStatementView
+            fleet={owner}
+            state={loading()}
+            selectedWeekStart="2026-09-28"
+            weekOptions={weekOptions}
+            now={NOW}
+          />,
+        ),
+      ),
+    ).toContain("Loading remittance statement…");
+
+    expect(
+      text(
+        html(
+          <RemittanceStatementView
+            fleet={owner}
+            state={flagOff()}
+            selectedWeekStart="2026-09-28"
+            weekOptions={weekOptions}
+            now={NOW}
+          />,
+        ),
+      ),
+    ).toContain(FLAG_OFF_COPY);
   });
 });

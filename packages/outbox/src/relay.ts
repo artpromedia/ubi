@@ -52,8 +52,13 @@ export interface OutboxRelayPrisma {
 /** The subset of an ioredis client the relay needs. */
 export interface OutboxPublisher {
   publish(channel: string, message: string): Promise<number>;
-  xadd?(...args: Array<string | number>): Promise<string | null>;
-  set?(...args: Array<string | number>): Promise<string | null>;
+  xadd?(key: string, ...args: Array<string | number>): Promise<string | null>;
+  set?(
+    key: string,
+    value: string,
+    secondsToken: "EX",
+    seconds: number,
+  ): Promise<unknown>;
 }
 
 export interface PublishOutboxEnvelopeOptions {

@@ -1047,10 +1047,69 @@ export const FleetWeekMoneyAssignmentInputSchema = z
     vehicleId: z.string().min(1),
     activeFrom: Timestamp,
     activeTo: Timestamp.nullable(),
+    termsVersion: z.number().int().positive().optional(),
+    termsType: z.enum(["weekly_fixed", "percent_of_net"]).optional(),
+    shiftHours: z.number().nonnegative().optional(),
+    plannedMaintenanceHours: z.number().nonnegative().optional(),
   })
   .strict();
 export type FleetWeekMoneyAssignmentInput = z.infer<
   typeof FleetWeekMoneyAssignmentInputSchema
+>;
+
+export const FleetWalletSummarySchema = z
+  .object({
+    walletId: z.string().nullable(),
+    balance: MoneySchema,
+    asOf: Timestamp,
+    cashOutAvailable: z.literal(false),
+    cashOutStatus: z.string().min(1),
+  })
+  .strict();
+export type FleetWalletSummary = z.infer<typeof FleetWalletSummarySchema>;
+
+export const FleetRemittanceAdjustmentViewSchema = z
+  .object({
+    sequence: z.number().int().positive(),
+    closedWeekStart: FleetLocalDateSchema,
+    appliesToWeekStart: FleetLocalDateSchema,
+    previousDue: MoneySchema,
+    adjustedDue: MoneySchema,
+    deltaDue: MoneySchema,
+    settlementEntryId: z.string().nullable(),
+    journalEntryId: z.string().nullable(),
+    journalReference: z.string().min(1),
+    recordedAt: Timestamp,
+  })
+  .strict();
+export type FleetRemittanceAdjustmentView = z.infer<
+  typeof FleetRemittanceAdjustmentViewSchema
+>;
+
+export const FleetAssignmentStatementItemSchema = z
+  .object({
+    assignmentId: z.string().min(1),
+    driverId: z.string().min(1),
+    vehicleId: z.string().min(1),
+    settled: z.boolean(),
+    settledAt: Timestamp.nullable(),
+    termsVersion: z.number().int().positive().nullable(),
+    termsType: z.enum(["weekly_fixed", "percent_of_net"]).nullable(),
+    shiftHours: z.number().nonnegative().nullable(),
+    plannedMaintenanceHours: z.number().nonnegative().nullable(),
+    capApplied: z.boolean(),
+    weekGross: MoneySchema,
+    ubiCommission: MoneySchema,
+    fleetRemittance: MoneySchema,
+    remittanceStatus: z.string().min(1),
+    remittance: FleetRemittanceBreakdownSchema,
+    journalEntryId: z.string().nullable(),
+    journalReference: z.string().nullable(),
+    adjustments: z.array(FleetRemittanceAdjustmentViewSchema),
+  })
+  .strict();
+export type FleetAssignmentStatementItem = z.infer<
+  typeof FleetAssignmentStatementItemSchema
 >;
 
 export const FleetWeekMoneyRequestSchema = z
@@ -1075,10 +1134,86 @@ export const FleetWeekMoneyResponseSchema = z
     fleet: FleetMoneySummarySchema,
     vehicles: z.record(z.string(), FleetMoneySummarySchema),
     assignments: z.record(z.string(), FleetMoneySummarySchema),
+    wallet: FleetWalletSummarySchema.optional(),
+    statementItems: z.array(FleetAssignmentStatementItemSchema).optional(),
   })
   .strict();
 export type FleetWeekMoneyResponse = z.infer<
   typeof FleetWeekMoneyResponseSchema
+>;
+
+export const FleetRemittanceAssignmentRowSchema = z
+  .object({
+    assignmentId: z.string().min(1),
+    driverId: z.string().min(1),
+    driverDisplayName: z.string().min(1),
+    vehicleId: z.string().min(1),
+    plate: z.string().min(1),
+    settled: z.boolean(),
+    settledAt: Timestamp.nullable(),
+    termsVersion: z.number().int().positive(),
+    termsType: z.enum(["weekly_fixed", "percent_of_net"]),
+    shiftHours: z.number().nonnegative(),
+    plannedMaintenanceHours: z.number().nonnegative(),
+    capApplied: z.boolean(),
+    weekGross: MoneySchema,
+    ubiCommission: MoneySchema,
+    fleetRemittance: MoneySchema,
+    remittanceStatus: z.string().min(1),
+    remittance: FleetRemittanceBreakdownSchema,
+    journalEntryId: z.string().nullable(),
+    journalReference: z.string().nullable(),
+    adjustments: z.array(FleetRemittanceAdjustmentViewSchema),
+  })
+  .strict();
+export type FleetRemittanceAssignmentRow = z.infer<
+  typeof FleetRemittanceAssignmentRowSchema
+>;
+
+export const FleetRemittanceStatementUnavailableSchema = z
+  .object({
+    available: z.literal(false),
+    fleetId: z.string().min(1),
+    cityId: z.string().min(1),
+    zone: z.string().min(1),
+    weekStart: FleetLocalDateSchema,
+    weekEnd: FleetLocalDateSchema,
+    reason: z.string().min(1),
+    source: z.string().min(1),
+  })
+  .strict();
+export type FleetRemittanceStatementUnavailable = z.infer<
+  typeof FleetRemittanceStatementUnavailableSchema
+>;
+
+export const FleetRemittanceStatementAvailableSchema = z
+  .object({
+    available: z.literal(true),
+    fleetId: z.string().min(1),
+    cityId: z.string().min(1),
+    zone: z.string().min(1),
+    weekStart: FleetLocalDateSchema,
+    weekEnd: FleetLocalDateSchema,
+    asOf: Timestamp,
+    excludes: FleetMoneyExcludesSchema,
+    wallet: FleetWalletSummarySchema,
+    fleet: FleetMoneySummarySchema,
+    assignments: z.array(FleetRemittanceAssignmentRowSchema),
+  })
+  .strict();
+export type FleetRemittanceStatementAvailable = z.infer<
+  typeof FleetRemittanceStatementAvailableSchema
+>;
+
+export const FleetRemittanceStatementSchema = z.discriminatedUnion(
+  "available",
+  [
+    FleetRemittanceStatementUnavailableSchema,
+    FleetRemittanceStatementAvailableSchema,
+  ],
+);
+export type FleetRemittanceStatement = z.infer<
+  typeof FleetRemittanceStatementSchema
 >;
 
 // ── Public request bodies ──────────────────────────────────────────────────
@@ -2251,6 +2386,7 @@ export const FLEET_RESPONSE_SCHEMAS = {
   FleetOnlineVehicleResponse: FleetOnlineVehicleResponseSchema,
   SettlementInputsResponse: SettlementInputsResponseSchema,
   FleetWeekMoneyResponse: FleetWeekMoneyResponseSchema,
+  FleetRemittanceStatement: FleetRemittanceStatementSchema,
 } as const;
 
 export const FLEET_EVENT_PAYLOAD_SCHEMAS = {

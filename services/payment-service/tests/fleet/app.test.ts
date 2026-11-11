@@ -481,6 +481,47 @@ describe("fleet settlement through the real app", () => {
       fleetRemittance: money(108_000, "NGN"),
       remittanceStatus: "Settled",
     });
+    expect(postSettle.body.wallet).toMatchObject({
+      balance: money(608_000, "NGN"),
+      cashOutAvailable: false,
+    });
+    expect(typeof postSettle.body.wallet?.walletId).toBe("string");
+    expect(postSettle.body.statementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assignmentId: asgA.assignmentId,
+          driverId: asgA.driverId,
+          vehicleId: vehicleA,
+          settled: true,
+          termsType: "weekly_fixed",
+          termsVersion: 1,
+          shiftHours: 40,
+          plannedMaintenanceHours: 0,
+          capApplied: false,
+          weekGross: money(800_000, "NGN"),
+          ubiCommission: money(80_000, "NGN"),
+          fleetRemittance: money(500_000, "NGN"),
+          remittanceStatus: "Settled",
+          journalReference: `fleet_remittance:${asgA.assignmentId}:${WEEK}`,
+          adjustments: [],
+        }),
+        expect.objectContaining({
+          assignmentId: asgB.assignmentId,
+          driverId: asgB.driverId,
+          vehicleId: vehicleB,
+          settled: true,
+          termsType: "percent_of_net",
+          termsVersion: 1,
+          capApplied: false,
+          weekGross: money(600_000, "NGN"),
+          ubiCommission: money(60_000, "NGN"),
+          fleetRemittance: money(108_000, "NGN"),
+          remittanceStatus: "Settled",
+          journalReference: `fleet_remittance:${asgB.assignmentId}:${WEEK}`,
+          adjustments: [],
+        }),
+      ]),
+    );
     assertNoForbiddenFleetFields(postSettle.body, "week-money.postSettle");
   });
 });

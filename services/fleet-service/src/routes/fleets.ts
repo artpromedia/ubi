@@ -32,6 +32,7 @@ import {
   FleetKybRequirementsResponseSchema,
   FleetListSchema,
   FleetOverviewSchema,
+  FleetRemittanceStatementSchema,
   FleetStaffListSchema,
   FleetVehicleListSchema,
   FleetVehicleViewSchema,
@@ -111,7 +112,12 @@ import {
   getVehicleDocumentUrl,
   listVehicleDocuments,
 } from "../ops/vehicle-documents";
-import { addVehicle, listVehicles, vehicleView } from "../ops/vehicles";
+import {
+  addVehicle,
+  fleetRemittanceStatement,
+  listVehicles,
+  vehicleView,
+} from "../ops/vehicles";
 import { fleetView } from "../ops/views";
 
 import type { FleetDeps } from "../ops/context";
@@ -326,6 +332,22 @@ export function createFleetRoutes(deps: FleetDeps): Hono {
         await overview(deps, await access(c, "view_calendar")),
       ),
     ),
+  );
+
+  routes.get(
+    "/:id/remittance",
+    route(async (c) => {
+      const granted = await access(c, "view_calendar");
+      const query = z
+        .object({ weekStart: z.string().optional() })
+        .strict()
+        .parse(c.req.query());
+      return respond(
+        c,
+        FleetRemittanceStatementSchema,
+        await fleetRemittanceStatement(deps, granted, query.weekStart),
+      );
+    }),
   );
 
   routes.get(

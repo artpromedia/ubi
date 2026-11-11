@@ -17,22 +17,29 @@ import { ContractError } from "@ubi/contracts";
 import { isUniqueViolation, notFound, exclusionConstraintOf } from "./errors";
 import { withOutbox } from "./outbox";
 import { assertCapability, type FleetAccess } from "./roles";
+import { shiftIntervals } from "./shifts";
 import {
   displayNames,
   documentStatuses,
   nameOr,
   shiftOf,
+  termsOf,
   validToOf,
 } from "./views";
 import { deterministicId, isUuid } from "../lib/ids";
 import {
   addDays,
   dateColumnToLocalDate,
+  hours2dp,
+  intersectAll,
   iso,
   isoWeekday,
   localDateOf,
   localDateToDateColumn,
+  mergeIntervals,
   startOfLocalDay,
+  totalMs,
+  type Interval,
 } from "../lib/time";
 import { summaryToFleetMoney } from "../ports/payment-port";
 
@@ -40,6 +47,8 @@ import type { FleetDeps } from "./context";
 import type { FleetTx } from "./types";
 import type {
   FleetPolicy,
+  FleetRemittanceAssignmentRow,
+  FleetRemittanceStatement,
   FleetWeekMoneyAssignmentInput,
   FleetWeekMoneyResponse,
 } from "../contract";
@@ -291,29 +300,23 @@ export async function vehicleView(
   return view;
 }
 
-/**
- * Resolves the fleet's current-week money summary from payment-service
- * (CC-A02, DEC-9 = A, Q7). Queries signed arrangements outside any SQL
- * transaction (pool-deadlock rule) before making the outbound HTTP call,
- * and returns `null` when payment-service is unconfigured or unreachable.
- */
-export async function resolveFleetWeekMoney(
-  deps: FleetDeps,
-  access: FleetAccess,
-  now: Date,
-  vehicleIds?: readonly string[],
-): Promise<FleetWeekMoneyResponse | null> {
-  if (deps.payments === undefined) {
-    return null;
-  }
-  const today = localDateOf(now.getTime(), access.fleet.zone);
-  const weekday = isoWeekday(today);
-  const weekStart = addDays(today, -(weekday - 1));
-  const weekEnd = addDays(weekStart, 7);
-  const rows = await deps.db.fleetAssignment.findMany({
+const PLANNED_MAINTENANCE = ["planned_service", "inspection", "repair"];
+
+async function loadFleetWeekAssignmentInputs(
+  db: FleetTx,
+  fleetId: string,
+  zone: string,
+  weekStart: string,
+): Promise<FleetWeekMoneyAssignmentInput[]> {
+  const weekEndExclusive = addDays(weekStart, 7);
+  const week: Interval = {
+    start: startOfLocalDay(weekStart, zone),
+    end: startOfLocalDay(weekEndExclusive, zone),
+  };
+  const rows = await db.fleetAssignment.findMany({
     where: {
-      fleetId: access.fleet.id,
-      validFrom: { lte: localDateToDateColumn(weekEnd) },
+      fleetId,
+      validFrom: { lte: localDateToDateColumn(weekEndExclusive) },
       OR: [
         { validTo: null },
         { validTo: { gte: localDateToDateColumn(addDays(weekStart, -1)) } },
@@ -321,6 +324,17 @@ export async function resolveFleetWeekMoney(
     },
     orderBy: [{ validFrom: "asc" }, { id: "asc" }],
   });
+  const vehicleIds = [...new Set(rows.map((row) => row.vehicleId))];
+  const blocks =
+    vehicleIds.length === 0
+      ? []
+      : await db.fleetMaintenanceBlock.findMany({
+          where: {
+            vehicleId: { in: vehicleIds },
+            status: { in: ["scheduled", "active", "completed"] },
+            startsAt: { lt: new Date(week.end) },
+          },
+        });
   const assignments: FleetWeekMoneyAssignmentInput[] = [];
   for (const row of rows) {
     const validFrom = dateColumnToLocalDate(row.validFrom);
@@ -331,14 +345,68 @@ export async function resolveFleetWeekMoney(
     const activeFrom = startOfLocalDay(validFrom, row.zone);
     const activeTo =
       validTo === null ? null : startOfLocalDay(validTo, row.zone);
+    const shift = mergeIntervals(
+      shiftIntervals(shiftOf(row), row.zone, validFrom, validTo, week),
+    );
+    const validityTouchesWeek =
+      activeFrom < week.end && (activeTo === null || activeTo > week.start);
+    if (shift.length === 0 && !validityTouchesWeek) {
+      continue;
+    }
+    const planned = mergeIntervals(
+      blocks
+        .filter(
+          (block) =>
+            block.vehicleId === row.vehicleId &&
+            PLANNED_MAINTENANCE.includes(block.kind) &&
+            block.endsAt !== null,
+        )
+        .map((block) => ({
+          start: block.startsAt.getTime(),
+          end: (block.endsAt as Date).getTime(),
+        })),
+    );
+    const terms = termsOf(row);
     assignments.push({
       assignmentId: row.id,
       driverId: row.driverId,
       vehicleId: row.vehicleId,
       activeFrom: iso(activeFrom),
       activeTo: activeTo === null ? null : iso(activeTo),
+      termsVersion: row.termsVersion,
+      termsType: terms.type,
+      shiftHours: hours2dp(totalMs(shift)),
+      plannedMaintenanceHours: hours2dp(totalMs(intersectAll(shift, planned))),
     });
   }
+  return assignments;
+}
+
+/**
+ * Resolves the fleet's weekly money summary from payment-service
+ * (CC-A02 / CC-C03, DEC-9 = A, Q7). Queries signed arrangements outside any SQL
+ * transaction (pool-deadlock rule) before making the outbound HTTP call,
+ * and returns `null` when payment-service is unconfigured or unreachable.
+ */
+export async function resolveFleetWeekMoney(
+  deps: FleetDeps,
+  access: FleetAccess,
+  now: Date,
+  vehicleIds?: readonly string[],
+  requestedWeekStart?: string,
+): Promise<FleetWeekMoneyResponse | null> {
+  if (deps.payments === undefined) {
+    return null;
+  }
+  const today = localDateOf(now.getTime(), access.fleet.zone);
+  const weekday = isoWeekday(today);
+  const weekStart = requestedWeekStart ?? addDays(today, -(weekday - 1));
+  const assignments = await loadFleetWeekAssignmentInputs(
+    deps.db,
+    access.fleet.id,
+    access.fleet.zone,
+    weekStart,
+  );
   return deps.payments.weekMoney({
     fleetId: access.fleet.id,
     cityId: access.cityId,
@@ -346,6 +414,171 @@ export async function resolveFleetWeekMoney(
     ...(vehicleIds === undefined ? {} : { vehicleIds: [...vehicleIds] }),
     assignments,
   });
+}
+
+/**
+ * Weekly remittance statement and fleet wallet summary (CC-C03 / P1-09, DEC-9 = A).
+ * All money figures come from payment-service; fleet-service hydrates driver
+ * display names, vehicle plates, and signed-arrangement hours only.
+ */
+export async function fleetRemittanceStatement(
+  deps: FleetDeps,
+  access: FleetAccess,
+  weekStartParam?: string,
+): Promise<FleetRemittanceStatement> {
+  const now = deps.now();
+  const today = localDateOf(now.getTime(), access.fleet.zone);
+  const currentMonday = addDays(today, -(isoWeekday(today) - 1));
+  const weekStart = weekStartParam ?? currentMonday;
+  if (
+    !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(weekStart) ||
+    isoWeekday(weekStart) !== 1
+  ) {
+    throw new ContractError(
+      "validation_failed",
+      "weekStart must be a Monday (YYYY-MM-DD)",
+      { weekStart },
+    );
+  }
+  const weekEnd = addDays(weekStart, 6);
+  const [assignmentInputs, fleetVehicles] = await Promise.all([
+    loadFleetWeekAssignmentInputs(
+      deps.db,
+      access.fleet.id,
+      access.fleet.zone,
+      weekStart,
+    ),
+    deps.db.fleetVehicle.findMany({
+      where: { fleetId: access.fleet.id },
+      include: { vehicle: true },
+    }),
+  ]);
+  const vehicleIds = fleetVehicles.map((fv) => fv.vehicleId);
+  const plateByVehicle = new Map<string, string>(
+    fleetVehicles.map((fv) => [fv.vehicleId, fv.vehicle.plateNumber]),
+  );
+  const weekMoney =
+    deps.payments === undefined
+      ? null
+      : await deps.payments.weekMoney({
+          fleetId: access.fleet.id,
+          cityId: access.cityId,
+          weekStart,
+          vehicleIds,
+          assignments: assignmentInputs,
+        });
+  if (weekMoney === null) {
+    return {
+      available: false,
+      fleetId: access.fleet.id,
+      cityId: access.cityId,
+      zone: access.fleet.zone,
+      weekStart,
+      weekEnd,
+      reason: MONEY_UNAVAILABLE.reason,
+      source: MONEY_UNAVAILABLE.source,
+    };
+  }
+  const inputByAssignment = new Map<string, FleetWeekMoneyAssignmentInput>(
+    assignmentInputs.map((item) => [item.assignmentId, item]),
+  );
+  const allDriverIds = [
+    ...new Set([
+      ...assignmentInputs.map((item) => item.driverId),
+      ...(weekMoney.statementItems ?? []).map((item) => item.driverId),
+    ]),
+  ];
+  const names = await displayNames(deps.db, allDriverIds);
+  const zeroMoney = { amountMinor: 0, currency: access.fleet.currency };
+  const wallet = weekMoney.wallet ?? {
+    walletId: null,
+    balance: zeroMoney,
+    asOf: weekMoney.asOf,
+    cashOutAvailable: false as const,
+    cashOutStatus:
+      "Cash-out is not available yet. Settled remittance is credited to your UBI fleet wallet.",
+  };
+
+  const rawItems =
+    weekMoney.statementItems ??
+    assignmentInputs.map((slice) => {
+      const summary = weekMoney.assignments[slice.assignmentId] ?? {
+        weekGross: zeroMoney,
+        ubiCommission: zeroMoney,
+        fleetRemittance: zeroMoney,
+        remittanceStatus: "Pending settlement",
+        remittance: {
+          due: zeroMoney,
+          collected: zeroMoney,
+          shortfall: zeroMoney,
+          carried: zeroMoney,
+          refunded: zeroMoney,
+        },
+      };
+      return {
+        assignmentId: slice.assignmentId,
+        driverId: slice.driverId,
+        vehicleId: slice.vehicleId,
+        settled: summary.remittanceStatus === "Settled",
+        settledAt: null,
+        termsVersion: slice.termsVersion ?? 1,
+        termsType: slice.termsType ?? "weekly_fixed",
+        shiftHours: slice.shiftHours ?? 0,
+        plannedMaintenanceHours: slice.plannedMaintenanceHours ?? 0,
+        capApplied: false,
+        weekGross: summary.weekGross,
+        ubiCommission: summary.ubiCommission,
+        fleetRemittance: summary.fleetRemittance,
+        remittanceStatus: summary.remittanceStatus,
+        remittance: summary.remittance,
+        journalEntryId: null,
+        journalReference: null,
+        adjustments: [],
+      };
+    });
+
+  const assignments: FleetRemittanceAssignmentRow[] = rawItems.map((item) => {
+    const localSlice = inputByAssignment.get(item.assignmentId);
+    return {
+      assignmentId: item.assignmentId,
+      driverId: item.driverId,
+      driverDisplayName: nameOr(names, item.driverId),
+      vehicleId: item.vehicleId,
+      plate: plateByVehicle.get(item.vehicleId) ?? item.vehicleId,
+      settled: item.settled,
+      settledAt: item.settledAt,
+      termsVersion: item.termsVersion ?? localSlice?.termsVersion ?? 1,
+      termsType: item.termsType ?? localSlice?.termsType ?? "weekly_fixed",
+      shiftHours: item.shiftHours ?? localSlice?.shiftHours ?? 0,
+      plannedMaintenanceHours:
+        item.plannedMaintenanceHours ??
+        localSlice?.plannedMaintenanceHours ??
+        0,
+      capApplied: item.capApplied,
+      weekGross: item.weekGross,
+      ubiCommission: item.ubiCommission,
+      fleetRemittance: item.fleetRemittance,
+      remittanceStatus: item.remittanceStatus,
+      remittance: item.remittance,
+      journalEntryId: item.journalEntryId,
+      journalReference: item.journalReference,
+      adjustments: item.adjustments,
+    };
+  });
+
+  return {
+    available: true,
+    fleetId: access.fleet.id,
+    cityId: access.cityId,
+    zone: access.fleet.zone,
+    weekStart: weekMoney.weekStart,
+    weekEnd: weekMoney.weekEnd,
+    asOf: weekMoney.asOf,
+    excludes: weekMoney.excludes,
+    wallet,
+    fleet: weekMoney.fleet,
+    assignments,
+  };
 }
 
 async function vehicleViews(

@@ -240,6 +240,36 @@ describe("fleet-api", () => {
       "/v1/fleets/flt_example/calendar": polluted(dayCalendar),
       "/v1/fleets/flt_example/vehicles/v1": polluted(vehicleView),
       "/v1/fleets/flt_example/maintenance:preview": polluted(infeasiblePreview),
+      "/v1/fleets/flt_example/remittance": polluted({
+        available: true,
+        fleetId: "flt_example",
+        zone: "Africa/Lagos",
+        weekStart: "2026-09-28",
+        weekEnd: "2026-10-04",
+        asOf: "2026-09-30T10:00:00.000Z",
+        excludes: ["cash_fares", "tips"],
+        wallet: {
+          walletId: "wlt_1",
+          balance: { amountMinor: 500_000, currency: "NGN" },
+          asOf: "2026-09-30T10:00:00.000Z",
+          cashOutAvailable: false,
+          cashOutStatus: "not_available_yet",
+        },
+        fleet: {
+          weekGross: { amountMinor: 1_200_000, currency: "NGN" },
+          ubiCommission: { amountMinor: 120_000, currency: "NGN" },
+          fleetRemittance: { amountMinor: 500_000, currency: "NGN" },
+          remittanceStatus: "Settled",
+          remittance: {
+            due: { amountMinor: 500_000, currency: "NGN" },
+            collected: { amountMinor: 500_000, currency: "NGN" },
+            shortfall: { amountMinor: 0, currency: "NGN" },
+            carried: { amountMinor: 0, currency: "NGN" },
+            refunded: { amountMinor: 0, currency: "NGN" },
+          },
+        },
+        assignments: [],
+      }),
     };
     const recorder = recordingFetch((url) =>
       json(answers[new URL(url).pathname] ?? {}),
@@ -268,6 +298,7 @@ describe("fleet-api", () => {
         startsAt: "2026-09-30T09:00:00.000Z",
         endsAt: "2026-09-30T14:00:00.000Z",
       }),
+      await api.remittance("flt_example", "2026-09-28"),
     ];
     for (const result of results) {
       expect(keysDeep(result).filter(isForbiddenField)).toEqual([]);

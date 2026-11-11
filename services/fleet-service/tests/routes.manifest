@@ -30,6 +30,7 @@ GET /v1/fleets/:id/kyb
 GET /v1/fleets/:id/kyb/documents/:docId/url
 GET /v1/fleets/:id/maintenance
 GET /v1/fleets/:id/overview
+GET /v1/fleets/:id/remittance
 GET /v1/fleets/:id/staff
 GET /v1/fleets/:id/utilisation
 GET /v1/fleets/:id/vehicles

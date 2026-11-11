@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   Smartphone,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -30,9 +31,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * The fleet portal's navigation (handoff: Overview, Calendar, Vehicles,
- * Conflicts, Assignments, Utilisation, Staff & roles). Every section is a
- * real screen on fleet-service; no badge count is shown that the server did
- * not answer. The footer names the fleet and the caller's role there.
+ * Conflicts, Assignments, Remittance, Utilisation, Staff & roles). Every
+ * section is a real screen on fleet-service; no badge count is shown that the
+ * server did not answer. The footer names the fleet and the caller's role
+ * there.
  */
 export const NAVIGATION = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
@@ -40,6 +42,7 @@ export const NAVIGATION = [
   { name: "Vehicles", href: "/vehicles", icon: Car },
   { name: "Conflicts", href: "/conflicts", icon: AlertTriangle },
   { name: "Assignments", href: "/assignments", icon: FileSignature },
+  { name: "Remittance", href: "/remittance", icon: Wallet },
   { name: "Utilisation", href: "/utilisation", icon: BarChart3 },
   { name: "Staff & roles", href: "/staff", icon: Users },
 ] as const;

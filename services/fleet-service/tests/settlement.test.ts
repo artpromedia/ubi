@@ -27,6 +27,7 @@ import {
 import {
   FLEET_WEEK_MONEY_PATH,
   FleetOverviewSchema,
+  FleetRemittanceStatementSchema,
   FleetVehicleViewSchema,
   SettlementInputsResponseSchema,
   type SettlementInputItem,
@@ -468,6 +469,41 @@ describe("Q7 week-money read via PaymentPort (CC-A02, DEC-9 = A)", () => {
             fleet: summary,
             vehicles: { [vehicleId]: summary },
             assignments: { [assignmentId]: summary },
+            wallet: {
+              walletId: `wlt_${world.fleetId}`,
+              balance: { amountMinor: 500_000, currency: "NGN" },
+              asOf: "2026-09-30T10:00:00.000Z",
+              cashOutAvailable: false,
+              cashOutStatus: "not_available_yet",
+            },
+            statementItems: [
+              {
+                assignmentId,
+                driverId,
+                vehicleId,
+                settled: true,
+                settledAt: "2026-10-05T00:00:00.000Z",
+                termsVersion: 1,
+                termsType: "weekly_fixed",
+                shiftHours: 168,
+                plannedMaintenanceHours: 0,
+                capApplied: false,
+                weekGross: { amountMinor: 1_200_000, currency: "NGN" },
+                ubiCommission: { amountMinor: 120_000, currency: "NGN" },
+                fleetRemittance: { amountMinor: 500_000, currency: "NGN" },
+                remittanceStatus: "Settled",
+                remittance: {
+                  due: { amountMinor: 500_000, currency: "NGN" },
+                  collected: { amountMinor: 500_000, currency: "NGN" },
+                  shortfall: { amountMinor: 0, currency: "NGN" },
+                  carried: { amountMinor: 0, currency: "NGN" },
+                  refunded: { amountMinor: 0, currency: "NGN" },
+                },
+                journalEntryId: "je_1",
+                journalReference: `fleet_settlement:${assignmentId}:2026-09-28`,
+                adjustments: [],
+              },
+            ],
           }),
         );
       });
@@ -530,6 +566,46 @@ describe("Q7 week-money read via PaymentPort (CC-A02, DEC-9 = A)", () => {
       const ov = FleetOverviewSchema.parse(ovRes.body);
       expect(ov.money.available).toBe(true);
 
+      // 1b. Remittance statement (CC-C03 / P1-09): hydrated wallet + per-assignment rows
+      const remRes = await api(appWithPayments, {
+        path: `/v1/fleets/${world.fleetId}/remittance?weekStart=2026-09-28`,
+        token: world.ownerToken,
+        city: world.cityId,
+      });
+      expect(remRes.status).toBe(200);
+      const rem = FleetRemittanceStatementSchema.parse(remRes.body);
+      expect(rem.available).toBe(true);
+      if (rem.available) {
+        expect(rem.wallet.balance).toEqual({
+          amountMinor: 500_000,
+          currency: "NGN",
+        });
+        expect(rem.wallet.cashOutAvailable).toBe(false);
+        expect(rem.assignments).toHaveLength(1);
+        expect(rem.assignments[0]).toMatchObject({
+          assignmentId,
+          driverId,
+          vehicleId,
+          plate: veh.plate,
+          settled: true,
+          termsVersion: 1,
+          termsType: "weekly_fixed",
+          shiftHours: 168,
+          plannedMaintenanceHours: 0,
+          capApplied: false,
+          journalEntryId: "je_1",
+          journalReference: `fleet_settlement:${assignmentId}:2026-09-28`,
+        });
+      }
+
+      // Non-Monday weekStart -> 422
+      const badWeekRes = await api(appWithPayments, {
+        path: `/v1/fleets/${world.fleetId}/remittance?weekStart=2026-09-29`,
+        token: world.ownerToken,
+        city: world.cityId,
+      });
+      expect(badWeekRes.status).toBe(422);
+
       // 2. Polluted response containing forbidden `driverNet` -> refused and degraded to available: false
       mode = "polluted";
       const pollutedRes = await api(appWithPayments, {
@@ -553,6 +629,16 @@ describe("Q7 week-money read via PaymentPort (CC-A02, DEC-9 = A)", () => {
       expect(FleetOverviewSchema.parse(outageRes.body).money.available).toBe(
         false,
       );
+
+      const outageRemRes = await api(appWithPayments, {
+        path: `/v1/fleets/${world.fleetId}/remittance?weekStart=2026-09-28`,
+        token: world.ownerToken,
+        city: world.cityId,
+      });
+      expect(outageRemRes.status).toBe(200);
+      expect(
+        FleetRemittanceStatementSchema.parse(outageRemRes.body).available,
+      ).toBe(false);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

@@ -62,6 +62,7 @@ import type {
   FleetKybRequirementsResponse,
   FleetList,
   FleetOverview,
+  FleetRemittanceStatement,
   FleetStaffList,
   FleetVehicleList,
   FleetVehicleView,
@@ -458,6 +459,11 @@ export function createFleetApi(raw: FleetApiClient = apiClient) {
         `${base(fleetId)}/vehicles/${enc(vehicleId)}/documents/${enc(documentId)}/url`,
         signal,
       ),
+    remittance: (fleetId: string, weekStart?: string, signal?: AbortSignal) =>
+      get<FleetRemittanceStatement>(
+        `${base(fleetId)}/remittance` + query({ weekStart }),
+        signal,
+      ),
   };
 }
 
@@ -490,4 +496,6 @@ export const fleetKeys = {
   utilisation: (fleetId: string) => ["fleet", fleetId, "utilisation"] as const,
   staff: (fleetId: string) => ["fleet", fleetId, "staff"] as const,
   invitations: (fleetId: string) => ["fleet", fleetId, "invitations"] as const,
+  remittance: (fleetId: string, weekStart?: string) =>
+    ["fleet", fleetId, "remittance", weekStart ?? "current"] as const,
 };

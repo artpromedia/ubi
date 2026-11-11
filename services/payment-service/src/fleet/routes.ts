@@ -73,6 +73,10 @@ const WeekMoneyAssignmentSliceSchema = z
     vehicleId: z.string().min(1).max(128),
     activeFrom: z.string().datetime({ offset: true }),
     activeTo: z.string().datetime({ offset: true }).nullable(),
+    termsVersion: z.number().int().positive().optional(),
+    termsType: z.enum(["weekly_fixed", "percent_of_net"]).optional(),
+    shiftHours: z.number().nonnegative().optional(),
+    plannedMaintenanceHours: z.number().nonnegative().optional(),
   })
   .strict();
 

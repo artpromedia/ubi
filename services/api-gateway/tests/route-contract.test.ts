@@ -675,6 +675,13 @@ const REACHABLE: readonly ReachableCase[] = [
   },
   {
     rule: "/fleets/*",
+    method: "GET",
+    path: "/v1/fleets/flt_1/remittance?weekStart=2026-09-28",
+    downstream: "/v1/fleets/flt_1/remittance",
+    source: `${FLEET} (CC-C03 / P1-09)`,
+  },
+  {
+    rule: "/fleets/*",
     method: "PUT",
     path: "/v1/fleets/flt_1/staff",
     downstream: "/v1/fleets/flt_1/staff",

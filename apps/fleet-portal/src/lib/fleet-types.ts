@@ -848,3 +848,84 @@ export interface VehicleDocumentList {
   readonly vehicleId: string;
   readonly documents: readonly VehicleDocumentView[];
 }
+
+// ── Weekly Remittance Statement & Fleet Wallet (CC-C03 / P1-09, DEC-9 = A) ──
+
+export interface FleetWalletSummary {
+  readonly walletId: string;
+  readonly balance: Money;
+  readonly asOf: string;
+  readonly cashOutAvailable: false;
+  readonly cashOutStatus: "not_available_yet";
+}
+
+export interface FleetRemittanceAdjustmentView {
+  readonly adjustmentId: string;
+  readonly sequence: number;
+  readonly closedWeekStart: string;
+  readonly appliesToWeekStart: string;
+  readonly previousDue: Money;
+  readonly adjustedDue: Money;
+  readonly deltaDue: Money;
+  readonly previousPlannedMaintenanceHours: number;
+  readonly adjustedPlannedMaintenanceHours: number;
+  readonly journalEntryId: string;
+  readonly journalReference: string;
+  readonly createdAt: string;
+}
+
+export interface FleetRemittanceAssignmentRow {
+  readonly assignmentId: string;
+  readonly driverId: string;
+  readonly driverDisplayName: string;
+  readonly vehicleId: string;
+  readonly plate: string;
+  readonly settled: boolean;
+  readonly settledAt: string | null;
+  readonly termsVersion: number | null;
+  readonly termsType: "weekly_fixed" | "percent_of_net" | null;
+  readonly shiftHours: number | null;
+  readonly plannedMaintenanceHours: number | null;
+  readonly capApplied: boolean;
+  readonly weekGross: Money;
+  readonly ubiCommission: Money;
+  readonly fleetRemittance: Money;
+  readonly remittanceStatus: string;
+  readonly remittance: FleetRemittanceBreakdown;
+  readonly journalEntryId: string | null;
+  readonly journalReference: string | null;
+  readonly adjustments: readonly FleetRemittanceAdjustmentView[];
+}
+
+export interface FleetRemittanceStatementUnavailable {
+  readonly available: false;
+  readonly fleetId: string;
+  readonly zone: string;
+  readonly weekStart: string;
+  readonly weekEnd: string;
+  readonly reason: string;
+  readonly source: string;
+}
+
+export interface FleetRemittanceStatementAvailable {
+  readonly available: true;
+  readonly fleetId: string;
+  readonly zone: string;
+  readonly weekStart: string;
+  readonly weekEnd: string;
+  readonly asOf: string;
+  readonly excludes: readonly ("cash_fares" | "tips")[];
+  readonly wallet: FleetWalletSummary;
+  readonly fleet: {
+    readonly weekGross: Money;
+    readonly ubiCommission: Money;
+    readonly fleetRemittance: Money;
+    readonly remittanceStatus: string;
+    readonly remittance: FleetRemittanceBreakdown;
+  };
+  readonly assignments: readonly FleetRemittanceAssignmentRow[];
+}
+
+export type FleetRemittanceStatement =
+  | FleetRemittanceStatementUnavailable
+  | FleetRemittanceStatementAvailable;
