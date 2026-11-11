@@ -263,6 +263,47 @@ export function lagosConfig(version: number): CityConfig {
         },
       },
     },
+    // PROVISIONAL dev/test fleet policy + KYB requirements (CC-C02, DEC-5).
+    // The `fleet` flag stays OFF in LAGOS_ENABLED_FLAGS.
+    fleet: {
+      proposalTtlHours: 48,
+      documentWarningDays: [30, 14, 7, 1],
+      utilisationMinDays: 7,
+      terminationNoticeDays: 14,
+      shifts: {
+        day: { start: "06:00", end: "18:00" },
+        night: { start: "18:00", end: "06:00" },
+      },
+      availabilityCheckHorizonDays: 60,
+      kyb: {
+        requirements: [
+          {
+            key: "cac_certificate",
+            label: "CAC Certificate of Incorporation",
+            kind: "document",
+            required: true,
+          },
+          {
+            key: "tax_identification_number",
+            label: "FIRS Tax Identification Number (TIN)",
+            kind: "text",
+            required: true,
+          },
+          {
+            key: "director_identity",
+            label: "Director Government ID",
+            kind: "document",
+            required: true,
+          },
+          {
+            key: "proof_of_office",
+            label: "Proof of Registered Office",
+            kind: "document",
+            required: false,
+          },
+        ],
+      },
+    },
     // PROVISIONAL, pending ops/finance sign-off — pilot driver ops credit caps
     // (CC-B03, DEC-6=C), in NGN kobo. Gated by `ops_driver_wallet_credit`, which
     // stays OFF in LAGOS_ENABLED_FLAGS.

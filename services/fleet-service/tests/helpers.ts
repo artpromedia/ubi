@@ -14,8 +14,13 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 import { signIdentityContext } from "../../api-gateway/src/identity/context";
+import { FLEET_POLICY_DEFAULTS } from "../src/contract";
 import { createApp } from "../src/index";
 import { createCityConfigProvider } from "../src/ops/config";
+import {
+  createMemoryDocStore,
+  type MemoryDocStore,
+} from "../src/ports/doc-store";
 import { createHttpPinPort } from "../src/ports/pin-port";
 import { createHttpRidePort } from "../src/ports/ride-port";
 
@@ -70,6 +75,10 @@ export async function resetFleet(db: FleetDb): Promise<void> {
   await db.fleetVehicleSwapRequest.deleteMany({});
   await db.fleetIdempotencyRecord.deleteMany({});
   await db.driverAvailability.deleteMany({});
+  await db.vehicleDocument.deleteMany({});
+  await db.fleetKybDocument.deleteMany({});
+  await db.fleetDocumentUpload.deleteMany({});
+  await db.fleetInvitation.deleteMany({});
   const vehicles = await db.fleetVehicle.findMany({
     select: { vehicleId: true },
   });
@@ -84,8 +93,15 @@ export async function resetFleet(db: FleetDb): Promise<void> {
 
 const FLEET_EVENTS = [
   "fleet.created",
+  "fleet.kyb.submitted",
+  "fleet.kyb.status.changed",
   "fleet.staff.changed",
+  "fleet.invitation.sent",
+  "fleet.invitation.responded",
+  "fleet.invitation.revoked",
   "fleet.vehicle.added",
+  "vehicle.document.submitted",
+  "vehicle.document.reviewed",
   "assignment.proposal.status.changed",
   "assignment.signed",
   "assignment.status.changed",
@@ -112,6 +128,7 @@ export interface SeedCityOptions {
   readonly remittanceCapMinor?: number;
   readonly vehicleClasses?: readonly string[];
   readonly fleetPolicy?: Record<string, unknown>;
+  readonly keepPendingReview?: boolean;
 }
 
 export async function seedCity(
@@ -172,7 +189,7 @@ export async function seedCity(
     taxes: { vat: 7.5 },
     ...(options.fleetPolicy === undefined
       ? {}
-      : { fleet: options.fleetPolicy }),
+      : { fleet: { ...FLEET_POLICY_DEFAULTS, ...options.fleetPolicy } }),
   };
   await db.city.create({
     data: {
@@ -314,6 +331,7 @@ export interface Harness {
   readonly db: FleetDb;
   readonly ride: RideDouble;
   readonly pin: PinDouble;
+  readonly docs: MemoryDocStore;
   readonly clock: Clock;
   close(): Promise<void>;
 }
@@ -326,6 +344,7 @@ export async function startHarness(now: Date = DEFAULT_NOW): Promise<Harness> {
   const ride = await startRideDouble();
   const pin = await startPinDouble();
   const clock: Clock = { now };
+  const docs = createMemoryDocStore(() => clock.now);
   const deps: FleetDeps = {
     db,
     config: createCityConfigProvider(db),
@@ -334,6 +353,7 @@ export async function startHarness(now: Date = DEFAULT_NOW): Promise<Harness> {
       serviceKey: process.env.FLEET_RIDE_SERVICE_KEY,
     }),
     pins: createHttpPinPort({ baseUrl: pin.url, now: () => clock.now }),
+    docs,
     now: () => clock.now,
   };
   return {
@@ -342,6 +362,7 @@ export async function startHarness(now: Date = DEFAULT_NOW): Promise<Harness> {
     db,
     ride,
     pin,
+    docs,
     clock,
     async close() {
       await ride.close();
@@ -427,6 +448,15 @@ export async function seedFleet(
     throw new Error(
       `fleet create failed: ${created.status} ${JSON.stringify(created.body)}`,
     );
+  }
+  if (!options.keepPendingReview) {
+    await h.db.fleet.update({
+      where: { id: created.body.fleetId },
+      data: {
+        status: "active",
+        kybStatus: "approved",
+      },
+    });
   }
   return { cityId, fleetId: created.body.fleetId, ownerId, ownerToken };
 }

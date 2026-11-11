@@ -45,6 +45,13 @@ export type ActionPlan =
   | {
       readonly action: FleetConflictAction;
       readonly label: string;
+      readonly kind: "document";
+      readonly href: string;
+      readonly vehicleId: string;
+    }
+  | {
+      readonly action: FleetConflictAction;
+      readonly label: string;
       readonly kind: "unavailable";
       readonly reason: string;
     };
@@ -132,13 +139,29 @@ export function planAction(
         vehicleId,
       };
     }
+    case "renew_document": {
+      const vehicleId = subject?.vehicleId ?? null;
+      return vehicleId !== null
+        ? {
+            action,
+            label,
+            kind: "document",
+            href: `/vehicles/${encodeURIComponent(vehicleId)}#documents`,
+            vehicleId,
+          }
+        : {
+            action,
+            label,
+            kind: "unavailable",
+            reason: "No vehicle is linked to this conflict.",
+          };
+    }
     default:
       return {
         action,
         label,
         kind: "unavailable",
-        reason:
-          "Document upload isn't available in the portal yet. UBI verifies renewals; the warning clears when the new expiry is on file.",
+        reason: "No route is linked to this conflict action.",
       };
   }
 }

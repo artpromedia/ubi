@@ -349,9 +349,10 @@ model Vehicle {
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
 
-  drivers        Driver[]
-  ceerionVehicle CeerionVehicle?
-  fleetVehicles  FleetVehicle[]
+  drivers          Driver[]
+  ceerionVehicle   CeerionVehicle?
+  fleetVehicles    FleetVehicle[]
+  vehicleDocuments VehicleDocument[]
 
   @@map("vehicles")
 }
@@ -4355,30 +4356,46 @@ model OrgBudgetOp {
 // subject) — the id ride-service's marketplace records as `driver_id`.
 
 /// A business that owns several vehicles and places UBI drivers in them.
-/// KYB is out of scope (A05 brief §6); the deny-by-default `fleet` city flag
-/// gates every client route.
+/// KYB (CC-C02 / P1-05, DEC-5) starts at `pending_review` and must be
+/// `approved` (`active`) before assignments can be proposed; the deny-by-default
+/// `fleet` city flag gates every client route.
 model Fleet {
-  id        String   @id
-  name      String
+  id                      String    @id
+  name                    String
   /// The city whose config (currency, zone, remittance cap) and `fleet` flag govern the fleet.
-  cityId    String   @map("city_id")
-  currency  String
+  cityId                  String    @map("city_id")
+  currency                String
   /// The city's IANA zone at creation: shifts and days split in it.
-  zone      String
-  // status CHECK: active | suspended
-  status    String
-  createdBy String   @map("created_by")
-  version   Int      @default(1)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  zone                    String
+  // status CHECK: pending_review | changes_requested | approved | active | rejected | suspended
+  status                  String
+  // kyb_status CHECK: pending_review | changes_requested | approved | rejected
+  kybStatus               String    @default("approved") @map("kyb_status")
+  registrationNumber      String?   @map("registration_number")
+  taxId                   String?   @map("tax_id")
+  kybFields               Json      @default("{}") @map("kyb_fields")
+  kybDeclarationsAccepted Boolean   @default(false) @map("kyb_declarations_accepted")
+  kybSubmittedAt          DateTime? @map("kyb_submitted_at")
+  kybReviewedBy           String?   @map("kyb_reviewed_by")
+  kybReviewedAt           DateTime? @map("kyb_reviewed_at")
+  kybReviewNote           String?   @map("kyb_review_note")
+  createdBy               String    @map("created_by")
+  version                 Int       @default(1)
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
   staff             FleetStaff[]
+  invitations       FleetInvitation[]
   vehicles          FleetVehicle[]
   proposals         FleetAssignmentProposal[]
   assignments       FleetAssignment[]
   maintenanceBlocks FleetMaintenanceBlock[]
+  documentUploads   FleetDocumentUpload[]
+  kybDocuments      FleetKybDocument[]
+  vehicleDocuments  VehicleDocument[]
 
   @@index([cityId])
+  @@index([kybStatus, createdAt])
   @@map("fleets")
 }
 
@@ -4702,3 +4719,130 @@ model FleetIdempotencyRecord {
   @@index([actorId, createdAt])
   @@map("fleet_idempotency_records")
 }
+
+/// Phone-based staff invitation or ownership transfer (CC-C02 / P1-05).
+/// The invitee must be signed in to accept or decline; accepting an
+/// `ownership_transfer` invitation promotes the invitee to `owner` and demotes
+/// the inviting owner to `manager` atomically while preserving >= 1 owner.
+model FleetInvitation {
+  id             String    @id
+  fleetId        String    @map("fleet_id")
+  // kind CHECK: staff_invite | ownership_transfer
+  kind           String    @default("staff_invite")
+  // role CHECK: owner | manager | read_only
+  role           String
+  inviteePhone   String    @map("invitee_phone")
+  inviteeMasked  String    @map("invitee_masked")
+  inviteeUserId  String?   @map("invitee_user_id")
+  invitedBy      String    @map("invited_by")
+  // status CHECK: pending | accepted | declined | revoked | expired
+  status         String    @default("pending")
+  expiresAt      DateTime  @map("expires_at")
+  respondedAt    DateTime? @map("responded_at")
+  idempotencyKey String    @unique @map("idempotency_key")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  fleet Fleet @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+
+  @@index([fleetId, status])
+  @@index([inviteeUserId, status])
+  @@index([inviteePhone, status])
+  @@map("fleet_invitations")
+}
+
+/// Server-issued, short-lived, scope-bound presigned upload slot for fleet KYB
+/// and vehicle documents (CC-C02 / P1-05). Re-verified on attach (existence,
+/// size, SHA-256, content-type magic bytes).
+model FleetDocumentUpload {
+  id           String    @id
+  fleetId      String    @map("fleet_id")
+  // scope CHECK: kyb | vehicle
+  scope        String
+  subjectId    String    @map("subject_id")
+  docType      String    @map("doc_type")
+  objectKey    String    @unique @map("object_key")
+  contentType  String    @map("content_type")
+  sizeBytes    BigInt    @map("size_bytes")
+  sha256       String
+  issuedTo     String    @map("issued_to")
+  // status CHECK: issued | attached | rejected
+  status       String    @default("issued")
+  rejectReason String?   @map("reject_reason")
+  expiresAt    DateTime  @map("expires_at")
+  attachedAt   DateTime? @map("attached_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  fleet           Fleet             @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  kybDocument     FleetKybDocument?
+  vehicleDocument VehicleDocument?
+
+  @@index([fleetId, scope, status])
+  @@index([subjectId, status])
+  @@map("fleet_document_uploads")
+}
+
+/// Verified KYB document attached to a fleet application (CC-C02 / P1-05).
+model FleetKybDocument {
+  id             String    @id
+  fleetId        String    @map("fleet_id")
+  requirementKey String    @map("requirement_key")
+  uploadId       String    @unique @map("upload_id")
+  objectKey      String    @map("object_key")
+  contentType    String    @map("content_type")
+  sizeBytes      BigInt    @map("size_bytes")
+  sha256         String
+  // status CHECK: pending | valid | rejected
+  status         String    @default("pending")
+  uploadedBy     String    @map("uploaded_by")
+  reviewedBy     String?   @map("reviewed_by")
+  reviewedAt     DateTime? @map("reviewed_at")
+  reviewNote     String?   @map("review_note")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  fleet  Fleet               @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  upload FleetDocumentUpload @relation(fields: [uploadId], references: [id], onDelete: Restrict)
+
+  @@index([fleetId, requirementKey])
+  @@index([status, createdAt])
+  @@map("fleet_kyb_documents")
+}
+
+/// Vehicle document submitted by a fleet (insurance, inspection, registration)
+/// and reviewed by UBI ops (CC-C02 / P1-05). When UBI ops reviews a document as
+/// `valid`, fleet-service writes `vehicles.insurance_expiry` /
+/// `inspection_expiry` and settles any open document-expiry conflicts (FL-9).
+model VehicleDocument {
+  id          String    @id
+  fleetId     String    @map("fleet_id")
+  vehicleId   String    @map("vehicle_id") @db.Uuid
+  // type CHECK: insurance | inspection | registration
+  type        String
+  uploadId    String    @unique @map("upload_id")
+  fileRef     String    @map("file_ref")
+  contentType String    @map("content_type")
+  sizeBytes   BigInt    @map("size_bytes")
+  sha256      String
+  expiresAt   DateTime  @map("expires_at")
+  // status CHECK: pending | valid | rejected | expired
+  status      String    @default("pending")
+  uploadedBy  String    @map("uploaded_by")
+  reviewedBy  String?   @map("reviewed_by")
+  reviewedAt  DateTime? @map("reviewed_at")
+  reviewNote  String?   @map("review_note")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  fleet   Fleet               @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  vehicle Vehicle             @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  upload  FleetDocumentUpload @relation(fields: [uploadId], references: [id], onDelete: Restrict)
+
+  @@index([vehicleId, type, createdAt])
+  @@index([fleetId, status])
+  @@index([status, createdAt])
+  @@map("vehicle_documents")
+}
+

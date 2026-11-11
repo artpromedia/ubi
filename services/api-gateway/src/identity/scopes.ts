@@ -842,6 +842,42 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     requiresCity: true,
   },
   {
+    methods: ["GET"],
+    prefix: "/v1/fleet-invitations",
+    anyOf: ["fleet:read"],
+    requiresCity: true,
+  },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/fleet-invitations",
+    anyOf: ["fleet:manage"],
+    requiresCity: true,
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/admin/fleets",
+    anyOf: ["mp:admin:read"],
+    requiresCity: true,
+  },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/admin/fleets",
+    anyOf: ["mp:admin:write"],
+    requiresCity: true,
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/admin/fleet-documents",
+    anyOf: ["mp:admin:read"],
+    requiresCity: true,
+  },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/admin/fleet-documents",
+    anyOf: ["mp:admin:write"],
+    requiresCity: true,
+  },
+  {
     methods: "*",
     prefix: "/v1/fleet-offers",
     anyOf: ["fleet:driver"],

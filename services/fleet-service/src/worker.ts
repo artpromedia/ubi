@@ -17,6 +17,7 @@ import { workerLogger } from "./lib/logger";
 import { withSweepLock } from "./lib/redis";
 import { endLapsedArrangements, expireProposals } from "./ops/assignments";
 import { documentSweep, lapseConflicts } from "./ops/documents";
+import { expireInvitations } from "./ops/invitations";
 import {
   advanceMaintenanceClock,
   checkOffRoadIntegrity,
@@ -32,6 +33,7 @@ export async function runSweeps(
   const results: Record<string, number> = {};
   const sweeps: [string, (d: FleetDeps) => Promise<number>][] = [
     ["proposalsExpired", expireProposals],
+    ["invitationsExpired", expireInvitations],
     ["arrangementsEnded", endLapsedArrangements],
     ["maintenanceAdvanced", advanceMaintenanceClock],
     ["offRoadRecorded", retryUnrecordedOffRoad],

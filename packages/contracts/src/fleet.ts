@@ -246,6 +246,72 @@ export const DOCUMENT_STATUSES = [
   "missing",
 ] as const;
 
+/**
+ * Vehicle document upload/review types (CC-C02 / P1-05). `insurance` and
+ * `inspection` write through to `vehicles.insurance_expiry` and
+ * `vehicles.inspection_expiry` when reviewed `valid`.
+ */
+export const VEHICLE_DOCUMENT_TYPES = [
+  "insurance",
+  "inspection",
+  "registration",
+] as const;
+export type VehicleDocumentType = (typeof VEHICLE_DOCUMENT_TYPES)[number];
+
+export const VEHICLE_DOCUMENT_REVIEW_STATUSES = [
+  "pending",
+  "valid",
+  "rejected",
+  "expired",
+] as const;
+export type VehicleDocumentReviewStatus =
+  (typeof VEHICLE_DOCUMENT_REVIEW_STATUSES)[number];
+
+export const FLEET_DOCUMENT_CONTENT_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+export type FleetDocumentContentType =
+  (typeof FLEET_DOCUMENT_CONTENT_TYPES)[number];
+
+/** Maximum fleet KYB / vehicle document size: 10 MiB. */
+export const FLEET_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
+
+export const FLEET_STATUSES = [
+  "pending_review",
+  "changes_requested",
+  "approved",
+  "active",
+  "rejected",
+  "suspended",
+] as const;
+export type FleetStatus = (typeof FLEET_STATUSES)[number];
+
+export const FLEET_KYB_STATUSES = [
+  "pending_review",
+  "changes_requested",
+  "approved",
+  "rejected",
+] as const;
+export type FleetKybStatus = (typeof FLEET_KYB_STATUSES)[number];
+
+export const FLEET_INVITATION_STATUSES = [
+  "pending",
+  "accepted",
+  "declined",
+  "revoked",
+  "expired",
+] as const;
+export type FleetInvitationStatus = (typeof FLEET_INVITATION_STATUSES)[number];
+
+export const FLEET_INVITATION_KINDS = [
+  "staff_invite",
+  "ownership_transfer",
+] as const;
+export type FleetInvitationKind = (typeof FLEET_INVITATION_KINDS)[number];
+
 /** UBI decisions — status only, never evidence, never an override. */
 export const UBI_STATUSES = [
   "held_by_ubi",
@@ -269,6 +335,16 @@ export const BOOKING_RISKS = ["ok", "at_risk"] as const;
 
 // ── Policy (per market; pilot defaults until CityConfig carries `fleet`) ───
 
+export const FleetKybRequirementSchema = z
+  .object({
+    key: z.string().min(1).max(64),
+    label: z.string().min(1).max(160),
+    kind: z.enum(["text", "document"]),
+    required: z.boolean(),
+  })
+  .strict();
+export type FleetKybRequirement = z.infer<typeof FleetKybRequirementSchema>;
+
 export const FleetPolicySchema = z
   .object({
     /** A sent proposal lapses unsigned after this long (handoff: 48 h). */
@@ -289,6 +365,17 @@ export const FleetPolicySchema = z
     }),
     /** How far ahead an availability change is checked against bookings. */
     availabilityCheckHorizonDays: z.number().int().positive(),
+    /**
+     * Per-city KYB requirement list (DEC-5 / P1-05). When absent, fleet
+     * creation stays in `pending_review` and cannot be approved until the
+     * city's KYB requirements are configured.
+     */
+    kyb: z
+      .object({
+        requirements: z.array(FleetKybRequirementSchema).min(1),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type FleetPolicy = z.infer<typeof FleetPolicySchema>;
@@ -381,6 +468,34 @@ export const FLEET_MACHINES = {
       lapsed: [],
     },
   },
+  kybApplication: {
+    initial: "pending_review",
+    transitions: {
+      pending_review: ["changes_requested", "approved", "rejected"],
+      changes_requested: ["pending_review", "rejected"],
+      approved: ["changes_requested", "rejected"],
+      rejected: [],
+    },
+  },
+  staffInvitation: {
+    initial: "pending",
+    transitions: {
+      pending: ["accepted", "declined", "revoked", "expired"],
+      accepted: [],
+      declined: [],
+      revoked: [],
+      expired: [],
+    },
+  },
+  vehicleDocument: {
+    initial: "pending",
+    transitions: {
+      pending: ["valid", "rejected"],
+      valid: ["expired", "rejected"],
+      rejected: [],
+      expired: [],
+    },
+  },
 } as const satisfies Record<string, FleetMachine>;
 export type FleetMachineName = keyof typeof FLEET_MACHINES;
 
@@ -417,6 +532,20 @@ export const FLEET_ERROR_STATUS = {
   maintenance_overlap: 409,
   /** A time-off change overlaps bookings the driver has not chosen for. */
   unresolved_booking_overlap: 409,
+  /** Fleet KYB is not approved yet: assignments/maintenance cannot run (P1-05). */
+  kyb_not_approved: 403,
+  /** City config has no `fleet.kyb.requirements` yet (DEC-5). */
+  kyb_requirements_unconfigured: 409,
+  /** Uploaded document failed size, SHA-256, or magic-byte verification. */
+  upload_verification_failed: 422,
+  /** Private document storage is not configured in this environment. */
+  doc_storage_not_configured: 503,
+  /** Private document storage was unreachable or errored. */
+  doc_storage_unavailable: 503,
+  /** Staff invitation or ownership transfer has expired. */
+  invitation_expired: 409,
+  /** Submitted vehicle document has an expiry date in the past. */
+  document_already_expired: 422,
 } as const;
 export type FleetErrorCode = keyof typeof FLEET_ERROR_STATUS;
 export const FLEET_ERROR_CODES = Object.keys(
@@ -433,8 +562,15 @@ export const FLEET_ERROR_CODES = Object.keys(
  */
 export const FLEET_EVENT_NAMES = [
   "fleet.created",
+  "fleet.kyb.submitted",
+  "fleet.kyb.status.changed",
   "fleet.staff.changed",
+  "fleet.invitation.sent",
+  "fleet.invitation.responded",
+  "fleet.invitation.revoked",
   "fleet.vehicle.added",
+  "vehicle.document.submitted",
+  "vehicle.document.reviewed",
   "assignment.proposal.status.changed",
   "assignment.signed",
   "assignment.status.changed",
@@ -948,8 +1084,127 @@ export type FleetWeekMoneyResponse = z.infer<
 // ── Public request bodies ──────────────────────────────────────────────────
 
 export const CreateFleetSchema = z
-  .object({ name: z.string().trim().min(2).max(120) })
+  .object({
+    name: z.string().trim().min(2).max(120),
+    registrationNumber: z.string().trim().min(2).max(64).optional(),
+    taxId: z.string().trim().min(2).max(64).optional(),
+    fields: z.record(z.string().min(1).max(64), z.string().max(400)).optional(),
+    declarationsAccepted: z.boolean().optional(),
+  })
   .strict();
+
+export const CreateDocumentUploadSchema = z
+  .object({
+    purpose: z.enum(["kyb_document", "vehicle_document"]),
+    contentType: z.enum(FLEET_DOCUMENT_CONTENT_TYPES),
+    sizeBytes: z.number().int().positive().max(FLEET_DOCUMENT_MAX_BYTES),
+    sha256Hex: z
+      .string()
+      .regex(/^[a-fA-F0-9]{64}$/, "sha256Hex must be 64 hex characters"),
+  })
+  .strict();
+export type CreateDocumentUploadInput = z.infer<
+  typeof CreateDocumentUploadSchema
+>;
+
+export const SubmitFleetKybSchema = z
+  .object({
+    registrationNumber: z.string().trim().min(2).max(64).optional(),
+    taxId: z.string().trim().min(2).max(64).optional(),
+    fields: z
+      .record(z.string().min(1).max(64), z.string().max(400))
+      .default({}),
+    documents: z
+      .array(
+        z
+          .object({
+            requirementKey: z.string().min(1).max(64),
+            uploadId: z.string().min(1).max(64),
+          })
+          .strict(),
+      )
+      .max(20)
+      .default([]),
+    declarationsAccepted: z.literal(true),
+  })
+  .strict();
+export type SubmitFleetKybInput = z.infer<typeof SubmitFleetKybSchema>;
+
+export const ReviewFleetKybSchema = z
+  .object({
+    decision: z.enum(["approved", "changes_requested", "rejected"]),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (
+      (val.decision === "changes_requested" || val.decision === "rejected") &&
+      (!val.note || val.note.trim().length < 3)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["note"],
+        message: "note is required when requesting changes or rejecting",
+      });
+    }
+  });
+export type ReviewFleetKybInput = z.infer<typeof ReviewFleetKybSchema>;
+
+export const CreateFleetInvitationSchema = z
+  .object({
+    phone: z
+      .string()
+      .trim()
+      .regex(/^\+[1-9]\d{6,14}$/, "phone must be E.164"),
+    role: z.enum(FLEET_STAFF_ROLES),
+    kind: z.enum(FLEET_INVITATION_KINDS).optional(),
+  })
+  .strict();
+export type CreateFleetInvitationInput = z.infer<
+  typeof CreateFleetInvitationSchema
+>;
+
+export const PatchFleetStaffRoleSchema = z
+  .object({
+    role: z.enum(FLEET_STAFF_ROLES),
+  })
+  .strict();
+export type PatchFleetStaffRoleInput = z.infer<
+  typeof PatchFleetStaffRoleSchema
+>;
+
+export const AttachVehicleDocumentSchema = z
+  .object({
+    docType: z.enum(VEHICLE_DOCUMENT_TYPES),
+    uploadId: z.string().min(1).max(64),
+    expiresAt: Timestamp,
+  })
+  .strict();
+export type AttachVehicleDocumentInput = z.infer<
+  typeof AttachVehicleDocumentSchema
+>;
+
+export const ReviewVehicleDocumentSchema = z
+  .object({
+    decision: z.enum(["valid", "rejected"]),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (
+      val.decision === "rejected" &&
+      (!val.note || val.note.trim().length < 3)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["note"],
+        message: "note is required when rejecting a vehicle document",
+      });
+    }
+  });
+export type ReviewVehicleDocumentInput = z.infer<
+  typeof ReviewVehicleDocumentSchema
+>;
 
 export const PutFleetStaffSchema = z
   .object({
@@ -1072,10 +1327,138 @@ export const FleetViewSchema = z.object({
   cityId: z.string(),
   currency: CurrencySchema,
   zone: z.string(),
-  status: z.enum(["active", "suspended"]),
+  status: z.enum(FLEET_STATUSES),
+  kybStatus: z.enum(FLEET_KYB_STATUSES).optional(),
+  kybReviewNote: z.string().nullable().optional(),
   myRole: z.enum(FLEET_STAFF_ROLES),
   createdAt: Timestamp,
 });
+
+export const FleetKybRequirementsResponseSchema = z.object({
+  cityId: z.string(),
+  configured: z.boolean(),
+  requirements: z.array(FleetKybRequirementSchema),
+});
+export type FleetKybRequirementsResponse = z.infer<
+  typeof FleetKybRequirementsResponseSchema
+>;
+
+export const FleetKybDocumentViewSchema = z.object({
+  kybDocumentId: z.string(),
+  requirementKey: z.string(),
+  uploadId: z.string(),
+  contentType: z.string(),
+  sizeBytes: z.number().int().positive(),
+  sha256Hex: z.string(),
+  status: z.enum(["pending", "valid", "rejected"]),
+  reviewNote: z.string().nullable(),
+  createdAt: Timestamp,
+});
+export type FleetKybDocumentView = z.infer<typeof FleetKybDocumentViewSchema>;
+
+export const FleetKybApplicationViewSchema = z.object({
+  fleetId: z.string(),
+  name: z.string(),
+  cityId: z.string(),
+  status: z.enum(FLEET_STATUSES),
+  kybStatus: z.enum(FLEET_KYB_STATUSES),
+  registrationNumber: z.string().nullable(),
+  taxId: z.string().nullable(),
+  fields: z.record(z.string(), z.string()),
+  declarationsAccepted: z.boolean(),
+  submittedAt: Timestamp.nullable(),
+  reviewedBy: z.string().nullable(),
+  reviewedAt: Timestamp.nullable(),
+  reviewNote: z.string().nullable(),
+  requirementsConfigured: z.boolean(),
+  requirements: z.array(FleetKybRequirementSchema),
+  documents: z.array(FleetKybDocumentViewSchema),
+});
+export type FleetKybApplicationView = z.infer<
+  typeof FleetKybApplicationViewSchema
+>;
+
+export const FleetAdminKybListSchema = z.object({
+  applications: z.array(FleetKybApplicationViewSchema),
+});
+export type FleetAdminKybList = z.infer<typeof FleetAdminKybListSchema>;
+
+export const DocumentUploadSlotViewSchema = z.object({
+  uploadId: z.string(),
+  objectKey: z.string(),
+  uploadUrl: z.string(),
+  method: z.literal("PUT"),
+  requiredHeaders: z.record(z.string(), z.string()),
+  expiresAt: Timestamp,
+});
+export type DocumentUploadSlotView = z.infer<
+  typeof DocumentUploadSlotViewSchema
+>;
+
+export const DocumentDownloadUrlViewSchema = z.object({
+  url: z.string(),
+  expiresAt: Timestamp,
+  contentType: z.string(),
+});
+export type DocumentDownloadUrlView = z.infer<
+  typeof DocumentDownloadUrlViewSchema
+>;
+
+export const FleetInvitationViewSchema = z.object({
+  invitationId: z.string(),
+  fleetId: z.string(),
+  fleetName: z.string(),
+  kind: z.enum(FLEET_INVITATION_KINDS),
+  role: z.enum(FLEET_STAFF_ROLES),
+  inviteeMasked: z.string(),
+  inviteeUserId: z.string().nullable(),
+  inviteeDisplayName: z.string().nullable(),
+  invitedByUserId: z.string(),
+  status: z.enum(FLEET_INVITATION_STATUSES),
+  expiresAt: Timestamp,
+  respondedAt: Timestamp.nullable(),
+  revokedAt: Timestamp.nullable(),
+  createdAt: Timestamp,
+});
+export type FleetInvitationView = z.infer<typeof FleetInvitationViewSchema>;
+
+export const FleetInvitationListSchema = z.object({
+  invitations: z.array(FleetInvitationViewSchema),
+});
+export type FleetInvitationList = z.infer<typeof FleetInvitationListSchema>;
+
+export const VehicleDocumentViewSchema = z.object({
+  documentId: z.string(),
+  vehicleId: z.string(),
+  fleetId: z.string(),
+  plate: z.string(),
+  docType: z.enum(VEHICLE_DOCUMENT_TYPES),
+  uploadId: z.string(),
+  contentType: z.string(),
+  sizeBytes: z.number().int().positive(),
+  sha256Hex: z.string(),
+  expiresAt: Timestamp,
+  status: z.enum(VEHICLE_DOCUMENT_REVIEW_STATUSES),
+  uploadedByUserId: z.string(),
+  reviewedBy: z.string().nullable(),
+  reviewedAt: Timestamp.nullable(),
+  reviewNote: z.string().nullable(),
+  createdAt: Timestamp,
+});
+export type VehicleDocumentView = z.infer<typeof VehicleDocumentViewSchema>;
+
+export const VehicleDocumentListSchema = z.object({
+  vehicleId: z.string(),
+  documents: z.array(VehicleDocumentViewSchema),
+});
+export type VehicleDocumentList = z.infer<typeof VehicleDocumentListSchema>;
+
+export const FleetAdminDocumentListSchema = z.object({
+  documents: z.array(VehicleDocumentViewSchema),
+});
+export type FleetAdminDocumentList = z.infer<
+  typeof FleetAdminDocumentListSchema
+>;
 
 export const FleetListSchema = z.object({ fleets: z.array(FleetViewSchema) });
 
@@ -1823,9 +2206,20 @@ export const FLEET_FORBIDDEN_FIELD_PATTERNS: readonly RegExp[] = [
 export const FLEET_RESPONSE_SCHEMAS = {
   FleetView: FleetViewSchema,
   FleetList: FleetListSchema,
+  FleetKybRequirementsResponse: FleetKybRequirementsResponseSchema,
+  FleetKybDocumentView: FleetKybDocumentViewSchema,
+  FleetKybApplicationView: FleetKybApplicationViewSchema,
+  FleetAdminKybList: FleetAdminKybListSchema,
+  DocumentUploadSlotView: DocumentUploadSlotViewSchema,
+  DocumentDownloadUrlView: DocumentDownloadUrlViewSchema,
   FleetStaffList: FleetStaffListSchema,
+  FleetInvitationView: FleetInvitationViewSchema,
+  FleetInvitationList: FleetInvitationListSchema,
   FleetVehicleView: FleetVehicleViewSchema,
   FleetVehicleList: FleetVehicleListSchema,
+  VehicleDocumentView: VehicleDocumentViewSchema,
+  VehicleDocumentList: VehicleDocumentListSchema,
+  FleetAdminDocumentList: FleetAdminDocumentListSchema,
   FleetAssignments: FleetAssignmentsSchema,
   ProposalView: ProposalViewSchema,
   ArrangementView: ArrangementViewSchema,
@@ -1867,6 +2261,24 @@ export const FLEET_EVENT_PAYLOAD_SCHEMAS = {
       ownerId: z.string().min(1),
     })
     .strict(),
+  "fleet.kyb.submitted": z
+    .object({
+      fleetId: z.string().min(1),
+      cityId: z.string().min(1),
+      submittedBy: z.string().min(1),
+      documentCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+  "fleet.kyb.status.changed": z
+    .object({
+      fleetId: z.string().min(1),
+      cityId: z.string().min(1),
+      from: z.enum(FLEET_KYB_STATUSES),
+      to: z.enum(FLEET_KYB_STATUSES),
+      reviewedBy: z.string().min(1),
+      hasNote: z.boolean(),
+    })
+    .strict(),
   "fleet.staff.changed": z
     .object({
       fleetId: z.string().min(1),
@@ -1881,12 +2293,61 @@ export const FLEET_EVENT_PAYLOAD_SCHEMAS = {
       ),
     })
     .strict(),
+  "fleet.invitation.sent": z
+    .object({
+      invitationId: z.string().min(1),
+      fleetId: z.string().min(1),
+      kind: z.enum(FLEET_INVITATION_KINDS),
+      role: z.enum(FLEET_STAFF_ROLES),
+      invitedByUserId: z.string().min(1),
+      inviteeUserId: z.string().min(1).nullable(),
+      expiresAt: Timestamp,
+    })
+    .strict(),
+  "fleet.invitation.responded": z
+    .object({
+      invitationId: z.string().min(1),
+      fleetId: z.string().min(1),
+      kind: z.enum(FLEET_INVITATION_KINDS),
+      role: z.enum(FLEET_STAFF_ROLES),
+      userId: z.string().min(1),
+      outcome: z.enum(["accepted", "declined"]),
+    })
+    .strict(),
+  "fleet.invitation.revoked": z
+    .object({
+      invitationId: z.string().min(1),
+      fleetId: z.string().min(1),
+      revokedByUserId: z.string().min(1),
+    })
+    .strict(),
   "fleet.vehicle.added": z
     .object({
       fleetId: z.string().min(1),
       vehicleId: z.string().min(1),
       classes: z.array(z.string().min(1)),
       capacity: z.number().int().positive(),
+    })
+    .strict(),
+  "vehicle.document.submitted": z
+    .object({
+      documentId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      fleetId: z.string().min(1),
+      docType: z.enum(VEHICLE_DOCUMENT_TYPES),
+      expiresAt: Timestamp,
+      uploadedByUserId: z.string().min(1),
+    })
+    .strict(),
+  "vehicle.document.reviewed": z
+    .object({
+      documentId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      fleetId: z.string().min(1),
+      docType: z.enum(VEHICLE_DOCUMENT_TYPES),
+      decision: z.enum(["valid", "rejected"]),
+      reviewedBy: z.string().min(1),
+      expiresAt: Timestamp,
     })
     .strict(),
   "assignment.proposal.status.changed": z

@@ -20,6 +20,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { NoFleetOnboardingScreen } from "@/components/fleet/KybOnboardingPanel";
 import { EmptyState, ReadGate } from "@/components/states/states";
 import { toReadState, type ReadState } from "@/lib/access";
 import { fleetApi, fleetKeys } from "@/lib/fleet-api";
@@ -124,11 +125,13 @@ export const FleetGateView = ({
   state,
   fleet,
   onRetry,
+  noFleetFooter,
   children,
 }: {
   readonly state: ReadState<FleetList>;
   readonly fleet: FleetView | null;
   readonly onRetry?: () => void;
+  readonly noFleetFooter?: ReactNode;
   readonly children: ReactNode;
 }) => (
   <ReadGate
@@ -140,10 +143,13 @@ export const FleetGateView = ({
   >
     {() =>
       fleet === null ? (
-        <EmptyState
-          title="No fleet is linked to your UBI account in this city."
-          body="Fleet accounts are set up with UBI. Once you're added as a fleet owner, manager or read-only member, your fleet opens here."
-        />
+        <div className="space-y-4">
+          <EmptyState
+            title="No fleet is linked to your UBI account in this city."
+            body="Fleet accounts are set up with UBI. Once you're added as a fleet owner, manager or read-only member, your fleet opens here."
+          />
+          {noFleetFooter}
+        </div>
       ) : (
         children
       )
@@ -154,7 +160,12 @@ export const FleetGateView = ({
 export const FleetGate = ({ children }: { readonly children: ReactNode }) => {
   const { state, fleet, retry } = useFleetContext();
   return (
-    <FleetGateView state={state} fleet={fleet} onRetry={retry}>
+    <FleetGateView
+      state={state}
+      fleet={fleet}
+      onRetry={retry}
+      noFleetFooter={<NoFleetOnboardingScreen onFleetReady={retry} />}
+    >
       {children}
     </FleetGateView>
   );

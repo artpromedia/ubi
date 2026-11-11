@@ -199,6 +199,11 @@ export const PROXY_RULES: readonly ProxyRule[] = [
   { pattern: "/fleets", service: "fleet-service" },
   { pattern: "/fleets/*", service: "fleet-service" },
   { pattern: "/fleet-offers/*", service: "fleet-service" },
+  { pattern: "/fleet-invitations", service: "fleet-service" },
+  { pattern: "/fleet-invitations/*", service: "fleet-service" },
+  { pattern: "/admin/fleets/*", service: "fleet-service" },
+  { pattern: "/admin/fleet-documents", service: "fleet-service" },
+  { pattern: "/admin/fleet-documents/*", service: "fleet-service" },
 
   // Growth (growth-service, CC-A12 / P2-10) — mounts /v1/benefits,
   // /v1/referrals, /v1/attribution, /v1/driver/{incentives,statements} and

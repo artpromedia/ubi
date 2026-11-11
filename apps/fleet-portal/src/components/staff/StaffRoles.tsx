@@ -12,7 +12,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useSelectedFleet } from "@/components/fleet/fleet-context";
-import { PermissionNote, ReadGate } from "@/components/states/states";
+import { IncomingInvitationsCard } from "@/components/fleet/KybOnboardingPanel";
+import { PermissionNote, Pill, ReadGate } from "@/components/states/states";
 import {
   commandErrorText,
   isWriteReachable,
@@ -28,10 +29,11 @@ import {
   staffProblems,
   type StaffDraftEntry,
 } from "@/lib/staff-model";
-import { FLEET_TEST_IDS } from "@/lib/test-ids";
+import { FLEET_ACCOUNT_TEST_IDS, FLEET_TEST_IDS } from "@/lib/test-ids";
 import { cn } from "@/lib/utils";
 
 import type {
+  FleetInvitationView,
   FleetStaffList,
   FleetStaffRole,
   FleetView,
@@ -215,25 +217,250 @@ const StaffEditor = ({
   );
 };
 
+const StaffInvitationsPanel = ({
+  fleet,
+  invitations,
+  canManage,
+  online,
+  onSaved,
+}: {
+  readonly fleet: FleetView;
+  readonly invitations: readonly FleetInvitationView[];
+  readonly canManage: boolean;
+  readonly online: boolean;
+  readonly onSaved?: () => void;
+}) => {
+  const [inviteePhone, setInviteePhone] = useState("");
+  const [role, setRole] = useState<FleetStaffRole>("manager");
+  const inviteCmd = useCommand<FleetInvitationView>();
+  const revokeCmd = useCommand<FleetInvitationView>();
+
+  return (
+    <section className="space-y-3 rounded-xl border border-[#222] bg-[#1A1A1A] p-4 text-xs">
+      <div>
+        <h2 className="text-sm font-semibold text-zinc-100">
+          Staff invitations &amp; ownership transfer
+        </h2>
+        <p className="text-zinc-400">
+          Invite staff by phone number. Invitees accept with their UBI account
+          before their role takes effect.
+        </p>
+      </div>
+
+      {canManage ? (
+        <form
+          data-testid={FLEET_ACCOUNT_TEST_IDS.invitations.inviteForm}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!inviteePhone.trim()) return;
+            void inviteCmd
+              .run(
+                (key) =>
+                  fleetApi.createInvitation(
+                    fleet.fleetId,
+                    {
+                      phone: inviteePhone.trim(),
+                      role,
+                      kind: "staff_invite",
+                    },
+                    key,
+                  ),
+                online,
+              )
+              .then((res) => {
+                if (res !== undefined) {
+                  setInviteePhone("");
+                  onSaved?.();
+                }
+              });
+          }}
+          className="flex flex-wrap items-end gap-2"
+        >
+          <label className="flex flex-col gap-1 text-zinc-300">
+            Phone number (E.164)
+            <input
+              value={inviteePhone}
+              onChange={(e) => setInviteePhone(e.target.value)}
+              placeholder="+2348012345678"
+              className="rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-zinc-100"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-zinc-300">
+            Role
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as FleetStaffRole)}
+              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100"
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            data-testid={FLEET_ACCOUNT_TEST_IDS.invitations.inviteSubmit}
+            disabled={
+              !online ||
+              inviteePhone.trim() === "" ||
+              inviteCmd.state.status === "pending"
+            }
+            className="rounded-md bg-[#1DB954] px-3 py-1.5 font-semibold text-black disabled:opacity-50"
+          >
+            {inviteCmd.state.status === "pending"
+              ? "Sending…"
+              : "Send invitation"}
+          </button>
+          <button
+            type="button"
+            data-testid={FLEET_ACCOUNT_TEST_IDS.invitations.transferOwnership}
+            disabled={
+              !online ||
+              inviteePhone.trim() === "" ||
+              inviteCmd.state.status === "pending"
+            }
+            onClick={() => {
+              if (!inviteePhone.trim()) return;
+              void inviteCmd
+                .run(
+                  (key) =>
+                    fleetApi.createInvitation(
+                      fleet.fleetId,
+                      {
+                        phone: inviteePhone.trim(),
+                        role: "owner",
+                        kind: "ownership_transfer",
+                      },
+                      key,
+                    ),
+                  online,
+                )
+                .then((res) => {
+                  if (res !== undefined) {
+                    setInviteePhone("");
+                    onSaved?.();
+                  }
+                });
+            }}
+            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 font-semibold text-amber-200 disabled:opacity-50"
+          >
+            Transfer ownership
+          </button>
+        </form>
+      ) : null}
+
+      {invitations.length === 0 ? (
+        <p className="text-zinc-500">No invitations sent for this fleet yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {invitations.map((inv) => (
+            <li
+              key={inv.invitationId}
+              data-testid={FLEET_ACCOUNT_TEST_IDS.invitations.row}
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-[#262626] bg-[#141414] px-3 py-2"
+            >
+              <div>
+                <span className="font-medium text-zinc-100">
+                  {inv.inviteeDisplayName ?? inv.inviteeMasked}
+                </span>{" "}
+                <span className="text-zinc-400">
+                  ·{" "}
+                  {inv.kind === "ownership_transfer"
+                    ? "Ownership transfer"
+                    : ROLE_LABELS[inv.role]}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Pill
+                  tone={
+                    inv.status === "accepted"
+                      ? "ok"
+                      : inv.status === "pending"
+                        ? "warn"
+                        : "mute"
+                  }
+                >
+                  {inv.status}
+                </Pill>
+                {canManage && inv.status === "pending" ? (
+                  <button
+                    type="button"
+                    data-testid={FLEET_ACCOUNT_TEST_IDS.invitations.revoke}
+                    disabled={!online || revokeCmd.state.status === "pending"}
+                    onClick={() =>
+                      void revokeCmd
+                        .run(
+                          (key) =>
+                            fleetApi.revokeInvitation(
+                              fleet.fleetId,
+                              inv.invitationId,
+                              key,
+                            ),
+                          online,
+                        )
+                        .then((res) => {
+                          if (res !== undefined) {
+                            onSaved?.();
+                          }
+                        })
+                    }
+                    className="text-zinc-400 underline hover:text-zinc-200 disabled:opacity-50"
+                  >
+                    Revoke
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {inviteCmd.state.status === "failed" ? (
+        <p role="alert" className="text-red-300">
+          {commandErrorText(inviteCmd.state.error, online)}
+        </p>
+      ) : null}
+      {revokeCmd.state.status === "failed" ? (
+        <p role="alert" className="text-red-300">
+          {commandErrorText(revokeCmd.state.error, online)}
+        </p>
+      ) : null}
+    </section>
+  );
+};
+
 export const StaffRolesView = ({
   fleet,
   state,
   online,
+  invitations,
+  incomingInvitations,
   onSaved,
   onRetry,
 }: {
   readonly fleet: FleetView;
   readonly state: ReadState<FleetStaffList>;
   readonly online: boolean;
+  readonly invitations?: readonly FleetInvitationView[];
+  readonly incomingInvitations?: readonly FleetInvitationView[];
   readonly onSaved?: () => void;
   readonly onRetry?: () => void;
 }) => {
   const reachable = isWriteReachable(online, state);
   const canManage =
-    can(fleet.myRole, "manage_staff") && fleet.status === "active";
+    can(fleet.myRole, "manage_staff") && fleet.status !== "suspended";
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold text-zinc-100">Staff &amp; roles</h1>
+      {incomingInvitations && incomingInvitations.length > 0 ? (
+        <IncomingInvitationsCard
+          invitations={incomingInvitations}
+          online={reachable}
+          onResponded={onSaved}
+        />
+      ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="rounded-xl border border-[#222] bg-[#1A1A1A] p-4">
           <RoleMatrix />
@@ -285,6 +512,15 @@ export const StaffRolesView = ({
           </ReadGate>
         </section>
       </div>
+      {state.kind === "ready" ? (
+        <StaffInvitationsPanel
+          fleet={fleet}
+          invitations={invitations ?? []}
+          canManage={canManage}
+          online={reachable}
+          onSaved={onSaved}
+        />
+      ) : null}
     </div>
   );
 };
@@ -297,16 +533,35 @@ export const StaffRolesScreen = () => {
     queryKey: fleetKeys.staff(fleet.fleetId),
     queryFn: ({ signal }) => fleetApi.staff(fleet.fleetId, signal),
   });
+  const invitationsQuery = useQuery({
+    queryKey: fleetKeys.invitations(fleet.fleetId),
+    queryFn: ({ signal }) => fleetApi.invitations(fleet.fleetId, signal),
+  });
+  const incomingQuery = useQuery({
+    queryKey: fleetKeys.myInvitations(),
+    queryFn: ({ signal }) => fleetApi.myInvitations(signal),
+  });
   return (
     <StaffRolesView
       fleet={fleet}
       state={toReadState(staff, online, "staff")}
       online={online}
-      onSaved={() =>
+      invitations={invitationsQuery.data?.invitations}
+      incomingInvitations={incomingQuery.data?.invitations}
+      onSaved={() => {
         void client.invalidateQueries({
           queryKey: fleetKeys.staff(fleet.fleetId),
-        })
-      }
+        });
+        void client.invalidateQueries({
+          queryKey: fleetKeys.invitations(fleet.fleetId),
+        });
+        void client.invalidateQueries({
+          queryKey: fleetKeys.myInvitations(),
+        });
+        void client.invalidateQueries({
+          queryKey: fleetKeys.fleets(),
+        });
+      }}
       onRetry={() => void staff.refetch()}
     />
   );

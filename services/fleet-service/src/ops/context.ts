@@ -6,6 +6,7 @@
  */
 import type { CityConfigProvider } from "./config";
 import type { FleetDb } from "./types";
+import type { DocStore } from "../ports/doc-store";
 import type { PaymentPort } from "../ports/payment-port";
 import type { PinPort } from "../ports/pin-port";
 import type { RidePort } from "../ports/ride-port";
@@ -19,5 +20,7 @@ export interface FleetDeps {
   readonly pins: PinPort;
   /** payment-service's weekly money & remittance view (CC-A02, DEC-9 = A, Q7). */
   readonly payments?: PaymentPort;
+  /** Private S3-compatible document storage for KYB and vehicle documents (CC-C02 / P1-05). */
+  readonly docs?: DocStore;
   readonly now: () => Date;
 }

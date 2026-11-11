@@ -26,6 +26,7 @@ import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis, redis } from "./lib/redis";
 import { startOutboxRelay } from "./outbox-runner";
+import { createFleetAdminRoutes } from "./routes/admin";
 import {
   createDriverFleetRoutes,
   createFleetOfferRoutes,
@@ -33,6 +34,7 @@ import {
 import { createFleetRoutes } from "./routes/fleets";
 import { healthRoutes } from "./routes/health";
 import { createInternalRoutes } from "./routes/internal";
+import { createFleetInvitationRoutes } from "./routes/invitations";
 import { createDeps } from "./wiring";
 import { startWorker } from "./worker";
 
@@ -48,8 +50,10 @@ export function createApp(deps: FleetDeps): Hono {
 
   app.route("/health", healthRoutes);
   app.route("/v1/fleets", createFleetRoutes(deps));
+  app.route("/v1/fleet-invitations", createFleetInvitationRoutes(deps));
   app.route("/v1/fleet-offers", createFleetOfferRoutes(deps));
   app.route("/v1/drivers/me", createDriverFleetRoutes(deps));
+  app.route("/v1/admin", createFleetAdminRoutes(deps));
   // Service-to-service only (contract A routes 8-9, contract B).
   app.route("/internal/fleet", createInternalRoutes(deps));
   return app;

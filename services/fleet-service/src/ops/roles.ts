@@ -55,6 +55,12 @@ export function assertCapability(
   }
 }
 
+const PRE_KYB_ALLOWED_CAPABILITIES: ReadonlySet<FleetCapability> = new Set([
+  "view_calendar",
+  "manage_staff",
+  "manage_vehicles",
+]);
+
 export async function fleetAccess(
   deps: FleetDeps,
   actor: Actor,
@@ -81,10 +87,36 @@ export async function fleetAccess(
     cityId,
   };
   assertCapability(access, capability);
-  if (fleet.status !== "active" && capability !== "view_calendar") {
+  if (fleet.status === "suspended" && capability !== "view_calendar") {
     throw new ContractError("forbidden", "this fleet is suspended", {
       reason: "fleet_suspended",
     });
+  }
+  if (fleet.status === "rejected" && capability !== "view_calendar") {
+    throw new ContractError(
+      "kyb_not_approved",
+      "This fleet application was rejected.",
+      {
+        reason: "kyb_rejected",
+        kybStatus: fleet.kybStatus,
+        status: fleet.status,
+      },
+    );
+  }
+  const isApprovedActive =
+    (fleet.status === "active" || fleet.status === "approved") &&
+    fleet.kybStatus === "approved";
+  if (!isApprovedActive && !PRE_KYB_ALLOWED_CAPABILITIES.has(capability)) {
+    throw new ContractError(
+      "kyb_not_approved",
+      "This fleet must complete business verification (KYB) before proposing assignments or scheduling maintenance.",
+      {
+        reason: "kyb_not_approved",
+        kybStatus: fleet.kybStatus,
+        status: fleet.status,
+        capability,
+      },
+    );
   }
   return access;
 }

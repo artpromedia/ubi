@@ -69,13 +69,31 @@ export interface MoneyAvailable {
 
 export type FleetMoney = MoneyUnavailable | MoneyAvailable;
 
+export type FleetStatus =
+  | "pending_review"
+  | "changes_requested"
+  | "active"
+  | "approved"
+  | "rejected"
+  | "suspended";
+
+export type FleetKybStatus =
+  | "pending_review"
+  | "changes_requested"
+  | "approved"
+  | "rejected";
+
 export interface FleetView {
   readonly fleetId: string;
   readonly name: string;
   readonly cityId: string;
   readonly currency: string;
   readonly zone: string;
-  readonly status: "active" | "suspended";
+  readonly status: FleetStatus;
+  readonly kybStatus?: FleetKybStatus;
+  readonly registrationNumber?: string | null;
+  readonly taxId?: string | null;
+  readonly kybReviewNote?: string | null;
   readonly myRole: FleetStaffRole;
   readonly createdAt: string;
 }
@@ -655,4 +673,178 @@ export interface CalendarQuery {
   readonly q?: string;
   readonly cursor?: string;
   readonly limit: number;
+}
+
+// ── KYB, Staff Invitations & Vehicle Documents (CC-C02 / P1-05) ─────────────
+
+export interface CreateFleetInput {
+  readonly name: string;
+  readonly registrationNumber?: string;
+  readonly taxId?: string;
+}
+
+export type FleetKybRequirementKind = "text" | "document";
+
+export interface FleetKybRequirement {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: FleetKybRequirementKind;
+  readonly required: boolean;
+  readonly description?: string;
+}
+
+export interface FleetKybRequirementsResponse {
+  readonly cityId: string;
+  readonly configured: boolean;
+  readonly requirements: readonly FleetKybRequirement[];
+}
+
+export type FleetDocumentContentType =
+  | "application/pdf"
+  | "image/jpeg"
+  | "image/png"
+  | "image/webp";
+
+export type DocumentUploadPurpose = "kyb_document" | "vehicle_document";
+
+export interface CreateDocumentUploadInput {
+  readonly purpose: DocumentUploadPurpose;
+  readonly contentType: FleetDocumentContentType;
+  readonly sizeBytes: number;
+  readonly sha256Hex: string;
+}
+
+export interface DocumentUploadSlotView {
+  readonly uploadId: string;
+  readonly objectKey: string;
+  readonly uploadUrl: string;
+  readonly method: "PUT";
+  readonly requiredHeaders: Readonly<Record<string, string>>;
+  readonly expiresAt: string;
+}
+
+export interface DocumentDownloadUrlView {
+  readonly url: string;
+  readonly expiresAt: string;
+  readonly contentType: string;
+}
+
+export interface FleetKybDocumentView {
+  readonly kybDocumentId: string;
+  readonly requirementKey: string;
+  readonly uploadId: string;
+  readonly contentType: string;
+  readonly sizeBytes: number;
+  readonly sha256Hex: string;
+  readonly status: "pending" | "valid" | "rejected";
+  readonly reviewNote: string | null;
+  readonly createdAt: string;
+}
+
+export interface FleetKybApplicationView {
+  readonly fleetId: string;
+  readonly name: string;
+  readonly cityId: string;
+  readonly status: FleetStatus;
+  readonly kybStatus: FleetKybStatus;
+  readonly registrationNumber: string | null;
+  readonly taxId: string | null;
+  readonly fields: Readonly<Record<string, string>>;
+  readonly declarationsAccepted: boolean;
+  readonly submittedAt: string | null;
+  readonly reviewedBy: string | null;
+  readonly reviewedAt: string | null;
+  readonly reviewNote: string | null;
+  readonly requirementsConfigured: boolean;
+  readonly requirements: readonly FleetKybRequirement[];
+  readonly documents: readonly FleetKybDocumentView[];
+}
+
+export interface SubmitFleetKybInput {
+  readonly registrationNumber?: string;
+  readonly taxId?: string;
+  readonly fields: Readonly<Record<string, string>>;
+  readonly documents: readonly {
+    readonly requirementKey: string;
+    readonly uploadId: string;
+  }[];
+  readonly declarationsAccepted: true;
+}
+
+export type FleetInvitationStatus =
+  | "pending"
+  | "accepted"
+  | "declined"
+  | "revoked"
+  | "expired";
+
+export type FleetInvitationKind = "staff_invite" | "ownership_transfer";
+
+export interface CreateFleetInvitationInput {
+  readonly phone: string;
+  readonly role: FleetStaffRole;
+  readonly kind?: FleetInvitationKind;
+}
+
+export interface FleetInvitationView {
+  readonly invitationId: string;
+  readonly fleetId: string;
+  readonly fleetName: string;
+  readonly kind: FleetInvitationKind;
+  readonly role: FleetStaffRole;
+  readonly inviteeMasked: string;
+  readonly inviteeUserId: string | null;
+  readonly inviteeDisplayName: string | null;
+  readonly invitedByUserId: string;
+  readonly status: FleetInvitationStatus;
+  readonly expiresAt: string;
+  readonly respondedAt: string | null;
+  readonly revokedAt: string | null;
+  readonly createdAt: string;
+}
+
+export interface FleetInvitationList {
+  readonly invitations: readonly FleetInvitationView[];
+}
+
+export interface PatchFleetStaffRoleInput {
+  readonly role: FleetStaffRole;
+}
+
+export type VehicleDocumentType = "insurance" | "inspection" | "registration";
+
+export type VehicleDocumentReviewStatus =
+  | "pending"
+  | "valid"
+  | "rejected"
+  | "expired";
+
+export interface AttachVehicleDocumentInput {
+  readonly docType: VehicleDocumentType;
+  readonly uploadId: string;
+  readonly expiresAt: string;
+}
+
+export interface VehicleDocumentView {
+  readonly documentId: string;
+  readonly vehicleId: string;
+  readonly fleetId: string;
+  readonly plate: string;
+  readonly docType: VehicleDocumentType;
+  readonly uploadId: string;
+  readonly contentType: string;
+  readonly sizeBytes: number;
+  readonly sha256Hex: string;
+  readonly expiresAt: string;
+  readonly status: VehicleDocumentReviewStatus;
+  readonly uploadedByUserId: string;
+  readonly reviewedBy: string | null;
+  readonly reviewedAt: string | null;
+  readonly reviewNote: string | null;
+  readonly createdAt: string;
+}
+
+export interface VehicleDocumentList {
+  readonly vehicleId: string;
+  readonly documents: readonly VehicleDocumentView[];
 }

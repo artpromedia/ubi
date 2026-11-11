@@ -337,6 +337,19 @@ export const ConflictActions = ({
                 {plan.label}
               </Link>
             );
+          case "document":
+            return (
+              <Link
+                key={plan.action}
+                href={plan.href}
+                data-testid={FLEET_TEST_IDS.conflicts.action}
+                data-action={plan.action}
+                aria-disabled={!online}
+                className={`${buttonClass} border border-zinc-600 text-zinc-100 ${!online ? "pointer-events-none opacity-50" : ""}`}
+              >
+                {plan.label}
+              </Link>
+            );
           default:
             return (
               <span key={plan.action} className="inline-flex flex-col gap-1">

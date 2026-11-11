@@ -155,6 +155,12 @@ without it would count every client as Caddy.
 | `PROOF_STORAGE_SECRET_KEY`          | delivery           | optional | .env            | Same.                                                                                                                                                          |
 | `PROOF_UPLOAD_URL_TTL`              | delivery           | optional | code            | 5m (bounded ≤ 15m).                                                                                                                                            |
 | `PROOF_DOWNLOAD_URL_TTL`            | delivery           | optional | code            | 60s (bounded ≤ 5m).                                                                                                                                            |
+| `FLEET_DOC_S3_ENDPOINT`             | fleet              | set      | compose         | `http://minio:9000`.                                                                                                                                           |
+| `FLEET_DOC_S3_PUBLIC_ENDPOINT`      | fleet              | set      | compose         | `https://storage.$DOMAIN` — presigned upload/download URLs signed for the public storage host.                                                                 |
+| `FLEET_DOC_S3_REGION`               | fleet              | set      | compose default | `us-east-1`.                                                                                                                                                   |
+| `FLEET_DOC_S3_BUCKET`               | fleet              | set      | compose default | `ubi-fleet-docs` (private bucket for KYB & vehicle documents).                                                                                                 |
+| `FLEET_DOC_S3_ACCESS_KEY`           | fleet              | optional | .env            | Bucket-limited MinIO access key. Empty: document upload routes fail closed with `503 doc_storage_not_configured`.                                              |
+| `FLEET_DOC_S3_SECRET_KEY`           | fleet              | optional | .env            | Same.                                                                                                                                                          |
 
 ## 7. Sweeps and timings (compose defaults equal the code defaults)
 

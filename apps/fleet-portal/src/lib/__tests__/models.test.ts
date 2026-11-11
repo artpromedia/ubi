@@ -100,8 +100,12 @@ describe("conflict centre model — actions only from allowedActions", () => {
       maintenanceBlockId: "mnt_ab_service",
       vehicleId: VEH.ab,
     });
-    expect(planAction(doc, "renew_document")).toMatchObject({
-      kind: "unavailable",
+    expect(planAction(doc, "renew_document")).toEqual({
+      action: "renew_document",
+      label: "Upload renewal",
+      kind: "document",
+      href: `/vehicles/${VEH.ab}#documents`,
+      vehicleId: VEH.ab,
     });
     expect(planAction(doc, "propose_vehicle_swap")).toMatchObject({
       kind: "unavailable",

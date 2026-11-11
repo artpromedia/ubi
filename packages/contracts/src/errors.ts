@@ -92,6 +92,13 @@ export const ERROR_CODES = [
   "maintenance_overlap",
   "unresolved_booking_overlap",
   "fleet_vehicle_unavailable",
+  "kyb_not_approved",
+  "kyb_requirements_unconfigured",
+  "upload_verification_failed",
+  "doc_storage_not_configured",
+  "doc_storage_unavailable",
+  "invitation_expired",
+  "document_already_expired",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -196,6 +203,20 @@ const STATUS_BY_CODE = {
   unresolved_booking_overlap: 409,
   // A fleet driver cannot go online when their assigned fleet vehicle cannot be resolved or used now (P1-04).
   fleet_vehicle_unavailable: 409,
+  // Fleet KYB is not approved yet: assignments/maintenance cannot run (P1-05).
+  kyb_not_approved: 403,
+  // City config has no `fleet.kyb.requirements` yet (DEC-5).
+  kyb_requirements_unconfigured: 409,
+  // Uploaded document failed size, SHA-256, or magic-byte verification.
+  upload_verification_failed: 422,
+  // Private document storage is not configured in this environment.
+  doc_storage_not_configured: 503,
+  // Private document storage was unreachable or errored.
+  doc_storage_unavailable: 503,
+  // Staff invitation or ownership transfer has expired.
+  invitation_expired: 409,
+  // Submitted vehicle document has an expiry date in the past.
+  document_already_expired: 422,
 } as const satisfies Readonly<Record<ErrorCode, number>>;
 
 export function statusForErrorCode(code: ErrorCode): number {

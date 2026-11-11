@@ -6,10 +6,11 @@
  * each screen. Money is not shown: fleet-service answers that payment-service
  * owns it and has not published it to fleets, so nothing is estimated.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 
 import { useSelectedFleet } from "@/components/fleet/fleet-context";
+import { KybStatusBanner } from "@/components/fleet/KybOnboardingPanel";
 import { ReadGate } from "@/components/states/states";
 import { WeekMoneyPanel } from "@/components/vehicle/VehicleDetail";
 import { toReadState, type ReadState } from "@/lib/access";
@@ -18,7 +19,11 @@ import { useOnlineStatus } from "@/lib/hooks";
 import { ROLE_LABELS } from "@/lib/roles";
 import { dateTimeIn, zoneLabel, zoneShort } from "@/lib/time";
 
-import type { FleetOverview, FleetView } from "@/lib/fleet-types";
+import type {
+  FleetKybApplicationView,
+  FleetOverview,
+  FleetView,
+} from "@/lib/fleet-types";
 
 const Stat = ({
   label,
@@ -42,11 +47,17 @@ export const OverviewView = ({
   fleet,
   state,
   now,
+  kyb,
+  online = true,
+  onKybSubmitted,
   onRetry,
 }: {
   readonly fleet: FleetView;
   readonly state: ReadState<FleetOverview>;
   readonly now: number;
+  readonly kyb?: FleetKybApplicationView;
+  readonly online?: boolean;
+  readonly onKybSubmitted?: (updated: FleetKybApplicationView) => void;
   readonly onRetry?: () => void;
 }) => (
   <div className="space-y-4">
@@ -56,6 +67,14 @@ export const OverviewView = ({
         {ROLE_LABELS[fleet.myRole]} · {zoneLabel(fleet.zone, now)}
       </p>
     </div>
+    {kyb ? (
+      <KybStatusBanner
+        fleet={fleet}
+        kyb={kyb}
+        online={online}
+        onSubmitted={onKybSubmitted}
+      />
+    ) : null}
     <ReadGate
       state={state}
       loadingLabel="Loading overview…"
@@ -141,16 +160,31 @@ export const OverviewView = ({
 export const OverviewScreen = () => {
   const fleet = useSelectedFleet();
   const online = useOnlineStatus();
+  const client = useQueryClient();
   const query = useQuery({
     queryKey: fleetKeys.overview(fleet.fleetId),
     queryFn: ({ signal }) => fleetApi.overview(fleet.fleetId, signal),
     refetchInterval: 60_000,
+  });
+  const kybQuery = useQuery({
+    queryKey: fleetKeys.kyb(fleet.fleetId),
+    queryFn: ({ signal }) => fleetApi.kyb(fleet.fleetId, signal),
   });
   return (
     <OverviewView
       fleet={fleet}
       state={toReadState(query, online, "the overview")}
       now={Date.now()}
+      kyb={kybQuery.data}
+      online={online}
+      onKybSubmitted={() => {
+        void client.invalidateQueries({
+          queryKey: fleetKeys.kyb(fleet.fleetId),
+        });
+        void client.invalidateQueries({
+          queryKey: fleetKeys.fleets(),
+        });
+      }}
       onRetry={() => void query.refetch()}
     />
   );

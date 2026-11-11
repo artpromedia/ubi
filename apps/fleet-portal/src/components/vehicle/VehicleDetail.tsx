@@ -10,8 +10,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Car, Wrench } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 import { useSelectedFleet } from "@/components/fleet/fleet-context";
+import { computeSha256Hex } from "@/components/fleet/KybOnboardingPanel";
 import {
   EmptyState,
   PermissionNote,
@@ -29,7 +31,7 @@ import { fleetApi, fleetKeys } from "@/lib/fleet-api";
 import { useCommand, useNow, useOnlineStatus } from "@/lib/hooks";
 import { shiftName, STATUS_NOW_LABELS } from "@/lib/labels";
 import { can, permissionCopy } from "@/lib/roles";
-import { FLEET_TEST_IDS } from "@/lib/test-ids";
+import { FLEET_ACCOUNT_TEST_IDS, FLEET_TEST_IDS } from "@/lib/test-ids";
 import { addDays, localDateOf, startOfLocalDay, toIso } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import {
@@ -45,11 +47,14 @@ import type {
   ArrangementView,
   ConflictView,
   FleetCalendar,
+  FleetDocumentContentType,
   FleetVehicleView,
   FleetView,
   MaintenanceBlockView,
   MaintenanceList,
   MoneyUnavailable,
+  VehicleDocumentType,
+  VehicleDocumentView,
 } from "@/lib/fleet-types";
 
 const MOVE_LABELS = {
@@ -86,6 +91,7 @@ export interface VehicleDetailViewProps {
   readonly maintenance: ReadState<MaintenanceList>;
   readonly arrangements: readonly ArrangementView[];
   readonly conflicts: readonly ConflictView[];
+  readonly vehicleDocuments?: readonly VehicleDocumentView[];
   readonly now: number;
   readonly online: boolean;
   readonly onChanged?: () => void;
@@ -239,6 +245,276 @@ export const WeekMoneyPanel = ({
   );
 };
 
+const DOC_TYPE_LABELS: Readonly<Record<VehicleDocumentType, string>> = {
+  insurance: "Insurance",
+  inspection: "Roadworthiness / inspection",
+  registration: "Vehicle registration",
+};
+
+const DOC_STATUS_TONES: Readonly<
+  Record<VehicleDocumentView["status"], "ok" | "warn" | "bad" | "mute">
+> = {
+  valid: "ok",
+  pending: "warn",
+  rejected: "bad",
+  expired: "mute",
+};
+
+const ALLOWED_DOC_TYPES: readonly FleetDocumentContentType[] = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+const VehicleDocumentsPanel = ({
+  fleet,
+  vehicleId,
+  documents,
+  online,
+  onChanged,
+}: {
+  readonly fleet: FleetView;
+  readonly vehicleId: string;
+  readonly documents: readonly VehicleDocumentView[];
+  readonly online: boolean;
+  readonly onChanged?: () => void;
+}) => {
+  const canUpload =
+    can(fleet.myRole, "manage_vehicles") && fleet.status !== "suspended";
+  const [docType, setDocType] = useState<VehicleDocumentType>("insurance");
+  const [expiresDate, setExpiresDate] = useState("");
+  const [uploadId, setUploadId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const attachCmd = useCommand<VehicleDocumentView>();
+
+  const handleFileChange = async (file: File) => {
+    setUploadError(null);
+    const contentType = file.type as FleetDocumentContentType;
+    if (!ALLOWED_DOC_TYPES.includes(contentType)) {
+      setUploadError(
+        "Unsupported file type. Upload a PDF, JPEG, PNG, or WebP document.",
+      );
+      return;
+    }
+    setUploading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const sha256Hex = await computeSha256Hex(buffer);
+      const slot = await fleetApi.createVehicleDocumentUpload(
+        fleet.fleetId,
+        vehicleId,
+        {
+          purpose: "vehicle_document",
+          contentType,
+          sizeBytes: buffer.byteLength,
+          sha256Hex,
+        },
+        `veh-doc-up-${vehicleId}-${docType}-${sha256Hex.slice(0, 12)}`,
+      );
+      const putRes = await fetch(slot.uploadUrl, {
+        method: "PUT",
+        headers: slot.requiredHeaders,
+        body: buffer,
+      });
+      if (!putRes.ok) {
+        throw new Error(`Upload failed with status ${putRes.status}`);
+      }
+      setUploadId(slot.uploadId);
+    } catch (error) {
+      setUploadError(commandErrorText(error, online));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <section
+      id="documents"
+      data-testid={FLEET_ACCOUNT_TEST_IDS.documents.list}
+      className="space-y-3 rounded-xl border border-[#222] bg-[#1A1A1A] p-4 text-xs"
+    >
+      <div>
+        <h2 className="text-sm font-semibold text-zinc-100">
+          Vehicle documents &amp; renewals
+        </h2>
+        <p className="text-zinc-400">
+          Uploaded certificates are verified by UBI operations before the new
+          expiry date takes effect.
+        </p>
+      </div>
+
+      {documents.length === 0 ? (
+        <p className="text-zinc-500">
+          No document renewals uploaded for this vehicle yet.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {documents.map((doc) => (
+            <li
+              key={doc.documentId}
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-[#262626] bg-[#141414] px-3 py-2"
+            >
+              <div>
+                <p className="font-medium text-zinc-100">
+                  {DOC_TYPE_LABELS[doc.docType]} · expires{" "}
+                  <span className="font-mono">
+                    {doc.expiresAt.slice(0, 10)}
+                  </span>
+                </p>
+                {doc.reviewNote ? (
+                  <p className="text-[11px] text-amber-200">
+                    UBI review note: {doc.reviewNote}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                <Pill tone={DOC_STATUS_TONES[doc.status]}>{doc.status}</Pill>
+                {canUpload ? (
+                  <button
+                    type="button"
+                    disabled={!online}
+                    onClick={() => {
+                      void fleetApi
+                        .vehicleDocumentUrl(
+                          fleet.fleetId,
+                          vehicleId,
+                          doc.documentId,
+                        )
+                        .then((link) => {
+                          window.open(
+                            link.url,
+                            "_blank",
+                            "noopener,noreferrer",
+                          );
+                        });
+                    }}
+                    className="text-[#86EFAC] underline disabled:opacity-50"
+                  >
+                    Open private link
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canUpload ? (
+        <form
+          data-testid={FLEET_ACCOUNT_TEST_IDS.documents.uploadRenewal}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!uploadId || !expiresDate) return;
+            void attachCmd
+              .run(
+                (key) =>
+                  fleetApi.attachVehicleDocument(
+                    fleet.fleetId,
+                    vehicleId,
+                    {
+                      uploadId,
+                      docType,
+                      expiresAt: `${expiresDate}T23:59:59.000Z`,
+                    },
+                    key,
+                  ),
+                online,
+              )
+              .then((res) => {
+                if (res !== undefined) {
+                  setUploadId(null);
+                  setExpiresDate("");
+                  onChanged?.();
+                }
+              });
+          }}
+          className="grid gap-2 border-t border-[#262626] pt-3 sm:grid-cols-3"
+        >
+          <label className="flex flex-col gap-1 text-zinc-300">
+            Document type
+            <select
+              value={docType}
+              onChange={(e) =>
+                setDocType(e.target.value as VehicleDocumentType)
+              }
+              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100"
+            >
+              <option value="insurance">Insurance</option>
+              <option value="inspection">Roadworthiness / inspection</option>
+              <option value="registration">Vehicle registration</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-zinc-300">
+            Expiry date
+            <input
+              type="date"
+              value={expiresDate}
+              onChange={(e) => setExpiresDate(e.target.value)}
+              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100"
+            />
+          </label>
+          <div className="flex flex-col justify-end gap-1">
+            <label className="cursor-pointer rounded border border-zinc-600 px-2.5 py-1.5 text-center text-zinc-100 hover:bg-zinc-800">
+              {uploading
+                ? "Uploading…"
+                : uploadId
+                  ? "Replace document file"
+                  : "Choose document file"}
+              <input
+                type="file"
+                accept=".pdf,image/jpeg,image/png,image/webp"
+                disabled={!online || uploading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    void handleFileChange(file);
+                  }
+                }}
+                className="sr-only"
+              />
+            </label>
+          </div>
+          <div className="sm:col-span-3">
+            <button
+              type="submit"
+              data-testid={FLEET_ACCOUNT_TEST_IDS.documents.uploadSubmit}
+              disabled={
+                !online ||
+                uploading ||
+                uploadId === null ||
+                expiresDate === "" ||
+                attachCmd.state.status === "pending"
+              }
+              className="rounded-md bg-[#1DB954] px-3 py-1.5 font-semibold text-black disabled:opacity-50"
+            >
+              {attachCmd.state.status === "pending"
+                ? "Submitting…"
+                : "Submit document renewal"}
+            </button>
+          </div>
+          {uploadError ? (
+            <p role="alert" className="text-red-300 sm:col-span-3">
+              {uploadError}
+            </p>
+          ) : null}
+          {attachCmd.state.status === "done" ? (
+            <p className="text-[#86EFAC] sm:col-span-3">
+              Document submitted for UBI verification.
+            </p>
+          ) : null}
+          {attachCmd.state.status === "failed" ? (
+            <p role="alert" className="text-red-300 sm:col-span-3">
+              {commandErrorText(attachCmd.state.error, online)}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
+    </section>
+  );
+};
+
 export const VehicleDetailView = ({
   fleet,
   vehicle,
@@ -246,6 +522,7 @@ export const VehicleDetailView = ({
   maintenance,
   arrangements,
   conflicts,
+  vehicleDocuments,
   now,
   online,
   onChanged,
@@ -434,6 +711,14 @@ export const VehicleDetailView = ({
                   </ReadGate>
                 </section>
 
+                <VehicleDocumentsPanel
+                  fleet={fleet}
+                  vehicleId={car.vehicleId}
+                  documents={vehicleDocuments ?? []}
+                  online={reachable}
+                  onChanged={onChanged}
+                />
+
                 <section
                   id="maintenance"
                   data-testid={FLEET_TEST_IDS.vehicle.maintenanceList}
@@ -611,6 +896,12 @@ export const VehicleDetailScreen = ({
     queryFn: ({ signal }) =>
       fleetApi.conflicts(fleet.fleetId, "open,resolving", signal),
   });
+  const docsQuery = useQuery({
+    queryKey: fleetKeys.vehicleDocuments(fleet.fleetId, vehicleId),
+    queryFn: ({ signal }) =>
+      fleetApi.vehicleDocuments(fleet.fleetId, vehicleId, signal),
+    enabled: vehicleId !== "",
+  });
   if (vehicleId === "") {
     return (
       <EmptyState
@@ -627,6 +918,7 @@ export const VehicleDetailScreen = ({
       maintenance={toReadState(maintenance, online, "maintenance")}
       arrangements={assignments.data?.arrangements ?? []}
       conflicts={conflicts.data?.conflicts ?? []}
+      vehicleDocuments={docsQuery.data?.documents}
       now={now}
       online={online}
       onChanged={() =>

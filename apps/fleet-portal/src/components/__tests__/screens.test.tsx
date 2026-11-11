@@ -30,7 +30,11 @@ import {
 import { classifyError, FLAG_OFF_COPY, type ReadState } from "@/lib/access";
 import { ApiError } from "@/lib/api-client";
 import { defaultControls } from "@/lib/calendar-controls";
-import { FLEET_STATE_TEST_IDS, FLEET_TEST_IDS } from "@/lib/test-ids";
+import {
+  FLEET_ACCOUNT_TEST_IDS,
+  FLEET_STATE_TEST_IDS,
+  FLEET_TEST_IDS,
+} from "@/lib/test-ids";
 
 import { AssignmentsView } from "../assignments/Assignments";
 import {
@@ -1088,5 +1092,237 @@ describe("offline / stale on every screen", () => {
       );
       expect(calendarMarkup).not.toContain('href="/maintenance/new"');
     }
+  });
+});
+
+describe("CC-C02 — KYB onboarding, staff invitations & vehicle documents", () => {
+  it("renders KYB status banner, city-not-configured notice, and owner-only submission form", () => {
+    const unconfiguredKyb = {
+      fleetId: owner.fleetId,
+      name: owner.name,
+      cityId: "lagos",
+      status: "pending_review" as const,
+      kybStatus: "pending_review" as const,
+      registrationNumber: "RC-123456",
+      taxId: "12345678-0001",
+      fields: {},
+      declarationsAccepted: false,
+      submittedAt: null,
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+      requirementsConfigured: false,
+      requirements: [],
+      documents: [],
+    };
+    const unconfMarkup = html(
+      <OverviewView
+        fleet={fleetAs("owner", "pending_review")}
+        state={ready(overview)}
+        now={NOW}
+        kyb={unconfiguredKyb}
+        online
+      />,
+    );
+    expect(count(unconfMarkup, FLEET_ACCOUNT_TEST_IDS.kyb.statusBanner)).toBe(
+      1,
+    );
+    expect(count(unconfMarkup, FLEET_ACCOUNT_TEST_IDS.kyb.form)).toBe(0);
+    expect(text(unconfMarkup)).toContain(
+      "Business verification requirements are not configured for lagos yet.",
+    );
+
+    const configuredKyb = {
+      ...unconfiguredKyb,
+      requirementsConfigured: true,
+      requirements: [
+        {
+          key: "cac_certificate",
+          label: "CAC Certificate of Incorporation",
+          kind: "document" as const,
+          required: true,
+        },
+        {
+          key: "registered_address",
+          label: "Registered business address",
+          kind: "text" as const,
+          required: true,
+        },
+      ],
+      documents: [
+        {
+          kybDocumentId: "kyb_doc_1",
+          requirementKey: "cac_certificate",
+          uploadId: "fup_1",
+          contentType: "application/pdf",
+          sizeBytes: 2048,
+          sha256Hex: "a".repeat(64),
+          status: "pending" as const,
+          reviewNote: null,
+          createdAt: "2026-09-30T08:00:00.000Z",
+        },
+      ],
+    };
+
+    const ownerMarkup = html(
+      <OverviewView
+        fleet={fleetAs("owner", "pending_review")}
+        state={ready(overview)}
+        now={NOW}
+        kyb={configuredKyb}
+        online
+      />,
+    );
+    expect(count(ownerMarkup, FLEET_ACCOUNT_TEST_IDS.kyb.statusBanner)).toBe(1);
+    expect(count(ownerMarkup, FLEET_ACCOUNT_TEST_IDS.kyb.form)).toBe(1);
+    expect(
+      count(ownerMarkup, FLEET_ACCOUNT_TEST_IDS.kyb.uploadRequirement),
+    ).toBe(2);
+    expect(count(ownerMarkup, FLEET_ACCOUNT_TEST_IDS.kyb.submit)).toBe(1);
+    expect(text(ownerMarkup)).toContain("Open private link");
+
+    const readOnlyMarkup = html(
+      <OverviewView
+        fleet={fleetAs("read_only", "pending_review")}
+        state={ready(overview)}
+        now={NOW}
+        kyb={configuredKyb}
+        online
+      />,
+    );
+    expect(count(readOnlyMarkup, FLEET_ACCOUNT_TEST_IDS.kyb.form)).toBe(0);
+    expect(text(readOnlyMarkup)).not.toContain("Open private link");
+  });
+
+  it("renders staff invitations & ownership transfer for owners and hides controls from managers/read-only", () => {
+    const sampleInvite = {
+      invitationId: "finv_1",
+      fleetId: owner.fleetId,
+      fleetName: owner.name,
+      inviteeMasked: "+234•••••0000",
+      inviteeUserId: null,
+      inviteeDisplayName: null,
+      role: "manager" as const,
+      kind: "staff_invite" as const,
+      status: "pending" as const,
+      invitedByUserId: "usr_owner",
+      expiresAt: "2026-10-07T08:00:00.000Z",
+      createdAt: "2026-09-30T08:00:00.000Z",
+      respondedAt: null,
+      revokedAt: null,
+    };
+    const asOwner = html(
+      <StaffRolesView
+        fleet={owner}
+        state={ready(staff)}
+        online
+        invitations={[sampleInvite]}
+        incomingInvitations={[sampleInvite]}
+      />,
+    );
+    expect(count(asOwner, FLEET_ACCOUNT_TEST_IDS.invitations.inviteForm)).toBe(
+      1,
+    );
+    expect(
+      count(asOwner, FLEET_ACCOUNT_TEST_IDS.invitations.inviteSubmit),
+    ).toBe(1);
+    expect(
+      count(asOwner, FLEET_ACCOUNT_TEST_IDS.invitations.transferOwnership),
+    ).toBe(1);
+    expect(count(asOwner, FLEET_ACCOUNT_TEST_IDS.invitations.revoke)).toBe(1);
+    expect(count(asOwner, FLEET_ACCOUNT_TEST_IDS.invitations.accept)).toBe(1);
+    expect(count(asOwner, FLEET_ACCOUNT_TEST_IDS.invitations.decline)).toBe(1);
+
+    const asManager = html(
+      <StaffRolesView
+        fleet={manager}
+        state={ready(staff)}
+        online
+        invitations={[sampleInvite]}
+      />,
+    );
+    expect(
+      count(asManager, FLEET_ACCOUNT_TEST_IDS.invitations.inviteForm),
+    ).toBe(0);
+    expect(count(asManager, FLEET_ACCOUNT_TEST_IDS.invitations.revoke)).toBe(0);
+    expect(count(asManager, FLEET_ACCOUNT_TEST_IDS.invitations.row)).toBe(1);
+  });
+
+  it("renders vehicle document renewal form & private link for owner/manager and hides both for read-only", () => {
+    const sampleDoc = {
+      documentId: "vdoc_1",
+      fleetId: owner.fleetId,
+      vehicleId: VEH.ab,
+      plate: "LAG-118-AB",
+      docType: "insurance" as const,
+      uploadId: "fup_veh_1",
+      contentType: "application/pdf",
+      sizeBytes: 4096,
+      sha256Hex: "b".repeat(64),
+      expiresAt: "2027-03-31T23:59:59.000Z",
+      status: "pending" as const,
+      reviewNote: null,
+      uploadedByUserId: "usr_owner",
+      reviewedBy: null,
+      reviewedAt: null,
+      createdAt: "2026-09-30T08:00:00.000Z",
+    };
+    const ownerVeh = html(
+      <VehicleDetailView
+        fleet={owner}
+        vehicle={ready(vehicleView)}
+        availability={ready(vehicleAvailability)}
+        maintenance={ready(maintenanceList)}
+        arrangements={assignments.arrangements}
+        conflicts={conflicts.conflicts}
+        vehicleDocuments={[sampleDoc]}
+        now={NOW}
+        online
+      />,
+    );
+    expect(count(ownerVeh, FLEET_ACCOUNT_TEST_IDS.documents.list)).toBe(1);
+    expect(
+      count(ownerVeh, FLEET_ACCOUNT_TEST_IDS.documents.uploadRenewal),
+    ).toBe(1);
+    expect(count(ownerVeh, FLEET_ACCOUNT_TEST_IDS.documents.uploadSubmit)).toBe(
+      1,
+    );
+    expect(text(ownerVeh)).toContain("Open private link");
+
+    const readOnlyVeh = html(
+      <VehicleDetailView
+        fleet={readOnly}
+        vehicle={ready(vehicleView)}
+        availability={ready(vehicleAvailability)}
+        maintenance={ready(maintenanceList)}
+        arrangements={assignments.arrangements}
+        conflicts={conflicts.conflicts}
+        vehicleDocuments={[sampleDoc]}
+        now={NOW}
+        online
+      />,
+    );
+    expect(count(readOnlyVeh, FLEET_ACCOUNT_TEST_IDS.documents.list)).toBe(1);
+    expect(
+      count(readOnlyVeh, FLEET_ACCOUNT_TEST_IDS.documents.uploadRenewal),
+    ).toBe(0);
+    expect(text(readOnlyVeh)).not.toContain("Open private link");
+  });
+
+  it("routes renew_document conflict action to /vehicles/:id#documents", () => {
+    const markup = html(
+      <ConflictCentreView
+        fleet={owner}
+        state={ready(conflicts)}
+        status="open"
+        onStatus={() => undefined}
+        names={{ plates: new Map([[VEH.ab, "LAG-118-AB"]]) }}
+        vehicles={vehicles}
+        online
+      />,
+    );
+    expect(markup).toContain(
+      `href="/vehicles/${encodeURIComponent(VEH.ab)}#documents"`,
+    );
   });
 });

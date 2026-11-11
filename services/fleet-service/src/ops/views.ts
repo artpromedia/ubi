@@ -10,9 +10,11 @@ import { dateColumnToLocalDate, DAY_MS, iso } from "../lib/time";
 
 import type {
   AssignmentTerms,
+  FleetKybStatus,
   FleetPolicy,
   FleetShift,
   FleetStaffRole,
+  FleetStatus,
   ProposalStatus,
   TermDiff,
 } from "../contract";
@@ -32,7 +34,9 @@ export function fleetView(fleet: Fleet, myRole: FleetStaffRole) {
     cityId: fleet.cityId,
     currency: fleet.currency,
     zone: fleet.zone,
-    status: fleet.status as "active" | "suspended",
+    status: fleet.status as FleetStatus,
+    kybStatus: (fleet.kybStatus ?? "pending_review") as FleetKybStatus,
+    kybReviewNote: fleet.kybReviewNote ?? null,
     myRole,
     createdAt: iso(fleet.createdAt.getTime()),
   };

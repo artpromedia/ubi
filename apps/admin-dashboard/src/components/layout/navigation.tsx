@@ -96,6 +96,7 @@ const navigation = [
     icon: FileCheck,
     children: [
       { name: "Document Review", href: "/verification" },
+      { name: "Fleets & KYB", href: "/fleets" },
       { name: "Background Checks", href: "/verification/background" },
       { name: "Liveness Checks", href: "/verification/liveness" },
     ],

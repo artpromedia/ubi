@@ -41,10 +41,25 @@ export function requiredFleetScope(
   method: string,
   path: string,
 ): string | null {
-  if (path === "/v1/fleets" || path.startsWith("/v1/fleets/")) {
+  if (
+    path === "/v1/fleets" ||
+    path.startsWith("/v1/fleets/") ||
+    path === "/v1/fleet-invitations" ||
+    path.startsWith("/v1/fleet-invitations/")
+  ) {
     return WRITE_METHODS.has(method.toUpperCase())
       ? "fleet:manage"
       : "fleet:read";
+  }
+  if (
+    path === "/v1/admin/fleets" ||
+    path.startsWith("/v1/admin/fleets/") ||
+    path === "/v1/admin/fleet-documents" ||
+    path.startsWith("/v1/admin/fleet-documents/")
+  ) {
+    return WRITE_METHODS.has(method.toUpperCase())
+      ? "mp:admin:write"
+      : "mp:admin:read";
   }
   if (
     DRIVER_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix))

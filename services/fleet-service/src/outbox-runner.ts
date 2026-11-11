@@ -3,7 +3,11 @@
  * transaction as every state change; this publishes them with the shared
  * @ubi/outbox relay from this service's own prisma + redis singletons.
  */
-import { createOutboxRelay, type OutboxRelay } from "@ubi/outbox";
+import {
+  createOutboxRelay,
+  type OutboxPublisher,
+  type OutboxRelay,
+} from "@ubi/outbox";
 
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
@@ -12,7 +16,7 @@ import { redis } from "./lib/redis";
 export function startOutboxRelay(): OutboxRelay {
   const relay = createOutboxRelay({
     prisma,
-    redis,
+    redis: redis as unknown as OutboxPublisher,
     logger: logger.child({ component: "outbox" }),
   });
   relay.start();

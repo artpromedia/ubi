@@ -14,13 +14,22 @@ import { ContractError } from "@ubi/contracts";
 
 import {
   AddFleetVehicleSchema,
+  AttachVehicleDocumentSchema,
   ConfirmMaintenanceSchema,
   ConflictListSchema,
   CONFLICT_STATUSES,
+  CreateDocumentUploadSchema,
+  CreateFleetInvitationSchema,
   CreateFleetSchema,
   CreateMaintenanceSchema,
+  DocumentDownloadUrlViewSchema,
+  DocumentUploadSlotViewSchema,
   FleetAssignmentsSchema,
   FleetCalendarSchema,
+  FleetInvitationListSchema,
+  FleetInvitationViewSchema,
+  FleetKybApplicationViewSchema,
+  FleetKybRequirementsResponseSchema,
   FleetListSchema,
   FleetOverviewSchema,
   FleetStaffListSchema,
@@ -33,6 +42,7 @@ import {
   MaintenanceWindowSchema,
   NeedsResolutionDetailsSchema,
   OffRoadViewSchema,
+  PatchFleetStaffRoleSchema,
   PatchMaintenanceSchema,
   ProposalViewSchema,
   ProposeAssignmentSchema,
@@ -40,8 +50,11 @@ import {
   ReminderViewSchema,
   ReportOffRoadSchema,
   RequestVehicleSwapSchema,
+  SubmitFleetKybSchema,
   TerminationViewSchema,
   UtilisationSchema,
+  VehicleDocumentListSchema,
+  VehicleDocumentViewSchema,
   VehicleSwapRequestViewSchema,
   VEHICLE_AVAILABILITY_STATES,
   type FleetCapability,
@@ -66,6 +79,20 @@ import { listFleetConflicts } from "../ops/conflicts";
 import { FleetError } from "../ops/errors";
 import { createFleet, listMyFleets, listStaff, putStaff } from "../ops/fleets";
 import {
+  createInvitation,
+  listFleetInvitations,
+  removeStaffMember,
+  revokeInvitation,
+  updateStaffMemberRole,
+} from "../ops/invitations";
+import {
+  createKybUpload,
+  getFleetKyb,
+  getKybDocumentUrl,
+  getKybRequirements,
+  submitFleetKyb,
+} from "../ops/kyb";
+import {
   cancelMaintenance,
   completeMaintenance,
   confirmMaintenance,
@@ -78,6 +105,12 @@ import {
 } from "../ops/maintenance";
 import { fleetAccess, type FleetAccess } from "../ops/roles";
 import { remindDriver, requestVehicleSwap } from "../ops/swaps";
+import {
+  attachVehicleDocument,
+  createVehicleDocumentUpload,
+  getVehicleDocumentUrl,
+  listVehicleDocuments,
+} from "../ops/vehicle-documents";
 import { addVehicle, listVehicles, vehicleView } from "../ops/vehicles";
 import { fleetView } from "../ops/views";
 
@@ -162,6 +195,17 @@ export function createFleetRoutes(deps: FleetDeps): Hono {
     return granted;
   }
 
+  routes.get(
+    "/kyb-requirements",
+    route(async (c) =>
+      respond(
+        c,
+        FleetKybRequirementsResponseSchema,
+        await getKybRequirements(deps, cityOf(c)),
+      ),
+    ),
+  );
+
   routes.post(
     "/",
     route(async (c) => {
@@ -203,6 +247,72 @@ export function createFleetRoutes(deps: FleetDeps): Hono {
         c,
         FleetViewSchema,
         fleetView(granted.fleet, granted.role),
+      );
+    }),
+  );
+
+  routes.get(
+    "/:id/kyb",
+    route(async (c) => {
+      const granted = await access(c, "view_calendar");
+      return respond(
+        c,
+        FleetKybApplicationViewSchema,
+        await getFleetKyb(deps, granted),
+      );
+    }),
+  );
+
+  routes.post(
+    "/:id/kyb/uploads",
+    route(async (c) => {
+      const granted = await access(c, "manage_staff");
+      const body = CreateDocumentUploadSchema.parse(await jsonBody(c));
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.kyb.upload:${granted.fleet.id}`,
+        body,
+        async () => ({
+          status: 201,
+          body: shape(
+            DocumentUploadSlotViewSchema,
+            await createKybUpload(deps, granted, body),
+          ),
+        }),
+      );
+    }),
+  );
+
+  routes.post(
+    "/:id/kyb/submit",
+    route(async (c) => {
+      const granted = await access(c, "manage_staff");
+      const body = SubmitFleetKybSchema.parse(await jsonBody(c));
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.kyb.submit:${granted.fleet.id}`,
+        body,
+        async () => ({
+          status: 200,
+          body: shape(
+            FleetKybApplicationViewSchema,
+            await submitFleetKyb(deps, granted, body),
+          ),
+        }),
+      );
+    }),
+  );
+
+  routes.get(
+    "/:id/kyb/documents/:docId/url",
+    route(async (c) => {
+      const granted = await access(c, "manage_vehicles");
+      return respond(
+        c,
+        DocumentDownloadUrlViewSchema,
+        await getKybDocumentUrl(deps, granted, c.req.param("docId")),
       );
     }),
   );
@@ -250,6 +360,103 @@ export function createFleetRoutes(deps: FleetDeps): Hono {
     }),
   );
 
+  routes.patch(
+    "/:id/staff/:staffId",
+    route(async (c) => {
+      const granted = await access(c, "manage_staff");
+      const staffId = c.req.param("staffId");
+      const body = PatchFleetStaffRoleSchema.parse(await jsonBody(c));
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.staff.role:${granted.fleet.id}:${staffId}`,
+        body,
+        async () => ({
+          status: 200,
+          body: shape(
+            FleetStaffListSchema,
+            await updateStaffMemberRole(deps, granted, staffId, body),
+          ),
+        }),
+      );
+    }),
+  );
+
+  routes.delete(
+    "/:id/staff/:staffId",
+    route(async (c) => {
+      const granted = await access(c, "manage_staff");
+      const staffId = c.req.param("staffId");
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.staff.remove:${granted.fleet.id}:${staffId}`,
+        { staffId },
+        async () => ({
+          status: 200,
+          body: shape(
+            FleetStaffListSchema,
+            await removeStaffMember(deps, granted, staffId),
+          ),
+        }),
+      );
+    }),
+  );
+
+  routes.get(
+    "/:id/invitations",
+    route(async (c) => {
+      const granted = await access(c, "view_calendar");
+      return respond(
+        c,
+        FleetInvitationListSchema,
+        await listFleetInvitations(deps, granted),
+      );
+    }),
+  );
+
+  routes.post(
+    "/:id/invitations",
+    route(async (c) => {
+      const granted = await access(c, "manage_staff");
+      const body = CreateFleetInvitationSchema.parse(await jsonBody(c));
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.invitation.create:${granted.fleet.id}`,
+        body,
+        async () => ({
+          status: 201,
+          body: shape(
+            FleetInvitationViewSchema,
+            await createInvitation(deps, granted, body),
+          ),
+        }),
+      );
+    }),
+  );
+
+  routes.post(
+    "/:id/invitations/:invitationId/revoke",
+    route(async (c) => {
+      const granted = await access(c, "manage_staff");
+      const invitationId = c.req.param("invitationId");
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.invitation.revoke:${granted.fleet.id}:${invitationId}`,
+        { invitationId },
+        async () => ({
+          status: 200,
+          body: shape(
+            FleetInvitationViewSchema,
+            await revokeInvitation(deps, granted, invitationId),
+          ),
+        }),
+      );
+    }),
+  );
+
   routes.get(
     "/:id/vehicles",
     route(async (c) =>
@@ -290,6 +497,79 @@ export function createFleetRoutes(deps: FleetDeps): Hono {
         c,
         FleetVehicleViewSchema,
         await vehicleView(deps, granted, c.req.param("vehicleId")),
+      );
+    }),
+  );
+
+  routes.get(
+    "/:id/vehicles/:vehicleId/documents",
+    route(async (c) => {
+      const granted = await access(c, "view_calendar");
+      return respond(
+        c,
+        VehicleDocumentListSchema,
+        await listVehicleDocuments(deps, granted, c.req.param("vehicleId")),
+      );
+    }),
+  );
+
+  routes.post(
+    "/:id/vehicles/:vehicleId/documents/uploads",
+    route(async (c) => {
+      const granted = await access(c, "manage_vehicles");
+      const vehicleId = c.req.param("vehicleId");
+      const body = CreateDocumentUploadSchema.parse(await jsonBody(c));
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.vehicle.doc.upload:${granted.fleet.id}:${vehicleId}`,
+        body,
+        async () => ({
+          status: 201,
+          body: shape(
+            DocumentUploadSlotViewSchema,
+            await createVehicleDocumentUpload(deps, granted, vehicleId, body),
+          ),
+        }),
+      );
+    }),
+  );
+
+  routes.post(
+    "/:id/vehicles/:vehicleId/documents",
+    route(async (c) => {
+      const granted = await access(c, "manage_vehicles");
+      const vehicleId = c.req.param("vehicleId");
+      const body = AttachVehicleDocumentSchema.parse(await jsonBody(c));
+      return idempotentResponse(
+        c,
+        deps,
+        `fleet.vehicle.doc.attach:${granted.fleet.id}:${vehicleId}`,
+        body,
+        async () => ({
+          status: 201,
+          body: shape(
+            VehicleDocumentViewSchema,
+            await attachVehicleDocument(deps, granted, vehicleId, body),
+          ),
+        }),
+      );
+    }),
+  );
+
+  routes.get(
+    "/:id/vehicles/:vehicleId/documents/:documentId/url",
+    route(async (c) => {
+      const granted = await access(c, "manage_vehicles");
+      return respond(
+        c,
+        DocumentDownloadUrlViewSchema,
+        await getVehicleDocumentUrl(
+          deps,
+          granted,
+          c.req.param("vehicleId"),
+          c.req.param("documentId"),
+        ),
       );
     }),
   );

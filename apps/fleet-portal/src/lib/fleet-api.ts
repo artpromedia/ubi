@@ -44,12 +44,22 @@ import { projectOccupiedBlocks, stripForbidden } from "./privacy";
 
 import type {
   AddFleetVehicleInput,
+  AttachVehicleDocumentInput,
   CalendarQuery,
   ConflictList,
   ConflictStatus,
+  CreateDocumentUploadInput,
+  CreateFleetInput,
+  CreateFleetInvitationInput,
   CreateMaintenanceInput,
+  DocumentDownloadUrlView,
+  DocumentUploadSlotView,
   FleetAssignments,
   FleetCalendar,
+  FleetInvitationList,
+  FleetInvitationView,
+  FleetKybApplicationView,
+  FleetKybRequirementsResponse,
   FleetList,
   FleetOverview,
   FleetStaffList,
@@ -61,14 +71,18 @@ import type {
   MaintenancePreviewView,
   MaintenanceWindowInput,
   OffRoadView,
+  PatchFleetStaffRoleInput,
   PatchMaintenanceInput,
   ProposalView,
   ProposeAssignmentInput,
   PutFleetStaffInput,
   ReminderView,
   ReportOffRoadInput,
+  SubmitFleetKybInput,
   TerminationView,
   Utilisation,
+  VehicleDocumentList,
+  VehicleDocumentView,
   VehicleSwapRequestView,
 } from "./fleet-types";
 
@@ -337,6 +351,113 @@ export function createFleetApi(raw: FleetApiClient = apiClient) {
           idempotencyKey: key,
         }),
       ),
+    createFleet: (body: CreateFleetInput, key: string) =>
+      post<FleetView>("/v1/fleets", body, key),
+    kybRequirements: (signal?: AbortSignal) =>
+      get<FleetKybRequirementsResponse>("/v1/fleets/kyb-requirements", signal),
+    kyb: (fleetId: string, signal?: AbortSignal) =>
+      get<FleetKybApplicationView>(`${base(fleetId)}/kyb`, signal),
+    createKybUpload: (
+      fleetId: string,
+      body: CreateDocumentUploadInput,
+      key: string,
+    ) =>
+      post<DocumentUploadSlotView>(`${base(fleetId)}/kyb/uploads`, body, key),
+    submitKyb: (fleetId: string, body: SubmitFleetKybInput, key: string) =>
+      post<FleetKybApplicationView>(`${base(fleetId)}/kyb/submit`, body, key),
+    kybDocumentUrl: (fleetId: string, docId: string, signal?: AbortSignal) =>
+      get<DocumentDownloadUrlView>(
+        `${base(fleetId)}/kyb/documents/${enc(docId)}/url`,
+        signal,
+      ),
+    invitations: (fleetId: string, signal?: AbortSignal) =>
+      get<FleetInvitationList>(`${base(fleetId)}/invitations`, signal),
+    createInvitation: (
+      fleetId: string,
+      body: CreateFleetInvitationInput,
+      key: string,
+    ) => post<FleetInvitationView>(`${base(fleetId)}/invitations`, body, key),
+    revokeInvitation: (fleetId: string, invitationId: string, key: string) =>
+      post<FleetInvitationView>(
+        `${base(fleetId)}/invitations/${enc(invitationId)}/revoke`,
+        {},
+        key,
+      ),
+    myInvitations: (signal?: AbortSignal) =>
+      get<FleetInvitationList>("/v1/fleet-invitations", signal),
+    acceptInvitation: (invitationId: string, key: string) =>
+      post<FleetInvitationView>(
+        `/v1/fleet-invitations/${enc(invitationId)}/accept`,
+        {},
+        key,
+      ),
+    declineInvitation: (invitationId: string, key: string) =>
+      post<FleetInvitationView>(
+        `/v1/fleet-invitations/${enc(invitationId)}/decline`,
+        {},
+        key,
+      ),
+    patchStaffRole: async (
+      fleetId: string,
+      staffId: string,
+      body: PatchFleetStaffRoleInput,
+      key: string,
+    ) =>
+      stripForbidden(
+        await client.patch<FleetStaffList>(
+          `${base(fleetId)}/staff/${enc(staffId)}`,
+          body,
+          { idempotencyKey: key },
+        ),
+      ),
+    removeStaffMember: async (fleetId: string, staffId: string, key: string) =>
+      stripForbidden(
+        await client.delete<FleetStaffList>(
+          `${base(fleetId)}/staff/${enc(staffId)}`,
+          { idempotencyKey: key },
+        ),
+      ),
+    vehicleDocuments: (
+      fleetId: string,
+      vehicleId: string,
+      signal?: AbortSignal,
+    ) =>
+      get<VehicleDocumentList>(
+        `${base(fleetId)}/vehicles/${enc(vehicleId)}/documents`,
+        signal,
+      ),
+    createVehicleDocumentUpload: (
+      fleetId: string,
+      vehicleId: string,
+      body: CreateDocumentUploadInput,
+      key: string,
+    ) =>
+      post<DocumentUploadSlotView>(
+        `${base(fleetId)}/vehicles/${enc(vehicleId)}/documents/uploads`,
+        body,
+        key,
+      ),
+    attachVehicleDocument: (
+      fleetId: string,
+      vehicleId: string,
+      body: AttachVehicleDocumentInput,
+      key: string,
+    ) =>
+      post<VehicleDocumentView>(
+        `${base(fleetId)}/vehicles/${enc(vehicleId)}/documents`,
+        body,
+        key,
+      ),
+    vehicleDocumentUrl: (
+      fleetId: string,
+      vehicleId: string,
+      documentId: string,
+      signal?: AbortSignal,
+    ) =>
+      get<DocumentDownloadUrlView>(
+        `${base(fleetId)}/vehicles/${enc(vehicleId)}/documents/${enc(documentId)}/url`,
+        signal,
+      ),
   };
 }
 
@@ -347,13 +468,18 @@ export const fleetApi = createFleetApi();
 /** TanStack query keys, one family per fleet so a switch never mixes caches. */
 export const fleetKeys = {
   fleets: () => ["fleets"] as const,
+  myInvitations: () => ["fleet-invitations"] as const,
+  kybRequirements: () => ["fleet-kyb-requirements"] as const,
   all: (fleetId: string) => ["fleet", fleetId] as const,
+  kyb: (fleetId: string) => ["fleet", fleetId, "kyb"] as const,
   overview: (fleetId: string) => ["fleet", fleetId, "overview"] as const,
   calendar: (fleetId: string, q: Omit<CalendarQuery, "cursor">) =>
     ["fleet", fleetId, "calendar", q] as const,
   vehicles: (fleetId: string) => ["fleet", fleetId, "vehicles"] as const,
   vehicle: (fleetId: string, vehicleId: string) =>
     ["fleet", fleetId, "vehicle", vehicleId] as const,
+  vehicleDocuments: (fleetId: string, vehicleId: string) =>
+    ["fleet", fleetId, "vehicle", vehicleId, "documents"] as const,
   vehicleAvailability: (fleetId: string, vehicleId: string, from: string) =>
     ["fleet", fleetId, "vehicle", vehicleId, "availability", from] as const,
   maintenance: (fleetId: string, vehicleId?: string) =>
@@ -363,4 +489,5 @@ export const fleetKeys = {
   assignments: (fleetId: string) => ["fleet", fleetId, "assignments"] as const,
   utilisation: (fleetId: string) => ["fleet", fleetId, "utilisation"] as const,
   staff: (fleetId: string) => ["fleet", fleetId, "staff"] as const,
+  invitations: (fleetId: string) => ["fleet", fleetId, "invitations"] as const,
 };

@@ -349,6 +349,12 @@ export const CONTRACT = {
     RIDE_SERVICE_URL: "set",
     USER_SERVICE_URL: "set",
     PAYMENT_SERVICE_URL: "set",
+    FLEET_DOC_S3_ENDPOINT: "set",
+    FLEET_DOC_S3_PUBLIC_ENDPOINT: "set",
+    FLEET_DOC_S3_REGION: "set",
+    FLEET_DOC_S3_BUCKET: "set",
+    FLEET_DOC_S3_ACCESS_KEY: "optional",
+    FLEET_DOC_S3_SECRET_KEY: "optional",
   },
   "growth-service": {
     ...NODE_COMMON,

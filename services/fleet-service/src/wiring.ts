@@ -14,6 +14,7 @@ import {
   FLEET_RIDE_SERVICE_KEY_ENV,
 } from "./lib/service-key";
 import { createCityConfigProvider } from "./ops/config";
+import { createDocStoreFromEnv } from "./ports/doc-store";
 import {
   createHttpPaymentPort,
   paymentServiceKeyFromEnv,
@@ -45,6 +46,13 @@ export function createDeps(): FleetDeps {
       `${FLEET_PAYMENT_SERVICE_KEY_ENV} is not set (or shorter than 32 characters): fleet week-money calls to payment-service will degrade to MONEY_UNAVAILABLE`,
     );
   }
+  const now = () => new Date();
+  const docs = createDocStoreFromEnv(process.env, now);
+  if (!docs.configured()) {
+    logger.warn(
+      "FLEET_DOC_S3_* is not set: KYB document and vehicle document uploads answer 503 doc_storage_not_configured",
+    );
+  }
   return {
     db,
     config: createCityConfigProvider(db),
@@ -57,6 +65,7 @@ export function createDeps(): FleetDeps {
       baseUrl: PAYMENT_SERVICE_URL,
       serviceKey: paymentKey,
     }),
-    now: () => new Date(),
+    docs,
+    now,
   };
 }

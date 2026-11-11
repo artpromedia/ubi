@@ -24,7 +24,13 @@ export async function createFleet(
   deps: FleetDeps,
   actor: Actor,
   cityId: string,
-  input: { readonly name: string },
+  input: {
+    readonly name: string;
+    readonly registrationNumber?: string;
+    readonly taxId?: string;
+    readonly fields?: Readonly<Record<string, string>>;
+    readonly declarationsAccepted?: boolean;
+  },
   scopedKey: string,
 ): Promise<ReturnType<typeof fleetView>> {
   const config = await requireFleetEnabled(deps.config, cityId);
@@ -42,7 +48,12 @@ export async function createFleet(
         cityId,
         currency: config.city.currency,
         zone: config.city.timezone,
-        status: "active",
+        status: "pending_review",
+        kybStatus: "pending_review",
+        registrationNumber: input.registrationNumber ?? null,
+        taxId: input.taxId ?? null,
+        kybFields: input.fields ?? {},
+        kybDeclarationsAccepted: input.declarationsAccepted === true,
         createdBy: actor.id,
       },
     });
@@ -69,6 +80,8 @@ export async function createFleet(
             cityId,
             currency: fleet.currency,
             zone: fleet.zone,
+            status: fleet.status,
+            kybStatus: fleet.kybStatus,
             ownerId: actor.id,
           },
         },
