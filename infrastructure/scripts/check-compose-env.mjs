@@ -401,7 +401,10 @@ export const CONTRACT = {
   },
   "fleet-portal": {
     NODE_ENV: "required",
+    FLEET_SESSION_SECRET: "required",
+    FLEET_GATEWAY_URL: "set",
     NEXT_PUBLIC_API_URL: "set",
+    NEXT_PUBLIC_FLEET_API_BASE: "optional",
   },
 };
 

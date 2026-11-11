@@ -6,22 +6,20 @@
  * whose methods resolve to the decoded JSON body. Screens never fetch on
  * their own — they go through `fleet-api.ts`, which goes through this client.
  *
- * Every request goes to the API gateway (`/v1/fleets…`, proxied to
- * fleet-service) with the signed-in staff member's bearer token, read at
- * request time from `fleet_token`. The gateway turns it into the signed
- * identity fleet-service verifies; fleet-service then decides the caller's
- * role INSIDE the fleet. During SSR there is no token, which is expected —
- * data loads client-side.
+ * Auth (CC-C01, DEC-4 = A): tokens are NEVER stored in `localStorage`. Browser
+ * calls go through the same-origin `/api/gateway` Next.js route handler, which
+ * reads the `HttpOnly`, `SameSite=Strict` session cookie (`ubi_fleet_session`),
+ * refreshes before expiry, and attaches `Authorization: Bearer <token>`
+ * server-side. The gateway turns it into the signed identity `fleet-service`
+ * verifies; `fleet-service` then decides the caller's role INSIDE the fleet.
  *
  * Every state-changing call carries an `idempotency-key`; the caller owns
  * the key (see `idempotency.ts`) so a retry after an unknown outcome re-sends
  * the SAME key and cannot apply twice.
  */
 
-export const FLEET_TOKEN_KEY = "fleet_token";
-
 const DEFAULT_API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  process.env.NEXT_PUBLIC_FLEET_API_BASE ?? "/api/gateway";
 
 export interface RequestOptions {
   readonly signal?: AbortSignal;
@@ -84,20 +82,10 @@ export async function decodeResponse<T>(res: Response): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-function storedToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  try {
-    return window.localStorage.getItem(FLEET_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
 export interface FleetApiClientConfig {
   readonly baseUrl?: string;
   readonly fetch?: typeof fetch;
+  /** Explicit bearer override used only by unit test harnesses. */
   readonly token?: () => string | null;
 }
 
@@ -106,15 +94,16 @@ export interface FleetApiClient {
   post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T>;
   put<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T>;
   patch<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T>;
+  delete<T>(path: string, options?: RequestOptions): Promise<T>;
 }
 
 export function createFleetApiClient(
   config: FleetApiClientConfig = {},
 ): FleetApiClient {
   const baseUrl = config.baseUrl ?? DEFAULT_API_URL;
-  const token = config.token ?? storedToken;
+  const token = config.token ?? (() => null);
   const send = <T>(
-    method: "GET" | "POST" | "PUT" | "PATCH",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     body: unknown,
     options?: RequestOptions,
@@ -132,6 +121,7 @@ export function createFleetApiClient(
     const doFetch = config.fetch ?? fetch;
     return doFetch(baseUrl + path, {
       method,
+      credentials: "same-origin",
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: options?.signal,
@@ -144,6 +134,7 @@ export function createFleetApiClient(
     post: (path, body, options) => send("POST", path, body, options),
     put: (path, body, options) => send("PUT", path, body, options),
     patch: (path, body, options) => send("PATCH", path, body, options),
+    delete: (path, options) => send("DELETE", path, undefined, options),
   };
 }
 

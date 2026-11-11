@@ -65,3 +65,61 @@ export const FLEET_STATE_TEST_IDS = {
   stale: "fleet-portal.state.stale",
   access: (kind: string) => `fleet-portal.state.${kind}`,
 } as const;
+
+/**
+ * D1 account surface testIDs (docs/design/FLEET_PORTAL_ACCOUNT_BRIEF.md §4):
+ * console sign-in, fleet onboarding & KYB, staff invitations, vehicle
+ * documents, and weekly remittance statements (`<app>.<screen>.<element>`).
+ */
+export const FLEET_ACCOUNT_TEST_IDS = {
+  signIn: {
+    phoneForm: "fleet.signIn.phoneForm",
+    phoneInput: "fleet.signIn.phoneInput",
+    sendCode: "fleet.signIn.sendCode",
+    otpForm: "fleet.signIn.otpForm",
+    codeInput: "fleet.signIn.codeInput",
+    verifyCode: "fleet.signIn.verifyCode",
+    resendCode: "fleet.signIn.resendCode",
+    changePhone: "fleet.signIn.changePhone",
+    error: "fleet.signIn.error",
+    roleRefused: "fleet.signIn.roleRefused",
+    accountSuspended: "fleet.signIn.accountSuspended",
+    signedOutElsewhere: "fleet.signIn.signedOutElsewhere",
+    cityForm: "fleet.signIn.cityForm",
+    citySelect: "fleet.signIn.citySelect",
+    cityConfirm: "fleet.signIn.cityConfirm",
+    stepUpCard: "fleet.signIn.stepUpCard",
+    challengeId: "fleet.signIn.challengeId",
+    checkApproval: "fleet.signIn.checkApproval",
+    selfieSubmit: "fleet.signIn.selfieSubmit",
+    limitedModeGate: "fleet.signIn.limitedModeGate",
+    approveDeviceToggle: "fleet.signIn.approveDeviceToggle",
+    signOut: "fleet.signIn.signOut",
+  },
+  kyb: {
+    form: "fleet.kyb.form",
+    submit: "fleet.kyb.submit",
+    statusBanner: "fleet.kyb.statusBanner",
+    uploadRequirement: "fleet.kyb.uploadRequirement",
+  },
+  invitations: {
+    inviteForm: "fleet.invitations.inviteForm",
+    inviteSubmit: "fleet.invitations.inviteSubmit",
+    row: "fleet.invitations.row",
+    accept: "fleet.invitations.accept",
+    decline: "fleet.invitations.decline",
+    revoke: "fleet.invitations.revoke",
+    transferOwnership: "fleet.invitations.transferOwnership",
+  },
+  documents: {
+    list: "fleet.documents.list",
+    uploadRenewal: "fleet.documents.uploadRenewal",
+    uploadSubmit: "fleet.documents.uploadSubmit",
+  },
+  remittance: {
+    statement: "fleet.remittance.statement",
+    weekSelect: "fleet.remittance.weekSelect",
+    assignmentRow: "fleet.remittance.assignmentRow",
+    walletCard: "fleet.remittance.walletCard",
+  },
+} as const;

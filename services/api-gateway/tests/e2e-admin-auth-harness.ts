@@ -198,7 +198,9 @@ async function main(): Promise<void> {
   // Lightweight stub for non-auth downstream services (returns empty arrays so
   // console boards render cleanly without connection-refused noise).
   const stubUpstream = new Hono();
-  stubUpstream.all("*", (c) => c.json({ rows: [], items: [], cities: [] }));
+  stubUpstream.all("*", (c) =>
+    c.json({ rows: [], items: [], cities: [], fleets: [] }),
+  );
   const stubServer = await new Promise<ReturnType<typeof serve>>((resolve) => {
     const srv = serve(
       { fetch: stubUpstream.fetch, port: 0, hostname: "127.0.0.1" },
@@ -241,7 +243,13 @@ async function main(): Promise<void> {
       email: string;
       firstName: string;
       lastName: string;
-      role: "SUPER_ADMIN" | "ADMIN" | "RIDER" | "DRIVER";
+      role:
+        | "SUPER_ADMIN"
+        | "ADMIN"
+        | "RIDER"
+        | "DRIVER"
+        | "FLEET_MANAGER"
+        | "MERCHANT";
     };
     const existing = await prisma.user.findUnique({
       where: { phone: body.phone },

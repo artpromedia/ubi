@@ -146,6 +146,8 @@ function sanitizingClient(client: FleetApiClient): FleetApiClient {
       client.put<T>(path, body, options).catch(rethrowSanitized),
     patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
       client.patch<T>(path, body, options).catch(rethrowSanitized),
+    delete: <T>(path: string, options?: RequestOptions) =>
+      client.delete<T>(path, options).catch(rethrowSanitized),
   };
 }
 

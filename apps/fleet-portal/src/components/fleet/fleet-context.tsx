@@ -99,6 +99,9 @@ export const FleetProvider = ({
   );
 };
 
+export const useFleetContextOptional = (): FleetContextValue | null =>
+  useContext(FleetContext);
+
 export const useFleetContext = (): FleetContextValue => {
   const value = useContext(FleetContext);
   if (value === null) {

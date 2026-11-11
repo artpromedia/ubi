@@ -9,6 +9,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  FLEET_ACCOUNT_TEST_IDS,
   FLEET_STATE_TEST_IDS,
   FLEET_TEST_IDS,
   HANDOFF_FLEET_TEST_IDS,
@@ -66,6 +67,22 @@ describe("handoff testIDs", () => {
       FLEET_STATE_TEST_IDS.access("flag_off"),
     ]) {
       expect(id.startsWith("fleet.")).toBe(false);
+    }
+  });
+
+  it("defines D1 account surface testIDs in <app>.<screen>.<element> camelCase", () => {
+    expect(FLEET_ACCOUNT_TEST_IDS.signIn.codeInput).toBe(
+      "fleet.signIn.codeInput",
+    );
+    expect(FLEET_ACCOUNT_TEST_IDS.kyb.submit).toBe("fleet.kyb.submit");
+    expect(FLEET_ACCOUNT_TEST_IDS.documents.uploadRenewal).toBe(
+      "fleet.documents.uploadRenewal",
+    );
+    const flatAccountIds = Object.values(FLEET_ACCOUNT_TEST_IDS).flatMap((s) =>
+      Object.values(s),
+    );
+    for (const id of flatAccountIds) {
+      expect(id).toMatch(/^fleet\.[A-Za-z]+\.[A-Za-z]+$/);
     }
   });
 });
