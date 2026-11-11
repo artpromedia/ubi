@@ -303,8 +303,10 @@ export const PROXY_RULES: readonly ProxyRule[] = [
   { pattern: "/wallet/*", service: "payment-service" },
   { pattern: "/transactions/*", service: "payment-service" },
 
-  // Notification Service — mounts /api/v1/notifications.
+  // Notification Service — mounts /api/v1/notifications and /api/v1/ops/notifications/dlq.
   { pattern: "/notifications/*", service: "notification-service" },
+  { pattern: "/ops/notifications/dlq", service: "notification-service" },
+  { pattern: "/ops/notifications/dlq/*", service: "notification-service" },
 
   // UNBACKED (no such service in this repository): analytics and CEERION.
   { pattern: "/analytics/*", service: "analytics-service" },

@@ -87,6 +87,7 @@ function describeIssues(error: z.ZodError): string {
 export type TripAccessFinal = "sent" | "dead" | "revoked" | "expired";
 
 export interface TripAccessDeadLetter {
+  readonly id?: string;
   readonly eventId: string;
   readonly tokenId: string;
   readonly requestId: string | null;
@@ -96,6 +97,15 @@ export interface TripAccessDeadLetter {
   readonly maskedPhone?: string;
   /** The still-sealed envelope, so ops can replay it with the key. */
   readonly sealed?: TripAccessSealed;
+  readonly expiresAt?: string;
+  readonly smsCopy?: string;
+  readonly at?: string;
+  readonly replayedAt?: string;
+  readonly replayedBy?: string;
+  readonly replayOutcome?: string;
+  readonly discardedAt?: string;
+  readonly discardedBy?: string;
+  readonly discardReason?: string;
 }
 
 export interface TripAccessLogger {
@@ -372,6 +382,8 @@ export class TripAccessSmsDeliverer {
       attempts,
       ...(maskedPhone ? { maskedPhone } : {}),
       sealed: payload.sealed,
+      expiresAt: payload.expiresAt,
+      smsCopy: payload.smsCopy,
     });
   }
 }

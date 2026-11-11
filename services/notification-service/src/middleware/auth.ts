@@ -243,6 +243,14 @@ export async function optionalAuth(c: Context, next: Next): Promise<void> {
   await next();
 }
 
+const OPS_ROLES = new Set([
+  "ops",
+  "ops_admin",
+  "support_lead",
+  "admin",
+  "super_admin",
+]);
+
 /**
  * Admin-only access
  */
@@ -254,6 +262,31 @@ export async function adminOnly(c: Context, next: Next): Promise<void> {
       throw new HTTPException(403, { message: "Admin access required" });
     }
 
+    await next();
+  });
+}
+
+/**
+ * Ops or internal service access for notification DLQ inspection/replay/discard.
+ */
+export async function opsOnly(c: Context, next: Next): Promise<void> {
+  const serviceKey = c.req.header("X-Service-Key");
+  if (serviceKey) {
+    await serviceAuth(c, async () => {
+      c.set("userId", c.req.header("X-Service-Name") ?? "internal-service");
+      c.set("userRole", "service");
+      await next();
+    });
+    return;
+  }
+
+  await auth(c, async () => {
+    const role = (c.get("userRole") ?? "").toLowerCase();
+    if (!OPS_ROLES.has(role)) {
+      throw new HTTPException(403, {
+        message: "Ops or admin access required",
+      });
+    }
     await next();
   });
 }

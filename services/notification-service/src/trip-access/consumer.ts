@@ -20,6 +20,7 @@
  * event rebuilt from the entry — the per-token marker is what makes a
  * redelivery a no-op.
  */
+import { createHash } from "node:crypto";
 import { Redis } from "ioredis";
 
 import { subscribeOutbox, type OutboxSubscription } from "@ubi/outbox";
@@ -46,6 +47,16 @@ const CLAIM_TTL_SECONDS = 15 * 60;
 /** Outcome/revocation markers outlive the 12h link by a wide margin. */
 const OUTCOME_TTL_SECONDS = 2 * 86_400;
 const DLQ_MAX = 10_000;
+
+export function deterministicTripAccessDlqId(
+  entry: Pick<TripAccessDeadLetter, "eventId" | "tokenId">,
+): string {
+  const digest = createHash("sha256")
+    .update(`${entry.eventId}:${entry.tokenId}`)
+    .digest("hex")
+    .slice(0, 20);
+  return `dlq_ta_${digest}`;
+}
 
 export interface TripAccessConfig {
   readonly ring: TripAccessKeyRing;
@@ -160,12 +171,11 @@ export function buildTripAccessPorts(
     },
     deadLetters: {
       async record(entry: TripAccessDeadLetter): Promise<void> {
+        const id = entry.id ?? deterministicTripAccessDlqId(entry);
+        const at = entry.at ?? new Date().toISOString();
         await commands
           .multi()
-          .rpush(
-            dlqKey,
-            JSON.stringify({ ...entry, at: new Date().toISOString() }),
-          )
+          .rpush(dlqKey, JSON.stringify({ ...entry, id, at }))
           .ltrim(dlqKey, -DLQ_MAX, -1)
           .exec();
       },

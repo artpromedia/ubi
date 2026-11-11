@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import type { Redis } from "ioredis";
 
+import { OUTBOX_DLQ_STREAM_KEY, OUTBOX_STREAM_KEY } from "../src/channels";
 import { createOutboxRelay } from "../src/relay";
 import {
   collect,
@@ -25,13 +26,16 @@ import {
 let prisma: PrismaClient;
 let pub: Redis;
 
-beforeAll(() => {
+beforeAll(async () => {
   prisma = makePrisma();
   pub = makeRedis();
+  await truncateOutbox(prisma);
+  await pub.del(OUTBOX_STREAM_KEY, OUTBOX_DLQ_STREAM_KEY);
 });
 
 afterEach(async () => {
   await truncateOutbox(prisma);
+  await pub.del(OUTBOX_STREAM_KEY, OUTBOX_DLQ_STREAM_KEY);
 });
 
 afterAll(async () => {

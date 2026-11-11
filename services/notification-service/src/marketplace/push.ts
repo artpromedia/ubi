@@ -107,6 +107,7 @@ export interface PushSendResult {
 }
 
 export interface DeadLetterEntry {
+  readonly id?: string;
   readonly eventId: string;
   readonly eventName: string;
   /** Empty when the audience itself could not be resolved. */
@@ -115,6 +116,14 @@ export interface DeadLetterEntry {
   readonly reason: string;
   readonly role?: Role;
   readonly channel?: "push" | "sms";
+  readonly at?: string;
+  readonly envelope?: EventEnvelope;
+  readonly replayedAt?: string;
+  readonly replayedBy?: string;
+  readonly replayOutcome?: string;
+  readonly discardedAt?: string;
+  readonly discardedBy?: string;
+  readonly discardReason?: string;
 }
 
 export interface PendingEntry {
@@ -293,6 +302,7 @@ export class MarketplacePushDeliverer {
           attempts: 0,
           role,
           reason: `audience_unresolved: ${resolved.reason}`,
+          envelope,
         });
         this.ports.logger.warn(
           {
@@ -607,6 +617,7 @@ export class MarketplacePushDeliverer {
       role,
       channel: "push",
       reason: lastError || "retries_exhausted",
+      envelope,
     });
     this.ports.logger.warn(
       { eventId: envelope.id, eventName: envelope.name, userId, attempts },
@@ -686,6 +697,7 @@ export class MarketplacePushDeliverer {
       role,
       channel: "sms",
       reason: `sms_fallback_failed: ${redactSecrets(result.error ?? "sms_failed", [phone]).slice(0, 300)}`,
+      envelope,
     });
     return "dead_lettered";
   }

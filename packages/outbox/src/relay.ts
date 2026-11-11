@@ -29,7 +29,11 @@
  */
 
 import { backoffDelayMs } from "./backoff";
-import { eventTypeChannel, subjectChannel } from "./channels";
+import {
+  eventTypeChannel,
+  OUTBOX_STREAM_KEY,
+  subjectChannel,
+} from "./channels";
 import { envelopeFromRow, type RawOutboxRow } from "./envelope";
 
 import type { EventEnvelope } from "@ubi/contracts";
@@ -48,6 +52,57 @@ export interface OutboxRelayPrisma {
 /** The subset of an ioredis client the relay needs. */
 export interface OutboxPublisher {
   publish(channel: string, message: string): Promise<number>;
+  xadd?(...args: Array<string | number>): Promise<string | null>;
+  set?(...args: Array<string | number>): Promise<string | null>;
+}
+
+export interface PublishOutboxEnvelopeOptions {
+  /** Stream key for XADD. Default `outbox:stream`. */
+  readonly streamKey?: string;
+  /** Approximate max length of the Redis stream. Default 50000. */
+  readonly streamMaxLen?: number;
+}
+
+/**
+ * Publishes an outbox envelope to the durable Redis Stream (`XADD`) and mirrors
+ * it to the subject and event-type pub/sub channels for live fan-out and drain
+ * compatibility.
+ */
+export async function publishOutboxEnvelope(
+  redis: OutboxPublisher,
+  envelope: EventEnvelope,
+  options: PublishOutboxEnvelopeOptions = {},
+): Promise<void> {
+  const message = JSON.stringify(envelope);
+  const subCh = subjectChannel(envelope.subject);
+  const typeCh = eventTypeChannel(envelope.name);
+  const streamKey = options.streamKey ?? OUTBOX_STREAM_KEY;
+  const maxLen = options.streamMaxLen ?? DEFAULT_STREAM_MAX_LEN;
+
+  if (typeof redis.xadd === "function") {
+    if (typeof redis.set === "function") {
+      await redis.set(`outbox:streamed:${envelope.id}`, "1", "EX", 300);
+    }
+    await redis.xadd(
+      streamKey,
+      "MAXLEN",
+      "~",
+      String(maxLen),
+      "*",
+      "id",
+      envelope.id,
+      "name",
+      envelope.name,
+      "subjectChannel",
+      subCh,
+      "eventTypeChannel",
+      typeCh,
+      "raw",
+      message,
+    );
+  }
+  await redis.publish(subCh, message);
+  await redis.publish(typeCh, message);
 }
 
 /** Structural logger; a pino instance satisfies it. */
@@ -70,6 +125,10 @@ export interface CreateOutboxRelayOptions {
   readonly backoffMaxMs?: number;
   /** Delay between passes when running via start(). Default 500ms. */
   readonly pollIntervalMs?: number;
+  /** Durable Redis Stream key. Default `outbox:stream`. */
+  readonly streamKey?: string;
+  /** Approximate max length of the Redis stream. Default 50000. */
+  readonly streamMaxLen?: number;
   /** Injectable clock for deterministic tests. */
   readonly now?: () => Date;
   readonly logger?: OutboxRelayLogger;
@@ -97,6 +156,7 @@ const DEFAULT_MAX_ATTEMPTS = 8;
 const DEFAULT_BACKOFF_BASE_MS = 250;
 const DEFAULT_BACKOFF_MAX_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 500;
+const DEFAULT_STREAM_MAX_LEN = 50_000;
 const MAX_LAST_ERROR_LENGTH = 500;
 const QUARANTINE_PREFIX = "QUARANTINE: ";
 
@@ -172,6 +232,8 @@ class OutboxRelayImpl implements OutboxRelay {
   private readonly backoffBaseMs: number;
   private readonly backoffMaxMs: number;
   private readonly pollIntervalMs: number;
+  private readonly streamKey: string | undefined;
+  private readonly streamMaxLen: number | undefined;
   private readonly now: () => Date;
   private readonly logger: OutboxRelayLogger;
 
@@ -192,6 +254,8 @@ class OutboxRelayImpl implements OutboxRelay {
     this.backoffBaseMs = options.backoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS;
     this.backoffMaxMs = options.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    this.streamKey = options.streamKey;
+    this.streamMaxLen = options.streamMaxLen;
     this.now = options.now ?? (() => new Date());
     this.logger = options.logger ?? noopLogger;
   }
@@ -291,9 +355,10 @@ class OutboxRelayImpl implements OutboxRelay {
   }
 
   private async publishEnvelope(envelope: EventEnvelope): Promise<void> {
-    const message = JSON.stringify(envelope);
-    await this.redis.publish(subjectChannel(envelope.subject), message);
-    await this.redis.publish(eventTypeChannel(envelope.name), message);
+    await publishOutboxEnvelope(this.redis, envelope, {
+      streamKey: this.streamKey,
+      streamMaxLen: this.streamMaxLen,
+    });
   }
 
   start(): void {

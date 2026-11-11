@@ -11,6 +11,8 @@ DELETE /api/v1/templates/:id
 GET /api/v1/notifications
 GET /api/v1/notifications/:id
 GET /api/v1/notifications/badge
+GET /api/v1/ops/notifications/dlq
+GET /api/v1/ops/notifications/dlq/:id
 GET /api/v1/preferences
 GET /api/v1/preferences/check
 GET /api/v1/preferences/unsubscribe-token
@@ -33,6 +35,8 @@ POST /api/v1/email/welcome
 POST /api/v1/notifications
 POST /api/v1/notifications/bulk
 POST /api/v1/notifications/read-all
+POST /api/v1/ops/notifications/dlq/:id/discard
+POST /api/v1/ops/notifications/dlq/:id/replay
 POST /api/v1/preferences/reset
 POST /api/v1/preferences/unsubscribe
 POST /api/v1/push/batch

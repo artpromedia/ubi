@@ -12,6 +12,7 @@ import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 
 import { errorHandler, notFoundHandler } from "./middleware/error-handler";
+import { dlqRoutes } from "./routes/dlq";
 import { emailRoutes } from "./routes/email";
 import { healthRoutes } from "./routes/health";
 import { inAppRoutes } from "./routes/in-app";
@@ -40,6 +41,7 @@ export function createApp(): Hono {
   app.route("/api/v1/sms", smsRoutes);
   app.route("/api/v1/email", emailRoutes);
   app.route("/api/v1/notifications", inAppRoutes);
+  app.route("/api/v1/ops/notifications/dlq", dlqRoutes);
   app.route("/api/v1/templates", templatesRoutes);
   app.route("/api/v1/preferences", preferencesRoutes);
 

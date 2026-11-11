@@ -88,12 +88,87 @@ async function preferenceRow(userId: string) {
   return row;
 }
 
-function deterministicInboxId(eventId: string, userId: string): string {
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const PRISMA_NOTIFICATION_TYPES = new Set<string>([
+  "WELCOME",
+  "OTP",
+  "EMAIL_VERIFICATION",
+  "PASSWORD_RESET",
+  "SECURITY_ALERT",
+  "ACCOUNT_LOCKED",
+  "MARKETING",
+  "PROMO_CODE",
+  "RIDE_REQUESTED",
+  "RIDE_ACCEPTED",
+  "RIDE_STARTED",
+  "RIDE_COMPLETED",
+  "DRIVER_ARRIVING",
+  "DRIVER_ARRIVED",
+  "ORDER_PLACED",
+  "ORDER_CONFIRMED",
+  "ORDER_PREPARING",
+  "ORDER_DELIVERED",
+  "FOOD_ORDER_CONFIRMED",
+  "FOOD_PREPARING",
+  "FOOD_READY_FOR_PICKUP",
+  "FOOD_OUT_FOR_DELIVERY",
+  "FOOD_DELIVERED",
+  "DELIVERY_CREATED",
+  "DELIVERY_PICKED_UP",
+  "DELIVERY_IN_TRANSIT",
+  "DELIVERY_COMPLETED",
+  "DELIVERY_DELIVERED",
+  "PAYMENT_RECEIVED",
+  "PAYMENT_SUCCESSFUL",
+  "PAYMENT_FAILED",
+  "REFUND_PROCESSED",
+  "SOS_ALERT",
+  "GENERAL",
+]);
+
+export function deterministicUuid(seed: string): string {
+  const hex = createHash("sha256").update(seed).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+export function toPrismaNotificationType(
+  raw: string | undefined,
+): NotificationType {
+  if (!raw) {
+    return "GENERAL";
+  }
+  const upper = raw.toUpperCase();
+  if (PRISMA_NOTIFICATION_TYPES.has(upper)) {
+    return upper as NotificationType;
+  }
+  if (raw.startsWith("mp.award.") || raw.startsWith("mp.bid.won")) {
+    return "RIDE_ACCEPTED";
+  }
+  if (raw.startsWith("mp.settlement.")) {
+    return "PAYMENT_RECEIVED";
+  }
+  if (raw.startsWith("shipment.")) {
+    return "DELIVERY_IN_TRANSIT";
+  }
+  return "GENERAL";
+}
+
+export function deterministicMpDlqId(
+  entry: Pick<DeadLetterEntry, "eventId" | "role" | "userId" | "channel">,
+): string {
   const digest = createHash("sha256")
-    .update(`${eventId}:${userId}`)
+    .update(
+      `${entry.eventId}:${entry.role ?? ""}:${entry.userId}:${entry.channel ?? "push"}`,
+    )
     .digest("hex")
-    .slice(0, 24);
-  return `notif_${digest}`;
+    .slice(0, 20);
+  return `dlq_mp_${digest}`;
+}
+
+function deterministicInboxId(eventId: string, userId: string): string {
+  return deterministicUuid(`inbox:${eventId}:${userId}`);
 }
 
 export function buildMarketplacePushPorts(
@@ -146,7 +221,7 @@ export function buildMarketplacePushPorts(
     },
     sender: overrides.sender ?? {
       async send(
-        _userId: string,
+        userId: string,
         tokens: string[],
         notification: PushNotification,
       ): Promise<PushSendResult> {
@@ -161,6 +236,26 @@ export function buildMarketplacePushPorts(
         // invalid tokens are handed back for deactivation.
         const success =
           res.successCount > 0 || res.retryableTokens.length === 0;
+        if (UUID_RE.test(userId)) {
+          const now = new Date();
+          await prisma.notificationLog
+            .create({
+              data: {
+                userId,
+                channel: "PUSH",
+                type: toPrismaNotificationType(notification.type),
+                title: notification.title,
+                body: notification.body,
+                data: notification.data as Prisma.InputJsonValue,
+                status: success ? "SENT" : "FAILED",
+                sentAt: success ? now : null,
+                failedAt: success ? null : now,
+                failureReason:
+                  res.error ?? (success ? null : "delivery_failed"),
+              },
+            })
+            .catch(() => undefined);
+        }
         return {
           success,
           invalidTokens: res.invalidTokens,
@@ -195,12 +290,11 @@ export function buildMarketplacePushPorts(
     },
     deadLetters: {
       async record(entry: DeadLetterEntry): Promise<void> {
+        const id = entry.id ?? deterministicMpDlqId(entry);
+        const at = entry.at ?? new Date().toISOString();
         await commands
           .multi()
-          .rpush(
-            `${prefix}dlq`,
-            JSON.stringify({ ...entry, at: new Date().toISOString() }),
-          )
+          .rpush(`${prefix}dlq`, JSON.stringify({ ...entry, id, at }))
           .ltrim(`${prefix}dlq`, -DLQ_MAX, -1)
           .exec();
       },
@@ -225,6 +319,9 @@ export function buildMarketplacePushPorts(
       : {
           inbox: overrides.inbox ?? {
             async record(entry: InboxEntry): Promise<void> {
+              if (!UUID_RE.test(entry.userId)) {
+                return;
+              }
               const pref = await preferenceRow(entry.userId);
               if (pref && !pref.inAppEnabled) {
                 return;
@@ -236,12 +333,12 @@ export function buildMarketplacePushPorts(
                 create: {
                   id,
                   userId: entry.userId,
-                  type: (entry.notification.type ||
-                    "GENERAL") as NotificationType,
+                  type: toPrismaNotificationType(entry.notification.type),
                   title: entry.notification.title,
                   body: entry.notification.body,
                   data: {
                     ...entry.notification.data,
+                    eventType: entry.notification.type,
                     role: entry.role,
                   } as Prisma.InputJsonValue,
                 },

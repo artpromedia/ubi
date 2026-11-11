@@ -1260,13 +1260,41 @@ const REACHABLE: readonly ReachableCase[] = [
     source: BUSINESS,
   },
 
-  // --- notification-service: /api/v1/notifications ---
+  // --- notification-service: /api/v1/notifications + /api/v1/ops/notifications/dlq ---
   {
     rule: "/notifications/*",
     method: "GET",
     path: "/v1/notifications",
     downstream: "/api/v1/notifications",
     source: "notification-service src/routes/in-app.ts",
+  },
+  {
+    rule: "/ops/notifications/dlq",
+    method: "GET",
+    path: "/v1/ops/notifications/dlq?source=marketplace",
+    downstream: "/api/v1/ops/notifications/dlq",
+    source: "apps/admin-dashboard notification DLQ console (CC-A15 / P2-04)",
+  },
+  {
+    rule: "/ops/notifications/dlq/*",
+    method: "GET",
+    path: "/v1/ops/notifications/dlq/dlq_mp_1",
+    downstream: "/api/v1/ops/notifications/dlq/dlq_mp_1",
+    source: "apps/admin-dashboard notification DLQ console (CC-A15 / P2-04)",
+  },
+  {
+    rule: "/ops/notifications/dlq/*",
+    method: "POST",
+    path: "/v1/ops/notifications/dlq/dlq_mp_1/replay",
+    downstream: "/api/v1/ops/notifications/dlq/dlq_mp_1/replay",
+    source: "apps/admin-dashboard notification DLQ console (CC-A15 / P2-04)",
+  },
+  {
+    rule: "/ops/notifications/dlq/*",
+    method: "POST",
+    path: "/v1/ops/notifications/dlq/dlq_mp_1/discard",
+    downstream: "/api/v1/ops/notifications/dlq/dlq_mp_1/discard",
+    source: "apps/admin-dashboard notification DLQ console (CC-A15 / P2-04)",
   },
 
   // --- travel-service: mounts /v1/travel, /v1/reservations, /v1/ops/travel ---

@@ -9,6 +9,7 @@
  */
 export {
   createOutboxRelay,
+  publishOutboxEnvelope,
   type CreateOutboxRelayOptions,
   type OutboxRelay,
   type OutboxRelayLogger,
@@ -16,6 +17,7 @@ export {
   type OutboxRelayTx,
   type OutboxPublisher,
   type OutboxTickResult,
+  type PublishOutboxEnvelopeOptions,
 } from "./relay";
 
 export {
@@ -28,7 +30,10 @@ export {
 export {
   subjectChannel,
   eventTypeChannel,
+  matchesOutboxPattern,
   EVENT_TYPE_CHANNEL_PREFIX,
+  OUTBOX_STREAM_KEY,
+  OUTBOX_DLQ_STREAM_KEY,
 } from "./channels";
 
 export {

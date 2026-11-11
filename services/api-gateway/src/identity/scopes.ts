@@ -111,6 +111,10 @@ export const SCOPES = [
   // `admin`, `super_admin`), excluded from `service`, and never in
   // `LIMITED_MODE_SCOPES`.
   "growth:admin",
+  // Notification DLQ inspection, replay, and discard (CC-A15 / P2-04). Held by
+  // ops and support roles, excluded from `service`, and never in
+  // `LIMITED_MODE_SCOPES`.
+  "notifications:ops",
   "admin:all",
 ] as const;
 
@@ -207,6 +211,7 @@ const OPS_SCOPES: readonly Scope[] = [
   "device:enroll",
   "auth:step_up",
   "mp:admin:read",
+  "notifications:ops",
   "travel:ops",
   "travel:read",
   "support:write",
@@ -230,6 +235,7 @@ const SUPPORT_OPS_SCOPES: readonly Scope[] = [
   "device:enroll",
   "auth:step_up",
   "mp:admin:read",
+  "notifications:ops",
   "travel:ops",
   "travel:read",
   "support:write",
@@ -313,6 +319,7 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
       scope !== "config:admin" &&
       scope !== "finance:ops" &&
       scope !== "growth:admin" &&
+      scope !== "notifications:ops" &&
       scope !== "mp:admin:write",
   ),
 };
@@ -954,6 +961,12 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     requiresCity: true,
   },
   { methods: "*", prefix: "/v1/growth", anyOf: ["growth:admin"] },
+  // Notification DLQ ops console (notification-service, CC-A15 / P2-04).
+  {
+    methods: "*",
+    prefix: "/v1/ops/notifications/dlq",
+    anyOf: ["notifications:ops"],
+  },
 ];
 
 export function scopesForRole(role: string): readonly Scope[] {

@@ -1324,6 +1324,51 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     expect(limWrite.code).toBe("limited_mode");
   });
 
+  it("gates /v1/ops/notifications/dlq behind notifications:ops (CC-A15 / P2-04)", async () => {
+    for (const role of [
+      "ops",
+      "ops_admin",
+      "support_lead",
+      "support_agent",
+      "admin",
+      "super_admin",
+    ]) {
+      for (const [method, path] of [
+        ["GET", "/v1/ops/notifications/dlq"],
+        ["GET", "/v1/ops/notifications/dlq/dlq_mp_1"],
+        ["POST", "/v1/ops/notifications/dlq/dlq_mp_1/replay"],
+        ["POST", "/v1/ops/notifications/dlq/dlq_mp_1/discard"],
+      ] as const) {
+        expect((await call("full", method, path, role)).status).toBe(200);
+        upstream.received.length = 0;
+        const lim = await call("limited", method, path, role);
+        expect(lim.code).toBe("limited_mode");
+        expect(upstream.received).toHaveLength(0);
+      }
+    }
+
+    for (const role of [
+      "rider",
+      "driver",
+      "merchant",
+      "fleet_manager",
+      "config_admin",
+      "travel_ops",
+      "growth_admin",
+      "service",
+    ]) {
+      upstream.received.length = 0;
+      const denied = await call(
+        "full",
+        "GET",
+        "/v1/ops/notifications/dlq",
+        role,
+      );
+      expect(denied.code).toBe("forbidden");
+      expect(upstream.received).toHaveLength(0);
+    }
+  });
+
   describe("CORS_ORIGINS configuration (CC-A16 / P1-03)", () => {
     it("allows fleet.ubi.africa by default and localhost:3004 in development", async () => {
       const prodOrigins = parseCorsOrigins(undefined, "production");
