@@ -28,7 +28,16 @@ export type WebSocketMessage =
   | { type: "order_status"; payload: OrderStatusPayload }
   | { type: "dispatch_request"; payload: DispatchRequestPayload }
   | { type: "dispatch_response"; payload: DispatchResponsePayload }
-  | { type: "marketplace_event"; payload: MarketplaceEventPayload }
+  | {
+      type: "marketplace_event";
+      seq?: number;
+      occurredAt?: string;
+      payload: MarketplaceEventPayload;
+    }
+  | {
+      type: "replay_overflow";
+      payload?: { reason?: string; currentSeq?: number };
+    }
   | { type: "error"; payload: ErrorPayload };
 
 export interface LocationUpdate {

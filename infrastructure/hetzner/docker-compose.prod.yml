@@ -852,13 +852,13 @@ services:
       PORT: 4010
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # Refuses to start in production without a real JWT secret.
+      # Refuses to start in production without a real JWT secret and UBI_IDENTITY_SECRET.
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       # Closes its service endpoint: with neither this nor SERVICE_SECRET set
       # it admits unauthenticated service calls.
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
-      # No Caddy site proxies WebSockets to this service yet (the gateway does
-      # not proxy WebSockets): a public WSS ingress is a separate decision.
+      # Exposed via Caddy at wss://${REALTIME_DOMAIN:-rt.ubi.africa}/v1/stream (and /ws).
     depends_on:
       redis:
         condition: service_healthy

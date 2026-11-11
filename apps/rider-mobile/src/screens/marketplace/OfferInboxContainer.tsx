@@ -12,7 +12,7 @@ import {
 } from "@react-navigation/native";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { Screen, Skeleton } from "@ubi/mobile-ui";
-import { track, useFlag } from "@ubi/mobile-core";
+import { track, useFlag, useResumableStream } from "@ubi/mobile-core";
 import type { MpOfferSort } from "@ubi/contracts";
 import type {
   MarketplaceStackParamList,
@@ -74,6 +74,16 @@ export function OfferInboxContainer() {
       if (s === "award_pending") return 2_000;
       if (s === undefined || s === "draft" || s === "open") return 5_000;
       return false;
+    },
+  });
+  useResumableStream({
+    channel: "mp_request." + params.requestId,
+    onSnapshot: async () => {
+      const res = await q.refetch();
+      return { seq: res.data?.seq ?? 0 };
+    },
+    onEvent: () => {
+      void q.refetch();
     },
   });
   const snap = q.data;

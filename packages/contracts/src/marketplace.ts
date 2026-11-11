@@ -634,6 +634,28 @@ export const MpBidSchema = z.object({
 export type MpBid = z.infer<typeof MpBidSchema>;
 
 /**
+ * `mp.bid.submitted` outbox event payload (P2-09). Must carry `requesterId` so
+ * realtime-gateway and notification-service can route the event to the
+ * requester without an out-of-band DB lookup. `commissionMinor` and
+ * `reservationId` exist on the internal outbox envelope for the driver's copy
+ * and audit, and are stripped by `realtime-gateway`'s per-recipient allowlist
+ * before reaching the requester.
+ */
+export const MpBidSubmittedPayloadSchema = z.object({
+  bidId: z.string().min(1),
+  requestId: z.string().min(1),
+  requesterId: z.string().min(1),
+  requestRevision: z.number().int().min(1),
+  driverId: z.string().min(1),
+  amountMinor: z.number().int().nonnegative(),
+  commissionMinor: z.number().int().nonnegative(),
+  slot: MpBidSlotSchema,
+  reservationId: z.string().min(1),
+  expiresAt: z.string().datetime({ offset: true }),
+});
+export type MpBidSubmittedPayload = z.infer<typeof MpBidSubmittedPayloadSchema>;
+
+/**
  * Rider-facing driver display (G09). Verified driver identity — names, plates,
  * photos and the rating/trip history — lives in user-service; ride-service
  * resolves it through its driver-profile port (A06 part A; see

@@ -1,8 +1,9 @@
 /**
  * WebSocket Connection Manager
- * Handles connection lifecycle, subscriptions, and cross-server messaging
+ * Handles connection lifecycle, subscriptions, bounded replay, and cross-server messaging
  */
 
+import { MAX_REPLAY_EVENTS, decideResume } from "@ubi/contracts";
 import { Redis } from "ioredis";
 import { nanoid } from "nanoid";
 import { WebSocket } from "ws";
@@ -14,18 +15,40 @@ import type {
   WebSocketMessage,
 } from "./types/index.js";
 
+export interface ConnectionManagerOptions {
+  redis?: Redis;
+  redisSub?: Redis;
+  maxConnectionsPerUser?: number;
+  maxMessagesPerMinute?: number;
+}
+
+interface ReplayEntry {
+  seq: number;
+  message: WebSocketMessage;
+}
+
 export class ConnectionManager {
   private connections = new Map<string, WebSocketConnection>();
   private userConnections = new Map<string, Set<string>>();
   private websockets = new Map<string, WebSocket>();
+  private userReplayBuffers = new Map<string, ReplayEntry[]>();
+  private userLatestSeq = new Map<string, number>();
+  private userMessageWindows = new Map<
+    string,
+    { count: number; windowStart: number }
+  >();
   private redis: Redis;
   private redisSub: Redis;
   private serverId: string;
+  private maxConnectionsPerUser: number;
+  private maxMessagesPerMinute: number;
 
-  constructor(redisUrl: string) {
-    this.redis = new Redis(redisUrl);
-    this.redisSub = new Redis(redisUrl);
+  constructor(redisUrl: string, options: ConnectionManagerOptions = {}) {
+    this.redis = options.redis ?? new Redis(redisUrl);
+    this.redisSub = options.redisSub ?? new Redis(redisUrl);
     this.serverId = nanoid();
+    this.maxConnectionsPerUser = options.maxConnectionsPerUser ?? 10;
+    this.maxMessagesPerMinute = options.maxMessagesPerMinute ?? 120;
 
     // Subscribe to global events
     this.setupRedisSubscriptions();
@@ -60,6 +83,11 @@ export class ConnectionManager {
     } catch (error) {
       logger.error({ error, channel }, "Error handling Redis message");
     }
+  }
+
+  canAcceptUserConnection(userId: string): boolean {
+    const existing = this.userConnections.get(userId);
+    return !existing || existing.size < this.maxConnectionsPerUser;
   }
 
   async handleConnection(
@@ -121,14 +149,121 @@ export class ConnectionManager {
       timestamp: new Date(),
     });
 
+    // Bounded replay if client supplied lastSeq > 0
+    const rawLastSeq = metadata.lastSeq;
+    if (
+      typeof rawLastSeq === "number" &&
+      Number.isInteger(rawLastSeq) &&
+      rawLastSeq > 0
+    ) {
+      this.replayForConnection(connectionId, userId, rawLastSeq);
+    }
+
     logger.info({ userType, userId, connectionId, platform }, "User connected");
 
     return connectionId;
   }
 
+  private replayForConnection(
+    connectionId: string,
+    userId: string,
+    lastSeq: number,
+  ) {
+    const currentSeq = this.userLatestSeq.get(userId) ?? 0;
+    const decision = decideResume(lastSeq, currentSeq, MAX_REPLAY_EVENTS);
+    if (decision.action === "up_to_date") {
+      return;
+    }
+    if (decision.action === "snapshot") {
+      this.send(connectionId, {
+        type: "replay_overflow",
+        payload: { reason: "gap_exceeds_buffer", currentSeq },
+      });
+      return;
+    }
+
+    const buffer = this.userReplayBuffers.get(userId) ?? [];
+    const toReplay = buffer.filter((entry) => entry.seq > lastSeq);
+    const earliestSeq = toReplay[0]?.seq;
+    if (
+      toReplay.length === 0 ||
+      (earliestSeq !== undefined && earliestSeq > lastSeq + 1)
+    ) {
+      this.send(connectionId, {
+        type: "replay_overflow",
+        payload: { reason: "buffer_incomplete", currentSeq },
+      });
+      return;
+    }
+
+    for (const entry of toReplay) {
+      this.send(connectionId, entry.message);
+    }
+  }
+
+  private recordReplayMessage(
+    userId: string,
+    message: WebSocketMessage,
+  ): WebSocketMessage {
+    if (message.type !== "marketplace_event") {
+      return message;
+    }
+
+    const prevSeq = this.userLatestSeq.get(userId) ?? 0;
+    const candidateSeq =
+      typeof message.seq === "number"
+        ? message.seq
+        : typeof message.payload.seq === "number"
+          ? message.payload.seq
+          : prevSeq + 1;
+    const seq = Math.max(prevSeq + 1, candidateSeq);
+    this.userLatestSeq.set(userId, seq);
+
+    const stamped: WebSocketMessage = {
+      ...message,
+      seq,
+      occurredAt: message.occurredAt ?? message.payload.occurredAt,
+      payload: {
+        ...message.payload,
+        seq,
+      },
+    };
+
+    const buffer = this.userReplayBuffers.get(userId) ?? [];
+    if (!buffer.some((entry) => entry.seq === seq)) {
+      buffer.push({ seq, message: stamped });
+      while (buffer.length > MAX_REPLAY_EVENTS) {
+        buffer.shift();
+      }
+      this.userReplayBuffers.set(userId, buffer);
+    }
+
+    return stamped;
+  }
+
+  private checkUserMessageRate(userId: string): boolean {
+    const now = Date.now();
+    const existing = this.userMessageWindows.get(userId);
+    if (!existing || now - existing.windowStart >= 60_000) {
+      this.userMessageWindows.set(userId, { count: 1, windowStart: now });
+      return true;
+    }
+    existing.count += 1;
+    return existing.count <= this.maxMessagesPerMinute;
+  }
+
   private setupWebSocketHandlers(ws: WebSocket, connectionId: string) {
     ws.on("message", async (data: Buffer) => {
       try {
+        const connection = this.connections.get(connectionId);
+        if (connection && !this.checkUserMessageRate(connection.userId)) {
+          this.sendError(
+            connectionId,
+            "RATE_LIMITED",
+            "Too many messages per minute",
+          );
+          return;
+        }
         const message = JSON.parse(data.toString()) as WebSocketMessage;
         await this.handleMessage(connectionId, message);
       } catch (error) {
@@ -229,8 +364,6 @@ export class ConnectionManager {
         timestamp: Date.now(),
       }),
     );
-
-    // Could also send to Kafka for processing/storage
   }
 
   private async handleDispatchResponse(
@@ -327,20 +460,27 @@ export class ConnectionManager {
   }
 
   sendToUser(userId: string, message: WebSocketMessage) {
+    const stamped = this.recordReplayMessage(userId, message);
     const connectionIds = this.userConnections.get(userId);
     if (!connectionIds) return;
 
     for (const connId of connectionIds) {
-      this.send(connId, message);
+      this.send(connId, stamped);
     }
   }
 
   async broadcastToUser(userId: string, message: WebSocketMessage) {
+    const stamped = this.recordReplayMessage(userId, message);
     // Send to local connections
-    this.sendToUser(userId, message);
+    const connectionIds = this.userConnections.get(userId);
+    if (connectionIds) {
+      for (const connId of connectionIds) {
+        this.send(connId, stamped);
+      }
+    }
 
     // Publish to Redis for other servers
-    await this.redis.publish(`user:${userId}`, JSON.stringify(message));
+    await this.redis.publish(`user:${userId}`, JSON.stringify(stamped));
   }
 
   sendError(connectionId: string, code: string, message: string) {

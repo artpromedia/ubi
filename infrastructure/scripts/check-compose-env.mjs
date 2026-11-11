@@ -374,6 +374,8 @@ export const CONTRACT = {
     ...NODE_COMMON,
     DATABASE_URL: "unset",
     JWT_SECRET: "required",
+    UBI_IDENTITY_SECRET: "required",
+    UBI_IDENTITY_SECRET_PREVIOUS: "optional",
     INTERNAL_SERVICE_KEY: "required",
     SERVICE_SECRET: "unset",
   },

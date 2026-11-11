@@ -313,6 +313,7 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 			Payload: map[string]any{
 				"bidId":           bid.ID.String(),
 				"requestId":       request.ID.String(),
+				"requesterId":     request.RequesterID.String(),
 				"requestRevision": bid.RequestRevision,
 				"driverId":        actor.UserID.String(),
 				"amountMinor":     bid.AmountMinor,
@@ -517,6 +518,8 @@ func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, r
 			Payload: map[string]any{
 				"bidId":           bid.ID.String(),
 				"requestId":       request.ID.String(),
+				"requesterId":     request.RequesterID.String(),
+				"driverId":        actor.UserID.String(),
 				"bidVersion":      newVersion,
 				"amountMinor":     amount,
 				"commissionMinor": commission,
@@ -676,6 +679,7 @@ func (s *Service) Withdraw(ctx context.Context, actor Actor, bidID uuid.UUID, id
 			Payload: map[string]any{
 				"bidId":         bid.ID.String(),
 				"requestId":     request.ID.String(),
+				"requesterId":   request.RequesterID.String(),
 				"driverId":      actor.UserID.String(),
 				"reservationId": bid.ReservationID,
 			},

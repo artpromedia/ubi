@@ -1,21 +1,21 @@
 /**
  * Real-Time Gateway Server
- * Main entry point for WebSocket connections
+ * Main entry point for WebSocket connections (/ws and /v1/stream)
  */
 
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
 import { Redis } from "ioredis";
 import { WebSocketServer } from "ws";
 import type { OutboxSubscription } from "@ubi/outbox";
 import { ConnectionManager } from "./connection-manager.js";
-import { isTokenExpired, verifyToken } from "./lib/auth.js";
 import { logger, wsLogger } from "./lib/logger.js";
-import { requireServiceAuth } from "./lib/service-auth.js";
 import { subscribeMarketplaceEvents } from "./marketplace-events.js";
-import type { UserType } from "./types/index.js";
+import {
+  SUPPORTED_WS_PATHS,
+  createRealtimeHttpApp,
+  handleWebSocketUpgradeConnection,
+} from "./server.js";
 
-const app = new Hono();
 const port = Number.parseInt(process.env.PORT || "4010", 10);
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
@@ -28,25 +28,18 @@ if (process.env.NODE_ENV === "production") {
     logger.fatal("JWT_SECRET must be set to a secure value in production");
     process.exit(1);
   }
+  if (
+    !process.env.UBI_IDENTITY_SECRET ||
+    process.env.UBI_IDENTITY_SECRET.length < 32
+  ) {
+    logger.fatal("UBI_IDENTITY_SECRET must be set (>= 32 chars) in production");
+    process.exit(1);
+  }
 }
 
 // Initialize connection manager
 const connectionManager = new ConnectionManager(redisUrl);
-
-// Health check
-app.get("/health", (c) => {
-  return c.json({
-    status: "healthy",
-    service: "realtime-gateway",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Connection stats endpoint
-app.get("/stats", (c) => {
-  const stats = connectionManager.getConnectionStats();
-  return c.json(stats);
-});
+const app = createRealtimeHttpApp(connectionManager);
 
 // Subscribe to marketplace outbox events (event:mp.*) for realtime fan-out.
 // Dedicated connection: subscribeOutbox puts it in subscriber mode.
@@ -60,18 +53,6 @@ subscribeMarketplaceEvents(marketplaceRedis, connectionManager)
     logger.error({ err }, "Failed to subscribe to marketplace outbox events");
   });
 
-// Broadcast endpoint for other services.
-// Gated by service credentials (svc_ token or X-Service-Key) so money-relevant
-// pushes (marketplace bids/awards/holds) cannot be forged by arbitrary callers.
-app.post("/broadcast/user/:userId", requireServiceAuth, async (c) => {
-  const userId = c.req.param("userId");
-  const message = await c.req.json();
-
-  await connectionManager.broadcastToUser(userId, message);
-
-  return c.json({ success: true });
-});
-
 // Start HTTP server
 const server = serve({
   fetch: app.fetch,
@@ -80,100 +61,15 @@ const server = serve({
 
 logger.info({ port }, "Real-Time Gateway HTTP server started");
 
-// Create WebSocket server on same port
+// Create WebSocket server on same port (accepts both /ws and /v1/stream)
 const wss = new WebSocketServer({
   server: server as any,
-  path: "/ws",
 });
 
-logger.info({ port, path: "/ws" }, "WebSocket server ready");
+logger.info({ port, paths: [...SUPPORTED_WS_PATHS] }, "WebSocket server ready");
 
-// Handle WebSocket connections
 wss.on("connection", async (ws, req) => {
-  const requestId = crypto.randomUUID().substring(0, 8);
-  wsLogger.debug({ requestId }, "New WebSocket connection attempt");
-
-  // Extract auth and metadata from query params or headers
-  const url = new URL(req.url || "", `http://${req.headers.host}`);
-  const token =
-    url.searchParams.get("token") ||
-    req.headers.authorization?.replace("Bearer ", "");
-  // SECURITY NOTE: userType is client-asserted via query param, not derived
-  // from the JWT role claim. Any flow that authorizes by userType (e.g.
-  // driver-only messages) must verify the role server-side (JWT role/
-  // permissions or a driver-service lookup) before trusting it.
-  const userType = url.searchParams.get("userType") as UserType;
-  const deviceId = url.searchParams.get("deviceId") || "unknown";
-  const platform =
-    (url.searchParams.get("platform") as "ios" | "android" | "web") || "web";
-
-  if (!token) {
-    wsLogger.warn({ requestId }, "Connection rejected: missing token");
-    ws.close(4001, "Missing authentication token");
-    return;
-  }
-
-  // Quick check for expired token before full verification
-  if (isTokenExpired(token)) {
-    wsLogger.warn({ requestId }, "Connection rejected: expired token");
-    ws.close(4003, "Token expired");
-    return;
-  }
-
-  if (
-    !userType ||
-    !["rider", "driver", "restaurant", "delivery_partner"].includes(userType)
-  ) {
-    wsLogger.warn(
-      { requestId, userType },
-      "Connection rejected: invalid userType",
-    );
-    ws.close(4002, "Invalid or missing userType");
-    return;
-  }
-
-  try {
-    // Verify token cryptographically
-    const authResult = await verifyToken(token);
-
-    if (!authResult.valid || !authResult.userId) {
-      wsLogger.warn(
-        { requestId, error: authResult.error },
-        "Connection rejected: token verification failed",
-      );
-      ws.close(4003, authResult.error || "Invalid authentication token");
-      return;
-    }
-
-    const userId = authResult.userId;
-
-    // Register connection
-    const connectionId = await connectionManager.handleConnection(
-      ws,
-      userId,
-      userType,
-      deviceId,
-      platform,
-      {
-        ip: req.socket.remoteAddress,
-        userAgent: req.headers["user-agent"],
-      },
-    );
-
-    wsLogger.info(
-      {
-        requestId,
-        connectionId,
-        userId,
-        userType,
-        platform,
-      },
-      "Connection established",
-    );
-  } catch (error) {
-    wsLogger.error({ requestId, error }, "Connection error");
-    ws.close(4000, "Internal server error");
-  }
+  await handleWebSocketUpgradeConnection(ws, req, connectionManager);
 });
 
 wss.on("error", (error) => {

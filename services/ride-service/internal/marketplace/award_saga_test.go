@@ -716,3 +716,47 @@ func TestLegacyAcceptRefusesMarketplaceRide(t *testing.T) {
 	accept := h.Do(http.MethodPost, "/offers/"+offerID.String()+"/accept", intruder, map[string]any{})
 	requireCode(t, accept, http.StatusConflict, domain.CodeRequestClosed)
 }
+
+func TestBidOutboxEventsCarryRequesterID(t *testing.T) {
+	h := newHarness(t)
+	rider := h.Rider()
+	driver := h.Driver()
+
+	view, _ := publishAt(t, h, rider, 0)
+	requestID := view["requestId"].(string)
+	minFare := moneyMinor(t, view, "minimumFareMinor")
+	maxFare := moneyMinor(t, view, "maximumFareMinor")
+
+	parkDriver(t, h, driver, testutil.PickupFixture())
+	bidView := fundedCurrentBid(t, h, driver, requestID, minFare)
+	bidID := bidView["bidId"].(string)
+
+	h.Clock.Advance(30 * time.Second)
+	rev := h.Do(http.MethodPost, "/mp/bids/"+bidID+"/revise", driver, map[string]any{
+		"amountMinor":     map[string]any{"amountMinor": maxFare, "currency": "NGN"},
+		"expectedVersion": 1,
+	}, move.IdempotencyHeader, idemKey())
+	requireStatus(t, rev, http.StatusOK)
+
+	wd := h.Do(http.MethodPost, "/mp/bids/"+bidID+"/withdraw", driver, map[string]any{},
+		move.IdempotencyHeader, idemKey())
+	requireStatus(t, wd, http.StatusOK)
+
+	for _, eventName := range []string{"mp.bid.submitted", "mp.bid.revised", "mp.bid.withdrawn"} {
+		var requesterID string
+		var driverID string
+		if err := h.Pool.QueryRow(context.Background(), `
+			SELECT payload->>'requesterId', payload->>'driverId'
+			FROM public.outbox_events
+			WHERE name = $1 AND aggregate_id = $2`,
+			eventName, bidID).Scan(&requesterID, &driverID); err != nil {
+			t.Fatalf("%s outbox query: %v", eventName, err)
+		}
+		if requesterID != rider.UserID.String() {
+			t.Fatalf("%s requesterId = %q, want %q", eventName, requesterID, rider.UserID.String())
+		}
+		if driverID != driver.UserID.String() {
+			t.Fatalf("%s driverId = %q, want %q", eventName, driverID, driver.UserID.String())
+		}
+	}
+}

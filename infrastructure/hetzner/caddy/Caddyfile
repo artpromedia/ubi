@@ -116,6 +116,74 @@
     }
 }
 
+# Real-Time Gateway (WebSocket ingress: /v1/stream and /ws)
+{$REALTIME_DOMAIN:rt.ubi.africa} {
+    header {
+        X-Content-Type-Options nosniff
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    # Rate limit WebSocket upgrade attempts per client IP
+    rate_limit {
+        zone realtime {
+            key {remote_host}
+            events 60
+            window 1m
+        }
+    }
+
+    @realtime_allowed {
+        path /v1/stream /ws /health
+    }
+
+    handle @realtime_allowed {
+        reverse_proxy realtime-gateway:4010 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up Connection {header.Connection}
+            header_up Upgrade {header.Upgrade}
+
+            # Strip internal identity and service headers at the public edge
+            header_up -X-UBI-Identity
+            header_up -X-UBI-City-Id
+            header_up -X-UBI-Tenant-Id
+            header_up -X-UBI-Scopes
+            header_up -X-UBI-Modes
+            header_up -X-Auth-User-Id
+            header_up -X-Auth-User-Role
+            header_up -X-Auth-User-Email
+            header_up -X-Auth-City-Id
+            header_up -X-Auth-Issued-At
+            header_up -X-Auth-Signature
+            header_up -X-Internal-Service
+            header_up -X-Service-Key
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+
+            transport http {
+                read_timeout 120s
+                write_timeout 120s
+            }
+        }
+    }
+
+    handle {
+        respond 404
+    }
+
+    log {
+        output file /var/log/caddy/realtime.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+    }
+}
+
 # Supplier Webhooks (travel-service)
 #
 # A dedicated ingress, straight to travel-service / payment-service and NEVER

@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
-import { track, useFlag } from "@ubi/mobile-core";
+import { track, useFlag, useResumableStream } from "@ubi/mobile-core";
 import { marketplaceApi, type MpBidDto } from "../../api/marketplace";
 import { useMotionGate } from "../../lib/motion";
 import {
@@ -87,6 +87,16 @@ export function RequestFeedContainer() {
     queryKey: ["mp", "bids", "mine"],
     queryFn: marketplaceApi.myBids,
     refetchInterval: tab === "myBids" ? 5_000 : 30_000,
+  });
+  useResumableStream({
+    channel: "mp_feed",
+    onSnapshot: async () => {
+      await Promise.all([feedQ.refetch(), bidsQ.refetch()]);
+    },
+    onEvent: () => {
+      void feedQ.refetch();
+      void bidsQ.refetch();
+    },
   });
   // "Refreshed from server" pill exactly once after a reconnect (D06 reconnect rule).
   const wasError = useRef(false);

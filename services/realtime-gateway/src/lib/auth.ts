@@ -1,11 +1,16 @@
 /**
- * JWT Authentication Module for Real-Time Gateway
+ * JWT & Gateway Identity Authentication Module for Real-Time Gateway
  *
- * Provides secure JWT verification matching user-service token format.
- * Supports both access tokens and service-to-service tokens.
+ * Provides cryptographic JWT verification matching both:
+ *   1. user-service access tokens (`JWT_SECRET`, issuer `ubi.africa`, audience `ubi-api`)
+ *   2. api-gateway signed `x-ubi-identity` tokens (`UBI_IDENTITY_SECRET` /
+ *      `UBI_IDENTITY_SECRET_PREVIOUS`, issuer `ubi-api-gateway`, audience `ubi-internal`)
+ *   3. service-to-service HMAC tokens (`SERVICE_SECRET`)
  */
 
+import { createHmac } from "node:crypto";
 import * as jose from "jose";
+import type { UserType } from "../types/index.js";
 import { logger } from "./logger.js";
 
 // ===========================================
@@ -20,11 +25,24 @@ function getJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+function getIdentitySecrets(): Uint8Array[] {
+  const secrets: Uint8Array[] = [];
+  const current = process.env.UBI_IDENTITY_SECRET?.trim();
+  const previous = process.env.UBI_IDENTITY_SECRET_PREVIOUS?.trim();
+  if (current && current.length >= 32) {
+    secrets.push(new TextEncoder().encode(current));
+  }
+  if (previous && previous.length >= 32) {
+    secrets.push(new TextEncoder().encode(previous));
+  }
+  return secrets;
+}
+
 const JWT_ISSUER = "ubi.africa";
 const JWT_AUDIENCE = "ubi-api";
 
-// Service secret for internal service-to-service communication
-const SERVICE_SECRET = process.env.SERVICE_SECRET;
+const IDENTITY_ISSUER = "ubi-api-gateway";
+const IDENTITY_AUDIENCE = "ubi-internal";
 
 // ===========================================
 // Types
@@ -34,6 +52,9 @@ export interface JWTPayload {
   sub: string; // User ID
   email?: string;
   role?: string;
+  modes?: string[];
+  scopes?: string[];
+  cityId?: string;
   permissions?: string[];
   type?: "access" | "refresh";
   iat?: number;
@@ -49,9 +70,130 @@ export interface VerifyTokenResult {
   error?: string;
 }
 
+/**
+ * Derive the canonical WebSocket `UserType` from the verified token's `role`
+ * (or `modes` claim on an `x-ubi-identity` token). The client may never
+ * self-assert a role that contradicts its verified token.
+ */
+export function deriveUserTypeFromRole(
+  role?: string,
+  modes?: readonly string[],
+): UserType | null {
+  const normalized = role?.trim().toLowerCase();
+  if (normalized) {
+    switch (normalized) {
+      case "driver":
+        return "driver";
+      case "rider":
+      case "user":
+      case "admin":
+      case "super_admin":
+      case "ops":
+      case "ops_agent":
+      case "support_agent":
+      case "finance_ops":
+      case "safety_ops":
+      case "fleet_manager":
+        return "rider";
+      case "restaurant":
+      case "merchant":
+      case "vendor":
+        return "restaurant";
+      case "delivery_partner":
+      case "courier":
+        return "delivery_partner";
+      default:
+        break;
+    }
+  }
+  if (Array.isArray(modes)) {
+    const lowerModes = modes.map((m) => String(m).toLowerCase());
+    if (lowerModes.includes("driver")) return "driver";
+    if (lowerModes.includes("rider")) return "rider";
+  }
+  return null;
+}
+
 // ===========================================
 // Token Verification
 // ===========================================
+
+/**
+ * Verify a gateway-signed `x-ubi-identity` JWT (`UBI_IDENTITY_SECRET` /
+ * `UBI_IDENTITY_SECRET_PREVIOUS`).
+ */
+export async function verifyIdentityToken(
+  token: string,
+): Promise<VerifyTokenResult> {
+  const secrets = getIdentitySecrets();
+  if (secrets.length === 0) {
+    return {
+      valid: false,
+      userId: null,
+      payload: null,
+      error: "UBI_IDENTITY_SECRET not configured",
+    };
+  }
+
+  let lastError: unknown;
+  for (const secret of secrets) {
+    try {
+      const { payload } = await jose.jwtVerify(token, secret, {
+        algorithms: ["HS256"],
+        issuer: IDENTITY_ISSUER,
+        audience: IDENTITY_AUDIENCE,
+        maxTokenAge: "120s",
+      });
+      if (!payload.sub || typeof payload.sub !== "string") {
+        return {
+          valid: false,
+          userId: null,
+          payload: null,
+          error: "Identity token missing required claims",
+        };
+      }
+      const modes = Array.isArray(payload.modes)
+        ? payload.modes.filter((m): m is string => typeof m === "string")
+        : undefined;
+      const role =
+        typeof payload.role === "string"
+          ? payload.role
+          : modes?.includes("driver")
+            ? "driver"
+            : modes?.includes("rider")
+              ? "rider"
+              : undefined;
+
+      return {
+        valid: true,
+        userId: payload.sub,
+        payload: {
+          ...(payload as JWTPayload),
+          sub: payload.sub,
+          ...(role ? { role } : {}),
+          ...(modes ? { modes } : {}),
+        },
+      };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (lastError instanceof jose.errors.JWTExpired) {
+    return {
+      valid: false,
+      userId: null,
+      payload: null,
+      error: "Token expired",
+    };
+  }
+  return {
+    valid: false,
+    userId: null,
+    payload: null,
+    error: "Invalid token signature",
+  };
+}
 
 /**
  * Verify a JWT token and extract the payload
@@ -70,8 +212,14 @@ export async function verifyToken(token: string): Promise<VerifyTokenResult> {
   }
 
   // Check if this is a service token (for internal service communication)
-  if (token.startsWith("svc_") && SERVICE_SECRET) {
+  if (token.startsWith("svc_") && process.env.SERVICE_SECRET) {
     return verifyServiceToken(token);
+  }
+
+  // If the token was issued by api-gateway (x-ubi-identity), verify against UBI_IDENTITY_SECRET.
+  const unverified = decodeTokenUnsafe(token);
+  if (unverified?.iss === IDENTITY_ISSUER && getIdentitySecrets().length > 0) {
+    return verifyIdentityToken(token);
   }
 
   try {
@@ -173,7 +321,8 @@ export async function verifyTokenSafe(token: string): Promise<string | null> {
  * Used for internal communication between microservices
  */
 function verifyServiceToken(token: string): VerifyTokenResult {
-  if (!SERVICE_SECRET) {
+  const serviceSecret = process.env.SERVICE_SECRET;
+  if (!serviceSecret) {
     logger.warn("Service token provided but SERVICE_SECRET not configured");
     return {
       valid: false,
@@ -197,9 +346,7 @@ function verifyServiceToken(token: string): VerifyTokenResult {
   const [, serviceId, providedHmac] = parts;
 
   // Compute expected HMAC
-  const crypto = require("node:crypto");
-  const expectedHmac = crypto
-    .createHmac("sha256", SERVICE_SECRET)
+  const expectedHmac = createHmac("sha256", serviceSecret)
     .update(`svc_${serviceId}`)
     .digest("hex")
     .substring(0, 32);
