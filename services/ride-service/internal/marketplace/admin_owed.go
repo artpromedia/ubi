@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -76,7 +77,7 @@ func businessBookingAdminView(b *BusinessBooking, now time.Time) *BusinessBookin
 // AdminBusinessBookings lists business bookings, oldest first — with owed,
 // only those still owing payment-service a commit or release.
 func (s *Service) AdminBusinessBookings(ctx context.Context, actor Actor, owed bool, cityID, cursor string) (*BusinessBookingsPage, error) {
-	if err := requireAdmin(actor, "read the business budget board"); err != nil {
+	if err := requireAdminRead(actor, "read the business budget board"); err != nil {
 		return nil, err
 	}
 	rows, err := s.deps.Store.ListBusinessBookings(ctx, s.deps.Store.Pool(), owed, cityID, cursor, feedPageSize)
@@ -103,6 +104,18 @@ type OwedRetryRequest struct {
 	// ExpectedAttempts is the row's `attempts` the operator last saw — the
 	// optimistic-concurrency guard. Required to apply.
 	ExpectedAttempts *int `json:"expectedAttempts,omitempty"`
+	// Reason is the operator's explanation recorded on the audit row. Required
+	// to apply.
+	Reason string `json:"reason,omitempty"`
+}
+
+func validateOwedRetryReason(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", domain.Errorf(domain.CodeValidationFailed, "reason is required to apply a retry").
+			WithDetails(map[string]any{"field": "reason"})
+	}
+	return trimmed, nil
 }
 
 // Owed-work retry outcomes.
@@ -144,6 +157,11 @@ func (s *Service) AdminRetryBusinessOp(ctx context.Context, actor Actor, awardID
 		}
 		return &BusinessRetryResult{Row: businessBookingAdminView(booking, now), Outcome: OwedRetryPreview, Detail: detail}, 200, nil
 	}
+	reason, err := validateOwedRetryReason(req.Reason)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Reason = reason
 	if err := ValidateIdempotencyKey(idempotencyKey); err != nil {
 		return nil, 0, err
 	}
@@ -197,7 +215,7 @@ func (s *Service) AdminRetryBusinessOp(ctx context.Context, actor Actor, awardID
 			Action: "mp.admin.business_op_retry", SubjectType: subjectBusinessBooking, SubjectID: awardID.String(),
 			Before: map[string]any{"owedOp": owedOp, "attempts": booking.Attempts, "state": booking.State},
 			After:  map[string]any{"outcome": outcome, "owedOp": reloaded.OwedOp, "state": reloaded.State},
-			Reason: "operator-triggered retry of an owed business budget op",
+			Reason: reason,
 		}); err != nil {
 			return err
 		}
@@ -215,6 +233,9 @@ func owedRetryBody(id uuid.UUID, req OwedRetryRequest) map[string]any {
 	body := map[string]any{"id": id.String(), "dryRun": req.DryRun}
 	if req.ExpectedAttempts != nil {
 		body["expectedAttempts"] = *req.ExpectedAttempts
+	}
+	if req.Reason != "" {
+		body["reason"] = req.Reason
 	}
 	return body
 }
@@ -289,7 +310,7 @@ func deliveryCancelAdminView(row *DeliveryCancelRow, now time.Time) *DeliveryCan
 // AdminDeliveryCancellations lists owed delivery cancellations, oldest first,
 // optionally in one state (pending | cancelled | refused) and one city.
 func (s *Service) AdminDeliveryCancellations(ctx context.Context, actor Actor, state, cityID, cursor string) (*DeliveryCancellationsPage, error) {
-	if err := requireAdmin(actor, "read the delivery cancellation board"); err != nil {
+	if err := requireAdminRead(actor, "read the delivery cancellation board"); err != nil {
 		return nil, err
 	}
 	switch state {
@@ -346,6 +367,11 @@ func (s *Service) AdminRetryDeliveryCancel(ctx context.Context, actor Actor, awa
 		}
 		return &DeliveryCancelRetryResult{Row: deliveryCancelAdminView(row, now), Outcome: OwedRetryPreview, Detail: detail}, 200, nil
 	}
+	reason, err := validateOwedRetryReason(req.Reason)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Reason = reason
 	if err := ValidateIdempotencyKey(idempotencyKey); err != nil {
 		return nil, 0, err
 	}
@@ -397,7 +423,7 @@ func (s *Service) AdminRetryDeliveryCancel(ctx context.Context, actor Actor, awa
 			Action: "mp.admin.delivery_cancel_retry", SubjectType: subjectAward, SubjectID: awardID.String(),
 			Before: map[string]any{"state": row.State, "attempts": row.Attempts},
 			After:  map[string]any{"outcome": outcome, "state": reloaded.State},
-			Reason: "operator-triggered retry of an owed delivery cancellation",
+			Reason: reason,
 		}); err != nil {
 			return err
 		}

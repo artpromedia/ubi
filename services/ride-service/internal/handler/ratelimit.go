@@ -330,7 +330,7 @@ func (l *RateLimiter) verifiedActor(r *http.Request) (uuid.UUID, bool) {
 	if rawID == "" || role == "" {
 		return uuid.Nil, false
 	}
-	if _, known := knownRoles[role]; !known {
+	if !isKnownRole(role) {
 		return uuid.Nil, false
 	}
 	userID, err := uuid.Parse(rawID)

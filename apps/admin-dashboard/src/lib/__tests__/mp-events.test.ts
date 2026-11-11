@@ -544,8 +544,7 @@ describe("round 2–7 families render meaningful copy", () => {
     expect(out[0]?.summary).toBe("Request published (payload unreadable)");
   });
 
-  it("names the timeline read's coverage gap for non-mp.* families", () => {
-    expect(TIMELINE_COVERAGE_GAPS.join(" ")).toContain("trip_access.*");
-    expect(TIMELINE_COVERAGE_GAPS.join(" ")).toContain("business_booking.*");
+  it("has zero timeline coverage gaps now that ride-service returns mp.*, trip_access.*, business_booking.*, ride.*, and vehicle_occupancy.*", () => {
+    expect(TIMELINE_COVERAGE_GAPS).toEqual([]);
   });
 });

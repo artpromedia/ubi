@@ -430,3 +430,156 @@ describe("console state POSTs take an Idempotency-Key", () => {
     });
   });
 });
+
+describe("GET /v1/ops/travel/transfers — city-wide ops read (P2-12)", () => {
+  async function get(
+    path: string,
+    requestHeaders: Record<string, string>,
+  ): Promise<{ status: number; body: JsonRecord }> {
+    const response = await createApp(makeDeps(db).deps).request(path, {
+      method: "GET",
+      headers: requestHeaders,
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as JsonRecord,
+    };
+  }
+
+  it("lists action_required and failed transfers across travellers for ops without coordinates or PII", async () => {
+    const { cityId, orderId } = await bookedOrder();
+    const now = new Date("2026-09-25T10:00:00.000Z");
+    const baseTransfer = {
+      orderId,
+      cityId,
+      direction: "arrival_pickup",
+      legIndex: 0,
+      flightNumber: "P47120",
+      airportCode: "LOS",
+      flightDepartAt: new Date("2026-09-26T08:00:00.000Z"),
+      flightArriveAt: new Date("2026-09-26T09:15:00.000Z"),
+      flightStatus: "scheduled",
+      pickup: { label: "LOS Terminal 2", lat: 6.5774, lng: 3.3212 },
+      dropoff: { label: "Victoria Island", lat: 6.4281, lng: 3.4219 },
+      timeZone: "Africa/Lagos",
+      pickupAt: new Date("2026-09-26T09:45:00.000Z"),
+      windowEnd: new Date("2026-09-26T10:15:00.000Z"),
+      windowSec: 1800,
+      vehicleClass: "go",
+      currency: "NGN",
+      maxFareMinor: 1_500_000n,
+      paymentMethodId: "pm_secret_card",
+      policyVersion: "v1",
+      submitAfter: now,
+      createResult: {},
+    };
+
+    const trAction = uid("tr_act");
+    const trFailed = uid("tr_fail");
+    const trAwarded = uid("tr_awd");
+
+    await db.airportTransfer.create({
+      data: {
+        ...baseTransfer,
+        id: trAction,
+        userId: uid("usr_a"),
+        state: "requested",
+        requestHash: "h1",
+        actionRequired: {
+          reason: "flight_changed_after_publication",
+          message: "Flight moved; keep new pickup window or cancel?",
+          choices: [{ key: "keep", label: "Keep" }],
+        },
+        updatedAt: new Date("2026-09-25T10:02:00.000Z"),
+      },
+    });
+    await db.airportTransfer.create({
+      data: {
+        ...baseTransfer,
+        id: trFailed,
+        userId: uid("usr_b"),
+        state: "failed",
+        requestHash: "h2",
+        outcome: {
+          reason: "no_driver",
+          message: "No driver accepted in time. Nothing was charged.",
+        },
+        updatedAt: new Date("2026-09-25T10:01:00.000Z"),
+      },
+    });
+    await db.airportTransfer.create({
+      data: {
+        ...baseTransfer,
+        id: trAwarded,
+        userId: uid("usr_b"),
+        state: "awarded",
+        requestHash: "h3",
+        updatedAt: new Date("2026-09-25T10:03:00.000Z"),
+      },
+    });
+
+    // Negative control: a non-ops rider is refused on the ops-wide read.
+    const riderHeaders = await gatewayHeaders(rider(cityId), { scopes: [] });
+    const denied = await get(
+      "/v1/ops/travel/transfers?state=action_required,failed",
+      riderHeaders,
+    );
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe("forbidden");
+
+    const opsHeaders = await gatewayHeaders(
+      { id: uid("ops"), role: "ops", cityId },
+      { scopes: ["travel:ops"] },
+    );
+
+    // Invalid state token is refused with 422 validation_failed.
+    const invalid = await get(
+      "/v1/ops/travel/transfers?state=unknown_state",
+      opsHeaders,
+    );
+    expect(invalid.status).toBe(422);
+    expect(invalid.body.code).toBe("validation_failed");
+
+    // Filtered city-wide read returns tr_action and tr_failed across both travellers, newest updatedAt first, omitting tr_awarded.
+    const listed = await get(
+      "/v1/ops/travel/transfers?state=action_required,failed",
+      opsHeaders,
+    );
+    expect(listed.status).toBe(200);
+    const rows = listed.body.rows as JsonRecord[];
+    expect(rows.map((r) => r.transferId)).toEqual([trAction, trFailed]);
+
+    // Privacy invariant: zero raw coordinates, traveller ids, or payment method ids.
+    const serialized = JSON.stringify(rows);
+    expect(serialized).not.toContain("6.5774");
+    expect(serialized).not.toContain("3.3212");
+    expect(serialized).not.toContain("pm_secret_card");
+    for (const row of rows) {
+      expect(row).not.toHaveProperty("pickup");
+      expect(row).not.toHaveProperty("dropoff");
+      expect(row).not.toHaveProperty("userId");
+      expect(row).not.toHaveProperty("paymentMethodId");
+    }
+
+    // Cursor pagination walks deterministically across pages.
+    const page1 = await get(
+      "/v1/ops/travel/transfers?state=action_required,failed&limit=1",
+      opsHeaders,
+    );
+    expect(page1.status).toBe(200);
+    expect((page1.body.rows as JsonRecord[]).map((r) => r.transferId)).toEqual([
+      trAction,
+    ]);
+    expect(typeof page1.body.nextCursor).toBe("string");
+
+    const page2 = await get(
+      `/v1/ops/travel/transfers?state=action_required,failed&limit=1&cursor=${encodeURIComponent(String(page1.body.nextCursor))}`,
+      opsHeaders,
+    );
+    expect(page2.status).toBe(200);
+    expect((page2.body.rows as JsonRecord[]).map((r) => r.transferId)).toEqual([
+      trFailed,
+    ]);
+    expect(page2.body.nextCursor).toBeNull();
+  });
+});

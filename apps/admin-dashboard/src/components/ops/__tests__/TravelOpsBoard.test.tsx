@@ -12,12 +12,13 @@ import { classifyError } from "../../../lib/access";
 import { ApiError } from "../../../lib/api-client";
 import {
   ITINERARY_GAPS,
-  TRANSFERS_GAP,
   allowedActions,
   settlementDifferenceLine,
   toExceptionRows,
   toItineraryRows,
+  toOpsTransferRows,
   toProviderCards,
+  type OpsTransferView,
   type ProvidersHealth,
   type TravelOpsException,
   type TripView,
@@ -166,6 +167,85 @@ const trip: TripView = {
   ],
 };
 
+const opsTransfers: OpsTransferView[] = [
+  {
+    transferId: "tr-ops-1",
+    linkedOrderId: "FL-90212",
+    cityId: "lagos",
+    direction: "arrival_pickup",
+    legIndex: 0,
+    flightNumber: "BA75",
+    airportCode: "LOS",
+    status: "requested",
+    driverSecured: false,
+    statusLabel: "Action required",
+    notice: "Requested — no driver secured yet",
+    pickupWindow: {
+      start: "2026-10-01T14:00:00.000Z",
+      end: "2026-10-01T14:30:00.000Z",
+      timeZone: "Africa/Lagos",
+      label: "14:00–14:30 WAT",
+    },
+    arriveBy: null,
+    flight: {
+      departAt: "2026-10-01T08:00:00.000Z",
+      arriveAt: "2026-10-01T13:30:00.000Z",
+      status: "delayed",
+    },
+    vehicleClass: "sedan",
+    approvedMaxFareMinor: { amountMinor: 1_500_000, currency: "NGN" },
+    ride: null,
+    retimedCount: 1,
+    actionRequired: {
+      reason: "flight_delayed",
+      message: "Your flight moved. Keep the new time or cancel?",
+      choices: [
+        { key: "keep", label: "Keep" },
+        { key: "cancel", label: "Cancel" },
+      ],
+    },
+    outcome: null,
+    createdAt: "2026-10-01T06:00:00.000Z",
+    updatedAt: "2026-10-01T10:00:00.000Z",
+  },
+  {
+    transferId: "tr-ops-2",
+    linkedOrderId: "FL-90213",
+    cityId: "lagos",
+    direction: "departure_dropoff",
+    legIndex: 0,
+    flightNumber: null,
+    airportCode: "LOS",
+    status: "failed",
+    driverSecured: false,
+    statusLabel: "Failed",
+    notice: "No driver accepted in time.",
+    pickupWindow: null,
+    arriveBy: {
+      at: "2026-10-01T08:00:00.000Z",
+      timeZone: "Africa/Lagos",
+      label: "Arrive by 08:00 WAT",
+    },
+    flight: null,
+    vehicleClass: "sedan",
+    approvedMaxFareMinor: { amountMinor: 1_200_000, currency: "NGN" },
+    ride: {
+      scheduledRequestId: "sched-99",
+      requestId: "req-99",
+      state: "expired",
+      requestState: "expired",
+    },
+    retimedCount: 0,
+    actionRequired: null,
+    outcome: {
+      reason: "no_driver",
+      message: "No driver accepted in time. Nothing was charged for the ride.",
+    },
+    createdAt: "2026-10-01T05:00:00.000Z",
+    updatedAt: "2026-10-01T08:30:00.000Z",
+  },
+];
+
 const noop = () => undefined;
 const base: TravelOpsBoardProps = {
   offline: false,
@@ -180,6 +260,11 @@ const base: TravelOpsBoardProps = {
     cards: toProviderCards(health),
     settlementLine: settlementDifferenceLine(health),
     generatedAt: health.generatedAt,
+  },
+  transfers: {
+    loading: false,
+    error: null,
+    rows: toOpsTransferRows(opsTransfers),
   },
   pendingAction: null,
   actionResult: null,
@@ -330,15 +415,30 @@ describe("TravelOpsBoard", () => {
     expect(html.toLowerCase()).not.toContain("total");
   });
 
-  it("names the missing endpoints for ops-wide transfers, money state and commission vs margin", () => {
+  it("renders city-wide airport transfers needing action or failed, and names itinerary gaps", () => {
     const html = renderToStaticMarkup(<TravelOpsBoard {...base} />);
-    expect(html).toContain('data-testid="ops.travel.transfersGap"');
-    expect(html).toContain(TRANSFERS_GAP.missingEndpoint);
+    expect(html).toContain('data-testid="ops.travel.transfersTable"');
+    expect(html.match(/data-testid="ops\.travel\.transferRow"/g)?.length).toBe(
+      2,
+    );
+    expect(html).toContain("tr-ops-1");
+    expect(html).toContain("Action required");
+    expect(html).toContain("Your flight moved. Keep the new time or cancel?");
+    expect(html).toContain("₦15,000.00");
+    expect(html).toContain("tr-ops-2");
     for (const [i, gap] of ITINERARY_GAPS.entries()) {
       expect(html).toContain('data-testid="ops.travel.itineraryGap.' + i + '"');
       expect(html).toContain(gap.title);
     }
     expect(html).toContain("GET /admin/v1/itineraries/:id?expand=orders");
+
+    const emptyHtml = renderToStaticMarkup(
+      <TravelOpsBoard
+        {...base}
+        transfers={{ loading: false, error: null, rows: [] }}
+      />,
+    );
+    expect(emptyHtml).toContain('data-testid="ops.travel.transfersEmpty"');
   });
 
   it("previews an action with what it does before it can be confirmed, once", () => {

@@ -137,6 +137,39 @@ export function recoveryInfo(action: string): RecoveryInfo {
       };
 }
 
+const BUSINESS_OPS: Record<string, Omit<RecoveryInfo, "known">> = {
+  commit: {
+    label: "Business budget commit",
+    retryNote:
+      "Retrying re-sends the organization budget commit for the completed trip under its deterministic commit key.",
+  },
+  release: {
+    label: "Business budget release",
+    retryNote:
+      "Retrying re-sends the organization budget release for the cancelled or refunded trip under its deterministic release key.",
+  },
+  increase: {
+    label: "Business budget increase",
+    retryNote:
+      "Retrying re-sends the organization budget reservation increase for the committed route amendment under its deterministic key.",
+  },
+};
+
+export function businessOpInfo(owedOp: string): RecoveryInfo {
+  const known = BUSINESS_OPS[owedOp];
+  return known
+    ? { ...known, known: true }
+    : {
+        label: owedOp,
+        retryNote:
+          "Retrying calls the same business-budget operation the sweep uses; this build cannot describe it.",
+        known: false,
+      };
+}
+
+export const DELIVERY_CANCEL_RETRY_NOTE =
+  "Retrying re-sends the delivery cancellation to delivery-service under the award's deterministic cancellation key; it never creates or re-opens a delivery.";
+
 export type OwedWorkGap = {
   key: string;
   title: string;
@@ -145,26 +178,13 @@ export type OwedWorkGap = {
 };
 
 /**
- * Owed operations added by the rounds 5–7 sagas that are durable and swept
- * by ride-service/notification-service, but have no admin list endpoint.
- * The ride-service ones surface per request on the Cases resolution view
- * only (business funding as its own stage).
+ * Owed operations that are durable and swept by notification-service, but have
+ * no admin list endpoint on this board yet (CC-A15 / CC-C05 adds the
+ * notification DLQ board). Business budget ops and pending delivery
+ * cancellations now have their own admin lists and retry commands above
+ * (CC-A04 / P2-01).
  */
 export const OWED_WORK_WITHOUT_ADMIN_READ: readonly OwedWorkGap[] = [
-  {
-    key: "business_budget",
-    title: "Business budget commit / release owed",
-    where:
-      "mp.business_bookings.owed_op (ride-service; swept until payment-service answers). Visible per request as the business_funding stage on Cases.",
-    missingEndpoint: "GET /v1/admin/mp/business-bookings?owed=true",
-  },
-  {
-    key: "delivery_cancel",
-    title: "Queued delivery cancellation owed",
-    where:
-      "mp.delivery_cancellations (ride-service; driven until delivery-service answers definitely).",
-    missingEndpoint: "GET /v1/admin/mp/delivery-cancellations?state=pending",
-  },
   {
     key: "trip_link_sms",
     title: "Sealed passenger trip-link SMS delivery",

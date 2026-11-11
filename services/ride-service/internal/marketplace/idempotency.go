@@ -40,6 +40,7 @@ const (
 	scopeStandingApprove      = "mp.admin.standing.approve"
 	scopeStandingAppeal       = "mp.admin.standing.appeal"
 	scopeStandingAppealDecide = "mp.admin.standing.appeal_decide"
+	scopeAdminOffroadDecide   = "mp.admin.offroad_flag_decide"
 
 	// A03 Book for Later.
 	scopeScheduledCreate  = "mp.scheduled.create"

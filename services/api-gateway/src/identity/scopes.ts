@@ -56,6 +56,7 @@ export const SCOPES = [
   "mp:request",
   "mp:bid",
   "mp:admin:read",
+  "mp:admin:write",
   "support:write",
   // Ask UBI (ask-service): converse = threads, messages, reading reviews and
   // executions; transact = the explicit confirm that mints a grant and the
@@ -210,6 +211,7 @@ const OPS_SCOPES: readonly Scope[] = [
 
 const OPS_ADMIN_SCOPES: readonly Scope[] = [
   ...OPS_SCOPES,
+  "mp:admin:write",
   "config:admin",
   "finance:ops",
 ];
@@ -242,7 +244,7 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   restaurant: MERCHANT_SCOPES,
   ops_admin: OPS_ADMIN_SCOPES,
   finance_ops: FINANCE_OPS_SCOPES,
-  ops: OPS_SCOPES,
+  ops: [...OPS_SCOPES, "mp:admin:write"],
   config_admin: [
     "profile:read",
     "device:enroll",
@@ -285,7 +287,10 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   admin: [...SCOPES],
   super_admin: [...SCOPES],
   service: SCOPES.filter(
-    (scope) => scope !== "config:admin" && scope !== "finance:ops",
+    (scope) =>
+      scope !== "config:admin" &&
+      scope !== "finance:ops" &&
+      scope !== "mp:admin:write",
   ),
 };
 
@@ -687,6 +692,11 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     requiresCity: true,
   },
   { methods: ["GET"], prefix: "/v1/admin/mp", anyOf: ["mp:admin:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/admin/mp",
+    anyOf: ["mp:admin:write"],
+  },
   // Commission-hold ledger endpoints are service-to-service (payment-service
   // verifies the service key); at the gateway only admin/service tokens may
   // even reach them. GET /v1/wallet/mp/overview stays covered by the

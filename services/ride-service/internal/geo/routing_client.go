@@ -41,7 +41,7 @@ func (c *GoogleMapsRoutingClient) GetRoute(ctx context.Context, req *eta.ETARequ
 	}
 
 	leg := directions.Routes[0].Legs[0]
-	
+
 	// Prefer duration in traffic if available
 	durationSeconds := leg.Duration.Value
 	if leg.DurationInTraffic.Value > 0 {
@@ -62,11 +62,11 @@ func (c *GoogleMapsRoutingClient) GetRoute(ctx context.Context, req *eta.ETARequ
 func (c *GoogleMapsRoutingClient) fallbackEstimate(req *eta.ETARequest) *eta.RouteResponse {
 	// Calculate haversine distance
 	distance := HaversineDistance(req.OriginLat, req.OriginLng, req.DestLat, req.DestLng)
-	
+
 	// Estimate duration using average urban speed (25 km/h = ~7 m/s)
 	// Add 20% buffer for traffic, turns, etc.
 	durationSeconds := (distance / 7.0) * 1.2
-	
+
 	return &eta.RouteResponse{
 		Duration: time.Duration(durationSeconds) * time.Second,
 		Distance: distance,

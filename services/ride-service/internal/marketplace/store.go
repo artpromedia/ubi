@@ -126,7 +126,10 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 				WHERE table_schema = 'mp' AND table_name = 'awards' AND column_name = 'fleet_vehicle')
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
-				WHERE table_schema = 'mp' AND table_name = 'advance_bookings' AND column_name = 'rematch_declined_at')`).Scan(&current)
+				WHERE table_schema = 'mp' AND table_name = 'advance_bookings' AND column_name = 'rematch_declined_at')
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'offroad_use_flags' AND column_name = 'decision')`).Scan(&current)
 	return err == nil && current
 }
 

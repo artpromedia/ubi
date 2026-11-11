@@ -1254,6 +1254,28 @@ CREATE TABLE IF NOT EXISTS mp.offroad_use_flags (
     CONSTRAINT offroad_use_flags_once UNIQUE (occupancy_id, driver_id, trigger, subject_ref)
 );
 
+ALTER TABLE mp.offroad_use_flags ADD COLUMN IF NOT EXISTS decision text;
+ALTER TABLE mp.offroad_use_flags ADD COLUMN IF NOT EXISTS decided_by uuid;
+ALTER TABLE mp.offroad_use_flags ADD COLUMN IF NOT EXISTS decided_at timestamptz;
+ALTER TABLE mp.offroad_use_flags ADD COLUMN IF NOT EXISTS decision_reason text;
+ALTER TABLE mp.offroad_use_flags ADD COLUMN IF NOT EXISTS standing_action_id uuid;
+CREATE INDEX IF NOT EXISTS mp_offroad_use_flags_observed_idx
+    ON mp.offroad_use_flags (observed_at DESC, id DESC);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'offroad_use_flags_decision') THEN
+        ALTER TABLE mp.offroad_use_flags ADD CONSTRAINT offroad_use_flags_decision
+            CHECK (decision IS NULL OR (
+                decision IN ('dismiss', 'warn_fleet', 'escalate_to_standing')
+                AND decided_by IS NOT NULL
+                AND decided_at IS NOT NULL
+                AND decision_reason IS NOT NULL
+            ));
+    END IF;
+END
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Fleet live vehicle resolution (CC-A01 / DEC-3 = A), additive and idempotent.
 --

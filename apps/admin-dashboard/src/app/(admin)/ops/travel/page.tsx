@@ -10,6 +10,7 @@ import {
   settlementDifferenceLine,
   toExceptionRows,
   toItineraryRows,
+  toOpsTransferRows,
   toProviderCards,
   travelOpsApi,
   type ExceptionAction,
@@ -49,6 +50,11 @@ export default function TravelOpsPage() {
   const health = useQuery({
     queryKey: ["travelOpsProviderHealth"],
     queryFn: travelOpsApi.providersHealth,
+    refetchInterval: 30_000,
+  });
+  const transfers = useQuery({
+    queryKey: ["travelOpsTransfers"],
+    queryFn: () => travelOpsApi.transfers("action_required,failed"),
     refetchInterval: 30_000,
   });
   const trip = useQuery({
@@ -119,6 +125,11 @@ export default function TravelOpsPage() {
             cards: toProviderCards(health.data),
             settlementLine: settlementDifferenceLine(health.data),
             generatedAt: health.data?.generatedAt,
+          }}
+          transfers={{
+            loading: transfers.isLoading,
+            error: readFailure(transfers, online),
+            rows: toOpsTransferRows(transfers.data),
           }}
           pendingAction={
             pending

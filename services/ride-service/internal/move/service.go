@@ -486,7 +486,7 @@ func (s *Service) ActiveRide(ctx context.Context, actor Actor) (*RideView, error
 // but is not granted the rider's or driver's actions.
 func (s *Service) authorise(actor Actor, ride *domain.Ride) error {
 	switch {
-	case actor.Role == RoleAdmin:
+	case IsOperatorReadRole(actor.Role):
 		return nil
 	case actor.IsRider() && ride.RiderID == actor.UserID:
 		return nil

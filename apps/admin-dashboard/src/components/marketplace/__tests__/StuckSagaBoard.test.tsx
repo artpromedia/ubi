@@ -286,4 +286,82 @@ describe("StuckSagaBoard", () => {
     expect(ambiguous).toContain('data-testid="mp.admin.saga.retrySameKey"');
     expect(ambiguous).toContain("same idempotency key");
   });
+
+  it("renders owed business bookings and queued delivery cancellations with preview + required audit reason (P2-01)", () => {
+    expect(OWED_WORK_WITHOUT_ADMIN_READ.map((g) => g.key)).toEqual([
+      "trip_link_sms",
+    ]);
+
+    const html = renderToStaticMarkup(
+      <StuckSagaBoard
+        {...base}
+        sagas={[{ ...saga, fundingSource: "business" }]}
+        owedBusiness={[
+          {
+            awardId: "awd-biz-1",
+            requestId: "req-biz-1",
+            organizationId: "org-1",
+            owedOp: "commit",
+            owedLine: "₦12,000.00",
+            reservedLine: "₦12,000.00",
+            attempts: 3,
+            lastError: "payment-service 503",
+            ageSec: 180,
+          },
+        ]}
+        deliveryCancels={[
+          {
+            awardId: "awd-del-1",
+            requestId: "req-del-1",
+            deliveryId: "del-1",
+            cancelledBy: "rider",
+            reason: "recipient unavailable",
+            attempts: 2,
+            lastError: "delivery-service 502",
+            ageSec: 95,
+          },
+        ]}
+        active={{
+          kind: "retryBusiness",
+          targetId: "awd-biz-1",
+          phase: "preview",
+          message: "Business budget commit (₦12,000.00) — retried 3 time(s).",
+        }}
+        reason="   "
+      />,
+    );
+    expect(html).toContain("funded: business");
+    expect(html).toContain('data-testid="mp.admin.saga.owedBusinessTable"');
+    expect(html).toContain("Business budget commit");
+    expect(html).toContain("₦12,000.00");
+    expect(html).toContain(
+      'data-testid="mp.admin.saga.previewRetryBusiness.awd-biz-1"',
+    );
+    expect(html).toContain('data-testid="mp.admin.saga.deliveryCancelsTable"');
+    expect(html).toContain("del-1");
+    expect(html).toContain(
+      'data-testid="mp.admin.saga.previewRetryDeliveryCancel.awd-del-1"',
+    );
+    // Blank reason keeps Confirm disabled
+    expect(html).toContain('data-testid="mp.admin.saga.reason"');
+    expect(html).toMatch(
+      /data-testid="mp\.admin\.saga\.confirm"[^>]*disabled=""/,
+    );
+
+    const withReason = renderToStaticMarkup(
+      <StuckSagaBoard
+        {...base}
+        active={{
+          kind: "retryBusiness",
+          targetId: "awd-biz-1",
+          phase: "preview",
+          message: "Business budget commit (₦12,000.00) — retried 3 time(s).",
+        }}
+        reason="payment-service recovered after outage"
+      />,
+    );
+    expect(withReason).not.toMatch(
+      /data-testid="mp\.admin\.saga\.confirm"[^>]*disabled=""/,
+    );
+  });
 });

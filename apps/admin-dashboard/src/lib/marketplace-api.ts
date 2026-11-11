@@ -1,5 +1,5 @@
 import { apiClient, newIdempotencyKey } from "./api-client";
-import { formatMinor, formatServerMoney } from "./money";
+import { formatMinor, formatServerMoney, type ServerMoney } from "./money";
 import { renderTimelineEvents, type RenderContext } from "./mp-events";
 import { redactDeep } from "./redact";
 
@@ -181,6 +181,7 @@ export type PendingSagaView = {
   requestId: string;
   driverId: string;
   cityId: string;
+  fundingSource?: string;
   step: string;
   attemptState: string;
   attempts: number;
@@ -211,6 +212,7 @@ export type RecoveryView = {
   bidId?: string;
   reservationId: string;
   amountMinor?: number;
+  currency?: string;
   attempts: number;
   lastError?: string;
   ageSec: number;
@@ -223,6 +225,91 @@ export type RetryRecoveryResult = {
   row: RecoveryView;
   outcome: "preview" | "resolved" | "deferred" | "already_resolved";
   detail?: string;
+};
+
+export type BusinessBookingOwedView = {
+  awardId: string;
+  requestId: string;
+  organizationId: string;
+  costCentreId?: string;
+  purposeCode: string;
+  bookingRef: string;
+  state: string;
+  owedOp: string;
+  owedMinor: ServerMoney;
+  owedReason?: string;
+  owedReasonRef?: string;
+  reservedMinor: ServerMoney;
+  committedMinor?: ServerMoney;
+  attempts: number;
+  lastError?: string;
+  ageSec: number;
+  nextRetryAt?: string;
+  updatedAt: string;
+};
+export type BusinessBookingsOwedPage = {
+  rows: BusinessBookingOwedView[];
+  nextCursor?: string;
+};
+export type RetryBusinessOpResult = {
+  row: BusinessBookingOwedView;
+  outcome: "preview" | "resolved" | "deferred" | "already_resolved";
+  detail?: string;
+};
+
+export type DeliveryCancellationView = {
+  awardId: string;
+  requestId: string;
+  deliveryId: string;
+  cityId: string;
+  cancelledBy: string;
+  reason?: string;
+  state: string;
+  attempts: number;
+  lastError?: string;
+  ageSec: number;
+  nextRetryAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type DeliveryCancellationsPage = {
+  rows: DeliveryCancellationView[];
+  nextCursor?: string;
+};
+export type RetryDeliveryCancelResult = {
+  row: DeliveryCancellationView;
+  outcome: "preview" | "resolved" | "deferred" | "already_resolved";
+  detail?: string;
+};
+
+export type OffroadFlagDecision =
+  | "dismiss"
+  | "warn_fleet"
+  | "escalate_to_standing";
+
+export type OffroadUseFlagView = {
+  flagId: string;
+  vehicleId: string;
+  driverId: string;
+  cityId: string;
+  blockId: string;
+  trigger: "driver_online" | "trip_started" | "booking_activated" | string;
+  subjectRef: string;
+  flaggedAt: string;
+  decision?: OffroadFlagDecision;
+  decidedBy?: string;
+  decidedAt?: string;
+  decisionReason?: string;
+  standingActionId?: string;
+};
+export type OffroadUseFlagsPage = {
+  rows: OffroadUseFlagView[];
+  nextCursor?: string;
+};
+export type DecideOffroadFlagResult = {
+  row: OffroadUseFlagView;
+  standingAction?: StandingActionView;
 };
 
 export type CancellationView = {
@@ -431,6 +518,75 @@ export const marketplaceApi = {
       body.dryRun
         ? undefined
         : { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
+    ),
+
+  businessBookings: (owed = true, cityId?: string, cursor?: string) =>
+    apiClient.get<BusinessBookingsOwedPage>(
+      "/v1/admin/mp/business-bookings" +
+        toQuery({ owed: String(owed), cityId, cursor }),
+    ),
+  retryBusinessBooking: (
+    awardId: string,
+    body: { dryRun: boolean; expectedAttempts?: number; reason?: string },
+    idempotencyKey?: string,
+  ) =>
+    apiClient.post<RetryBusinessOpResult>(
+      "/v1/admin/mp/business-bookings/" +
+        encodeURIComponent(awardId) +
+        "/retry",
+      body,
+      body.dryRun
+        ? undefined
+        : { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
+    ),
+
+  deliveryCancellations: (
+    state = "pending",
+    cityId?: string,
+    cursor?: string,
+  ) =>
+    apiClient.get<DeliveryCancellationsPage>(
+      "/v1/admin/mp/delivery-cancellations" +
+        toQuery({ state, cityId, cursor }),
+    ),
+  retryDeliveryCancellation: (
+    awardId: string,
+    body: { dryRun: boolean; expectedAttempts?: number; reason?: string },
+    idempotencyKey?: string,
+  ) =>
+    apiClient.post<RetryDeliveryCancelResult>(
+      "/v1/admin/mp/delivery-cancellations/" +
+        encodeURIComponent(awardId) +
+        "/retry",
+      body,
+      body.dryRun
+        ? undefined
+        : { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
+    ),
+
+  offroadFlags: (filter?: {
+    city?: string;
+    vehicle?: string;
+    trigger?: string;
+    since?: string;
+    cursor?: string;
+  }) =>
+    apiClient.get<OffroadUseFlagsPage>(
+      "/v1/admin/mp/offroad-flags" + toQuery(filter ?? {}),
+    ),
+  decideOffroadFlag: (
+    flagId: string,
+    body: {
+      decision: OffroadFlagDecision;
+      reason: string;
+      reasonNote?: string;
+    },
+    idempotencyKey?: string,
+  ) =>
+    apiClient.post<DecideOffroadFlagResult>(
+      "/v1/admin/mp/offroad-flags/" + encodeURIComponent(flagId) + "/decide",
+      body,
+      { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
     ),
 
   cancellations: (cityId?: string, driverId?: string, cursor?: string) =>

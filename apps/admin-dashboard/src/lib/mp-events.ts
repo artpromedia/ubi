@@ -1668,15 +1668,12 @@ const SPECS: Record<string, Spec> = {
 };
 
 /**
- * What the per-request timeline read cannot show today, named rather than
- * implied: ride-service's outboxTimelineEvents selects `name LIKE 'mp.%'`, so
- * the guest-link (trip_access.*), business-budget (business_booking.*) and
- * execution-ride (ride.*) rows written for a request never reach it — the
- * renderers above are ready for them the moment the read includes them.
+ * Per-request timeline coverage: ride-service's `outboxTimelineEvents`
+ * (`services/ride-service/internal/marketplace/admin.go`) returns `mp.*`,
+ * `trip_access.*`, `business_booking.*`, `ride.*`, and `vehicle_occupancy.*`
+ * events linked to the request, so there are no missing event families.
  */
-export const TIMELINE_COVERAGE_GAPS: readonly string[] = [
-  "The request timeline read returns mp.* events only: this request's trip_access.* (guest passenger link issued/revoked/declined), business_booking.* (organization budget reserve/commit/release) and ride.* (execution ride) events are not included — business funding appears as the business_funding stage instead. Needs ride-service's timeline read widened to those families.",
-];
+export const TIMELINE_COVERAGE_GAPS: readonly string[] = [];
 
 /**
  * Renderers written "if present": the fleet availability calendar's booking

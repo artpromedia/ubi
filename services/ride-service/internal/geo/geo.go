@@ -9,19 +9,19 @@ import (
 const (
 	// Earth's radius in meters
 	EarthRadius = 6371000.0
-	
+
 	// Degrees to radians conversion factor
 	DegToRad = math.Pi / 180.0
-	
+
 	// Radians to degrees conversion factor
 	RadToDeg = 180.0 / math.Pi
-	
+
 	// H3 resolution for driver matching (approx 460m hexagon edge)
 	H3Resolution = 9
-	
+
 	// Default search radius in meters
 	DefaultSearchRadius = 5000.0
-	
+
 	// Maximum search radius in meters
 	MaxSearchRadius = 50000.0
 )
@@ -45,14 +45,14 @@ type BoundingBox struct {
 func HaversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
 	dLat := (lat2 - lat1) * DegToRad
 	dLng := (lng2 - lng1) * DegToRad
-	
+
 	lat1Rad := lat1 * DegToRad
 	lat2Rad := lat2 * DegToRad
-	
+
 	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
 		math.Sin(dLng/2)*math.Sin(dLng/2)*math.Cos(lat1Rad)*math.Cos(lat2Rad)
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-	
+
 	return EarthRadius * c
 }
 
@@ -67,12 +67,12 @@ func Bearing(lat1, lng1, lat2, lng2 float64) float64 {
 	lat1Rad := lat1 * DegToRad
 	lat2Rad := lat2 * DegToRad
 	dLng := (lng2 - lng1) * DegToRad
-	
+
 	y := math.Sin(dLng) * math.Cos(lat2Rad)
 	x := math.Cos(lat1Rad)*math.Sin(lat2Rad) - math.Sin(lat1Rad)*math.Cos(lat2Rad)*math.Cos(dLng)
-	
+
 	bearing := math.Atan2(y, x) * RadToDeg
-	
+
 	// Normalize to 0-360
 	return math.Mod(bearing+360, 360)
 }
@@ -82,17 +82,17 @@ func DestinationPoint(lat, lng, distanceM, bearingDeg float64) Coordinate {
 	latRad := lat * DegToRad
 	lngRad := lng * DegToRad
 	bearingRad := bearingDeg * DegToRad
-	
+
 	angularDist := distanceM / EarthRadius
-	
+
 	destLat := math.Asin(
 		math.Sin(latRad)*math.Cos(angularDist) +
 			math.Cos(latRad)*math.Sin(angularDist)*math.Cos(bearingRad))
-	
+
 	destLng := lngRad + math.Atan2(
 		math.Sin(bearingRad)*math.Sin(angularDist)*math.Cos(latRad),
 		math.Cos(angularDist)-math.Sin(latRad)*math.Sin(destLat))
-	
+
 	return Coordinate{
 		Lat: destLat * RadToDeg,
 		Lng: destLng * RadToDeg,
@@ -104,10 +104,10 @@ func GetBoundingBox(lat, lng, radiusM float64) BoundingBox {
 	// Approximate degrees per meter at this latitude
 	latDegPerMeter := 1.0 / 111320.0
 	lngDegPerMeter := 1.0 / (111320.0 * math.Cos(lat*DegToRad))
-	
+
 	latDelta := radiusM * latDegPerMeter
 	lngDelta := radiusM * lngDegPerMeter
-	
+
 	return BoundingBox{
 		MinLat: lat - latDelta,
 		MaxLat: lat + latDelta,
@@ -134,7 +134,7 @@ func H3Cell(lat, lng float64, resolution int) string {
 	// Format: 8-digit cell index based on lat/lng grid
 	latBucket := int((lat + 90) * 1000)
 	lngBucket := int((lng + 180) * 1000)
-	
+
 	return fmt.Sprintf("%d%08d%08d", resolution, latBucket, lngBucket)
 }
 
@@ -151,27 +151,27 @@ func H3Neighbors(cell string) []string {
 func EstimateETA(distanceM float64, vehicleType string) int64 {
 	// Average speeds in m/s for African urban conditions
 	speeds := map[string]float64{
-		"bike":      8.0,   // ~30 km/h
-		"tricycle":  6.0,   // ~22 km/h
-		"car":       10.0,  // ~36 km/h (accounting for traffic)
-		"suv":       10.0,
-		"premium":   10.0,
-		"default":   10.0,
+		"bike":     8.0,  // ~30 km/h
+		"tricycle": 6.0,  // ~22 km/h
+		"car":      10.0, // ~36 km/h (accounting for traffic)
+		"suv":      10.0,
+		"premium":  10.0,
+		"default":  10.0,
 	}
-	
+
 	speed, exists := speeds[vehicleType]
 	if !exists {
 		speed = speeds["default"]
 	}
-	
+
 	// Add 20% buffer for stops, turns, etc.
 	eta := distanceM / speed * 1.2
-	
+
 	// Minimum 60 seconds
 	if eta < 60 {
 		return 60
 	}
-	
+
 	return int64(eta)
 }
 
@@ -180,7 +180,7 @@ func EstimateETAWithTraffic(baseETASeconds int64, hour int) int64 {
 	// Traffic multipliers based on hour (0-23)
 	// Peak hours in African cities
 	var multiplier float64
-	
+
 	switch {
 	case hour >= 7 && hour <= 9:
 		multiplier = 1.5 // Morning rush
@@ -193,7 +193,7 @@ func EstimateETAWithTraffic(baseETASeconds int64, hour int) int64 {
 	default:
 		multiplier = 1.0
 	}
-	
+
 	return int64(float64(baseETASeconds) * multiplier)
 }
 
@@ -202,21 +202,21 @@ func PolylineEncode(coords []Coordinate) string {
 	if len(coords) == 0 {
 		return ""
 	}
-	
+
 	var result []byte
 	var prevLat, prevLng int64
-	
+
 	for _, coord := range coords {
 		lat := int64(coord.Lat * 1e5)
 		lng := int64(coord.Lng * 1e5)
-		
+
 		result = append(result, encodeValue(lat-prevLat)...)
 		result = append(result, encodeValue(lng-prevLng)...)
-		
+
 		prevLat = lat
 		prevLng = lng
 	}
-	
+
 	return string(result)
 }
 
@@ -226,14 +226,14 @@ func encodeValue(v int64) []byte {
 	} else {
 		v = v << 1
 	}
-	
+
 	var result []byte
 	for v >= 0x20 {
 		result = append(result, byte((v&0x1f)|0x20)+63)
 		v >>= 5
 	}
 	result = append(result, byte(v)+63)
-	
+
 	return result
 }
 
@@ -262,13 +262,13 @@ func GetServiceAreas() []ServiceArea {
 // IsInServiceArea checks if a coordinate is within any supported service area
 func IsInServiceArea(lat, lng float64) (bool, *ServiceArea) {
 	coord := Coordinate{Lat: lat, Lng: lng}
-	
+
 	for _, area := range GetServiceAreas() {
 		dist := DistanceCoords(coord, area.Center)
 		if dist <= area.Radius {
 			return true, &area
 		}
 	}
-	
+
 	return false, nil
 }

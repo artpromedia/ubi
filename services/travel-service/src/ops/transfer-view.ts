@@ -157,3 +157,82 @@ export function transferView(row: TransferRow): JsonRecord {
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+
+/**
+ * Ops-wide airport transfer read (`GET /v1/ops/travel/transfers`).
+ *
+ * Exposes status, schedule, actionRequired, ride linkage, and outcome across
+ * travellers for city triage while omitting raw `{lat, lng}` coordinates,
+ * traveller user ids, and payment method identifiers.
+ */
+export function opsTransferView(row: TransferRow): JsonRecord {
+  const { statusLabel, notice } = labels(row);
+  const action = jsonRecord(row.actionRequired);
+  return {
+    transferId: row.id,
+    linkedOrderId: row.orderId,
+    cityId: row.cityId,
+    direction: row.direction,
+    legIndex: row.legIndex,
+    flightNumber: row.flightNumber,
+    airportCode: row.airportCode,
+    status: row.state,
+    driverSecured: row.state === "awarded",
+    statusLabel,
+    notice,
+    pickupWindow:
+      row.pickupAt === null || row.windowEnd === null
+        ? null
+        : {
+            start: iso(row.pickupAt),
+            end: iso(row.windowEnd),
+            timeZone: row.timeZone,
+            label: `${localLabel(row.pickupAt, row.timeZone)} – ${localLabel(row.windowEnd, row.timeZone)}`,
+          },
+    arriveBy:
+      row.arriveBy === null
+        ? null
+        : {
+            at: iso(row.arriveBy),
+            timeZone: row.timeZone,
+            label: localLabel(row.arriveBy, row.timeZone),
+          },
+    flight: {
+      departAt: iso(row.flightDepartAt),
+      arriveAt: iso(row.flightArriveAt),
+      status: row.flightStatus,
+    },
+    vehicleClass: row.vehicleClass,
+    approvedMaxFareMinor: {
+      amountMinor: Number(row.maxFareMinor),
+      currency: row.currency,
+    },
+    ride:
+      row.scheduledRequestId === null && row.rideRequestId === null
+        ? null
+        : {
+            scheduledRequestId: row.scheduledRequestId,
+            requestId: row.rideRequestId,
+            state: row.rideState,
+            requestState: row.rideRequestState,
+          },
+    retimedCount: row.retimedCount,
+    actionRequired:
+      action === null
+        ? null
+        : {
+            reason: action.reason ?? null,
+            message: action.message ?? null,
+            choices: action.choices ?? [],
+            ...(action.minimumFareMinor === undefined
+              ? {}
+              : { minimumFareMinor: action.minimumFareMinor }),
+            ...(action.proposal === undefined
+              ? {}
+              : { proposal: action.proposal }),
+          },
+    outcome: jsonRecord(row.outcome),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}

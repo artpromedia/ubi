@@ -6,11 +6,11 @@ import { classifyError, type AccessState } from "../../lib/access";
 import {
   ACTION_COPY,
   ITINERARY_GAPS,
-  TRANSFERS_GAP,
   type ExceptionAction,
   type ExceptionRow,
   type ItineraryRow,
   type NamedGap,
+  type OpsTransferRow,
   type ProviderCard,
   type Tone,
 } from "../../lib/travel-ops";
@@ -25,8 +25,8 @@ import {
  *   - money is the server's {amountMinor, currency}, formatted, never summed;
  *   - an itinerary joins orders for READING only — each order keeps its own
  *     status, charge, ledger and audit trail, and there is no "settle all";
- *   - what no endpoint provides (ops-wide transfers, per-order money state,
- *     commission vs travel margin) is a named gap, not a guess.
+ *   - what no endpoint provides (per-order money state, commission vs travel
+ *     margin) is a named gap, not a guess.
  */
 export type TravelOpsBoardProps = {
   offline: boolean;
@@ -41,6 +41,11 @@ export type TravelOpsBoardProps = {
     cards: ProviderCard[];
     settlementLine: string;
     generatedAt?: string;
+  };
+  transfers?: {
+    loading: boolean;
+    error: AccessState | null;
+    rows: OpsTransferRow[];
   };
   pendingAction: {
     orderId: string;
@@ -398,6 +403,100 @@ function ItinerarySection(p: TravelOpsBoardProps) {
   );
 }
 
+function TransfersSection({
+  transfers,
+}: {
+  transfers?: TravelOpsBoardProps["transfers"];
+}) {
+  if (!transfers) {
+    return (
+      <p
+        className="text-xs text-neutral-500"
+        data-testid="ops.travel.transfersEmpty"
+      >
+        No airport transfers need attention right now.
+      </p>
+    );
+  }
+  if (transfers.error) {
+    return <AccessNotice state={transfers.error} context="airport transfers" />;
+  }
+  if (transfers.loading) {
+    return (
+      <p className="text-xs text-neutral-500">Loading airport transfers…</p>
+    );
+  }
+  if (transfers.rows.length === 0) {
+    return (
+      <p
+        className="text-xs text-neutral-500"
+        data-testid="ops.travel.transfersEmpty"
+      >
+        No airport transfers need attention right now.
+      </p>
+    );
+  }
+  return (
+    <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+      <table className="w-full text-xs" data-testid="ops.travel.transfersTable">
+        <thead className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+          <tr className="border-b border-neutral-200 bg-neutral-50">
+            {[
+              "Transfer · order",
+              "Flight · window",
+              "State",
+              "Max fare",
+              "Reason / outcome",
+            ].map((h) => (
+              <th key={h} className="px-4 py-2 text-left">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {transfers.rows.map((t) => (
+            <tr
+              key={t.transferId}
+              data-testid="ops.travel.transferRow"
+              className="border-b border-neutral-100 align-top last:border-0"
+            >
+              <td className="px-4 py-2.5">
+                <div className="font-mono font-semibold text-neutral-900">
+                  {t.transferId}
+                </div>
+                <div className="font-mono text-[10px] text-neutral-500">
+                  order {t.linkedOrderId} · {t.cityId}
+                </div>
+              </td>
+              <td className="px-4 py-2.5">
+                <div className="font-semibold text-neutral-900">
+                  {t.directionLabel} · {t.flightLine}
+                </div>
+                <div className="text-neutral-500">{t.windowLabel}</div>
+              </td>
+              <td className="px-4 py-2.5">
+                <span
+                  className={
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold " +
+                    KIND_TONE[t.tone]
+                  }
+                >
+                  {t.statusLabel}
+                </span>
+              </td>
+              <td className="px-4 py-2.5 tabular-nums text-neutral-700">
+                {t.approvedMaxFare}
+              </td>
+              <td className="px-4 py-2.5 text-neutral-700">{t.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function TravelOpsBoard(p: TravelOpsBoardProps) {
   return (
     <div className="flex flex-col gap-5 p-4" data-testid="ops.travel.board">
@@ -473,9 +572,13 @@ export function TravelOpsBoard(p: TravelOpsBoardProps) {
 
       <section data-testid="ops.travel.transfers">
         <h2 className="mb-2 font-semibold text-neutral-900">
-          Airport transfers
+          Airport transfers{" "}
+          <span className="text-xs font-normal text-neutral-400">
+            action_required and failed across travellers — ride money stays on
+            ride-service
+          </span>
         </h2>
-        <GapPanel gap={TRANSFERS_GAP} testId="ops.travel.transfersGap" />
+        <TransfersSection transfers={p.transfers} />
       </section>
 
       <ItinerarySection {...p} />

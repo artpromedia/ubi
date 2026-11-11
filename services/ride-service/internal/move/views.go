@@ -24,6 +24,41 @@ const (
 	RoleAdmin  = "admin"
 )
 
+var operatorWriteRoles = map[string]struct{}{
+	RoleAdmin:     {},
+	"super_admin": {},
+	"ops_admin":   {},
+	"ops":         {},
+}
+
+var operatorReadOnlyRoles = map[string]struct{}{
+	"finance_ops":   {},
+	"config_admin":  {},
+	"support_lead":  {},
+	"support_agent": {},
+	"reviewer":      {},
+	"growth_admin":  {},
+	"growth_editor": {},
+	"ai_ops":        {},
+}
+
+// IsOperatorWriteRole reports whether the role holds marketplace operator write
+// authority (mirrors gateway `mp:admin:write`).
+func IsOperatorWriteRole(role string) bool {
+	_, ok := operatorWriteRoles[role]
+	return ok
+}
+
+// IsOperatorReadRole reports whether the role holds marketplace operator read
+// authority (mirrors gateway `mp:admin:read`).
+func IsOperatorReadRole(role string) bool {
+	if IsOperatorWriteRole(role) {
+		return true
+	}
+	_, ok := operatorReadOnlyRoles[role]
+	return ok
+}
+
 // IsRider reports whether the actor may act as the rider on a ride.
 func (a Actor) IsRider() bool { return a.Role == RoleRider }
 

@@ -25,6 +25,7 @@
  * ride-service's (the traveller's own funding at award, the driver's 10%
  * captured once there); the flight's is its order's.
  */
+import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 
 import {
@@ -62,7 +63,7 @@ import {
   transitionTransfer,
   type TransferRow,
 } from "./transfer-store";
-import { transferView } from "./transfer-view";
+import { opsTransferView, transferView } from "./transfer-view";
 import { deterministicId, generateId } from "../lib/ids";
 import { RideRefusal, RideUnavailableError } from "../ports/ride-port";
 
@@ -465,6 +466,129 @@ export async function listTransfers(
     take: 50,
   });
   return rows.map(transferView);
+}
+
+export const OPS_TRANSFER_STATE_FILTERS = [
+  "action_required",
+  "pending_unassigned",
+  "requested",
+  "awarded",
+  "failed",
+  "cancelled",
+] as const;
+
+export type OpsTransferStateFilter =
+  (typeof OPS_TRANSFER_STATE_FILTERS)[number];
+
+export interface OpsTransfersPage {
+  readonly rows: JsonRecord[];
+  readonly nextCursor: string | null;
+}
+
+function encodeTransferCursor(row: { updatedAt: Date; id: string }): string {
+  return Buffer.from(
+    JSON.stringify({ u: row.updatedAt.toISOString(), id: row.id }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function decodeTransferCursor(raw: string): { updatedAt: Date; id: string } {
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(raw, "base64url").toString("utf8"),
+    ) as { u?: unknown; id?: unknown };
+    if (typeof parsed.u !== "string" || typeof parsed.id !== "string") {
+      throw new Error("bad cursor shape");
+    }
+    const updatedAt = new Date(parsed.u);
+    if (Number.isNaN(updatedAt.getTime()) || parsed.id.length === 0) {
+      throw new Error("bad cursor value");
+    }
+    return { updatedAt, id: parsed.id };
+  } catch {
+    throw new ContractError("validation_failed", "invalid transfer cursor", {
+      cursor: raw,
+    });
+  }
+}
+
+export async function listOpsTransfers(
+  deps: TravelDeps,
+  filter: {
+    readonly states?: readonly string[];
+    readonly cityId?: string | null;
+    readonly cursor?: string | null;
+    readonly limit?: number;
+  },
+): Promise<OpsTransfersPage> {
+  const tokens = (filter.states ?? [])
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const concreteStates: string[] = [];
+  let includeActionRequired = false;
+
+  for (const token of tokens) {
+    if (!(OPS_TRANSFER_STATE_FILTERS as readonly string[]).includes(token)) {
+      throw new ContractError(
+        "validation_failed",
+        `unknown airport transfer state filter "${token}"`,
+        { state: token, allowed: OPS_TRANSFER_STATE_FILTERS },
+      );
+    }
+    if (token === "action_required") {
+      includeActionRequired = true;
+    } else if (!concreteStates.includes(token)) {
+      concreteStates.push(token);
+    }
+  }
+
+  const andClauses: Prisma.AirportTransferWhereInput[] = [];
+  if (filter.cityId) {
+    andClauses.push({ cityId: filter.cityId });
+  }
+  if (includeActionRequired && concreteStates.length > 0) {
+    andClauses.push({
+      OR: [
+        { actionRequired: { not: JSON_NULL } },
+        { state: { in: concreteStates } },
+      ],
+    });
+  } else if (includeActionRequired) {
+    andClauses.push({ actionRequired: { not: JSON_NULL } });
+  } else if (concreteStates.length > 0) {
+    andClauses.push({ state: { in: concreteStates } });
+  }
+
+  if (filter.cursor) {
+    const decoded = decodeTransferCursor(filter.cursor);
+    andClauses.push({
+      OR: [
+        { updatedAt: { lt: decoded.updatedAt } },
+        { updatedAt: decoded.updatedAt, id: { lt: decoded.id } },
+      ],
+    });
+  }
+
+  const take = Math.min(Math.max(filter.limit ?? 50, 1), 200);
+  const rows = await deps.db.airportTransfer.findMany({
+    where: andClauses.length > 0 ? { AND: andClauses } : {},
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: take + 1,
+  });
+
+  let nextCursor: string | null = null;
+  if (rows.length > take) {
+    rows.pop();
+    const last = rows[rows.length - 1];
+    if (last !== undefined) {
+      nextCursor = encodeTransferCursor(last);
+    }
+  }
+
+  return {
+    rows: rows.map(opsTransferView),
+    nextCursor,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -142,6 +142,8 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 		r.Post("/business-bookings/{awardId}/retry", h.AdminRetryBusinessOp)
 		r.Get("/delivery-cancellations", h.AdminDeliveryCancellations)
 		r.Post("/delivery-cancellations/{awardId}/retry", h.AdminRetryDeliveryCancel)
+		r.Get("/offroad-flags", h.AdminOffroadFlags)
+		r.Post("/offroad-flags/{flagId}/decide", h.AdminDecideOffroadFlag)
 
 		// C08: cancellations/no-shows + driver standing & appeals.
 		r.Get("/cancellations", h.AdminCancellations)

@@ -40,6 +40,7 @@ import {
 import { recordSettlement } from "../ops/reconcile";
 import { isOpsRole } from "../ops/roles";
 import { advanceTransfer } from "../ops/transfer-orchestrator";
+import { listOpsTransfers } from "../ops/transfers";
 
 import type { ConsoleAnswer, ConsoleCity } from "../ops/console";
 import type { TravelDeps } from "../ops/context";
@@ -238,6 +239,54 @@ export function createOpsRoutes(deps: TravelDeps): Hono {
         await advanceTransfer(deps, transferId).catch(() => undefined);
       }
       return c.json(result, result.duplicate ? 200 : 201);
+    } catch (error) {
+      return failure(c, error);
+    }
+  });
+
+  routes.get("/transfers", async (c) => {
+    try {
+      const boundCity = consoleCityOf(c, true);
+      const queryCityId = c.req.query("cityId")?.trim() || null;
+      if (
+        boundCity !== null &&
+        queryCityId !== null &&
+        queryCityId !== boundCity.cityId
+      ) {
+        throw new ContractError(
+          "forbidden",
+          "operator is bound to a different city",
+          { reason: "city_mismatch", cityId: queryCityId },
+        );
+      }
+      const rawState = c.req.query("state") ?? "";
+      const states = rawState
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const cursor = c.req.query("cursor")?.trim() || null;
+      const rawLimit = c.req.query("limit");
+      let limit: number | undefined;
+      if (rawLimit !== undefined && rawLimit !== "") {
+        const parsed = Number(rawLimit);
+        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 200) {
+          throw new ContractError(
+            "validation_failed",
+            "limit must be an integer between 1 and 200",
+            { limit: rawLimit },
+          );
+        }
+        limit = parsed;
+      }
+      return c.json(
+        await listOpsTransfers(deps, {
+          states,
+          cityId: queryCityId ?? boundCity?.cityId ?? null,
+          cursor,
+          limit,
+        }),
+        200,
+      );
     } catch (error) {
       return failure(c, error);
     }

@@ -127,13 +127,15 @@ func (v *InternalContextVerifier) verify(r *http.Request, userID, role, cityID s
 	return domain.Errorf(domain.CodeUnauthorized, "this request's caller identity is not signed by the gateway")
 }
 
-// knownRoles are the roles the gateway issues that this service acts on. An
-// unrecognised role is refused rather than treated as a rider.
-var knownRoles = map[string]struct{}{
-	move.RoleRider:  {},
-	move.RoleDriver: {},
-	move.RoleAdmin:  {},
-	"service":       {},
+// isKnownRole reports whether the role is one the gateway issues that this
+// service acts on. An unrecognised role is refused rather than treated as a rider.
+func isKnownRole(role string) bool {
+	switch role {
+	case move.RoleRider, move.RoleDriver, "service":
+		return true
+	default:
+		return move.IsOperatorReadRole(role)
+	}
 }
 
 // RequireIdentity builds the middleware that turns gateway headers into an
@@ -152,7 +154,7 @@ func RequireIdentity(verifier *InternalContextVerifier) func(http.Handler) http.
 					"this request did not arrive with a caller identity from the gateway"))
 				return
 			}
-			if _, ok := knownRoles[role]; !ok {
+			if !isKnownRole(role) {
 				writeError(w, domain.Errorf(domain.CodeForbidden, "the role %q may not use this service", role))
 				return
 			}

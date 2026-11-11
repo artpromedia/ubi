@@ -117,7 +117,7 @@ func (s *Store) StrandedMarketplaceRides(ctx context.Context, db DB, rideIDs []u
 // to the sweep. A ride that moved on (or was already repaired) is reported
 // per ride and skipped, so a replay converges instead of double-acting.
 func (s *Service) AdminRepairStrandedRides(ctx context.Context, actor Actor, req RepairStrandedRidesRequest, idempotencyKey string) (*RepairStrandedRidesResponse, int, error) {
-	if actor.Role != move.RoleAdmin {
+	if !move.IsOperatorWriteRole(actor.Role) {
 		return nil, 0, domain.Errorf(domain.CodeForbidden, "only an operator can repair stranded rides")
 	}
 

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   StuckSagaBoard,
+  type CommandKind,
   type CommandState,
 } from "@/components/marketplace/StuckSagaBoard";
 import { AccessNotice } from "@/components/ops/AccessNotice";
@@ -15,8 +16,13 @@ import {
 } from "@/lib/access";
 import { newIdempotencyKey } from "@/lib/api-client";
 import { marketplaceApi } from "@/lib/marketplace-api";
-import { formatMinorUnits } from "@/lib/money";
-import { recoveryInfo, stepInfo } from "@/lib/saga-steps";
+import { formatMinorUnits, formatServerMoney } from "@/lib/money";
+import {
+  DELIVERY_CANCEL_RETRY_NOTE,
+  businessOpInfo,
+  recoveryInfo,
+  stepInfo,
+} from "@/lib/saga-steps";
 
 /**
  * What the operator confirmed: the row version the preview showed and the
@@ -37,6 +43,20 @@ type Confirmed =
       targetId: string;
       expectedAttempts: number;
       idempotencyKey: string;
+    }
+  | {
+      kind: "retryBusiness";
+      targetId: string;
+      expectedAttempts: number;
+      idempotencyKey: string;
+      reason?: string;
+    }
+  | {
+      kind: "retryDeliveryCancel";
+      targetId: string;
+      expectedAttempts: number;
+      idempotencyKey: string;
+      reason?: string;
     };
 
 /** C08 — stuck-saga & failed-reservation-recovery board container. */
@@ -45,6 +65,7 @@ export default function StuckSagaOperationsContainer() {
   const online = useOnlineStatus();
   const [active, setActive] = useState<CommandState>(null);
   const [confirmed, setConfirmed] = useState<Confirmed | null>(null);
+  const [reason, setReason] = useState("");
 
   const sagas = useQuery({
     queryKey: ["mpPendingSagas"],
@@ -56,13 +77,23 @@ export default function StuckSagaOperationsContainer() {
     queryFn: () => marketplaceApi.recoveries(),
     refetchInterval: 20_000,
   });
+  const owedBusiness = useQuery({
+    queryKey: ["mpOwedBusinessBookings"],
+    queryFn: () => marketplaceApi.businessBookings(true),
+    refetchInterval: 20_000,
+  });
+  const deliveryCancels = useQuery({
+    queryKey: ["mpDeliveryCancellations"],
+    queryFn: () => marketplaceApi.deliveryCancellations("pending"),
+    refetchInterval: 20_000,
+  });
 
   /** A preview is a dry run, so its failure is never ambiguous; an apply's
    * network/5xx failure is, and re-arms EXACTLY the command that was sent
    * (`sent`: its version and key) for a safe re-send — not whatever preview
    * happens to be armed now. */
   const failed = (
-    kind: "reconcile" | "retry",
+    kind: CommandKind,
     targetId: string,
     e: unknown,
     sent?: Confirmed,
@@ -95,6 +126,7 @@ export default function StuckSagaOperationsContainer() {
       marketplaceApi.reconcileAward(awardId, { dryRun: true }),
     onSuccess: (result, awardId) => {
       const row = sagas.data?.rows.find((s) => s.awardId === awardId);
+      setReason("");
       setConfirmed({
         kind: "reconcile",
         targetId: awardId,
@@ -147,6 +179,7 @@ export default function StuckSagaOperationsContainer() {
       marketplaceApi.retryRecovery(id, { dryRun: true }),
     onSuccess: (result, id) => {
       const info = recoveryInfo(result.row.action);
+      setReason("");
       setConfirmed({
         kind: "retry",
         targetId: id,
@@ -189,8 +222,129 @@ export default function StuckSagaOperationsContainer() {
     onError: (e, c) => failed("retry", c.targetId, e, c),
   });
 
-  const applying = applyReconcile.isPending || applyRetry.isPending;
-  const confirm = (kind: "reconcile" | "retry", targetId: string) => {
+  const previewRetryBusiness = useMutation({
+    mutationFn: (awardId: string) =>
+      marketplaceApi.retryBusinessBooking(awardId, { dryRun: true }),
+    onSuccess: (result, awardId) => {
+      const info = businessOpInfo(result.row.owedOp);
+      setReason("");
+      setConfirmed({
+        kind: "retryBusiness",
+        targetId: awardId,
+        expectedAttempts: result.row.attempts,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      setActive({
+        kind: "retryBusiness",
+        targetId: awardId,
+        phase: "preview",
+        message:
+          info.label +
+          " (" +
+          formatServerMoney(result.row.owedMinor) +
+          ") — retried " +
+          result.row.attempts +
+          " time(s). Retrying now calls the SAME business-budget action the sweep uses.",
+        note: info.retryNote,
+      });
+    },
+    onError: (e, awardId) => failed("retryBusiness", awardId, e),
+  });
+  const applyRetryBusiness = useMutation({
+    mutationFn: (c: Extract<Confirmed, { kind: "retryBusiness" }>) =>
+      marketplaceApi.retryBusinessBooking(
+        c.targetId,
+        {
+          dryRun: false,
+          expectedAttempts: c.expectedAttempts,
+          reason: c.reason,
+        },
+        c.idempotencyKey,
+      ),
+    onMutate: () => setActive((a) => (a ? { ...a, busy: true } : a)),
+    onSuccess: (result) => {
+      setConfirmed(null);
+      setReason("");
+      setActive({
+        kind: "retryBusiness",
+        targetId: result.row.awardId,
+        phase: "result",
+        outcome: result.outcome,
+        message: result.detail ?? "no further detail",
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["mpOwedBusinessBookings"],
+      });
+    },
+    onError: (e, c) => failed("retryBusiness", c.targetId, e, c),
+  });
+
+  const previewRetryDeliveryCancel = useMutation({
+    mutationFn: (awardId: string) =>
+      marketplaceApi.retryDeliveryCancellation(awardId, { dryRun: true }),
+    onSuccess: (result, awardId) => {
+      setReason("");
+      setConfirmed({
+        kind: "retryDeliveryCancel",
+        targetId: awardId,
+        expectedAttempts: result.row.attempts,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      setActive({
+        kind: "retryDeliveryCancel",
+        targetId: awardId,
+        phase: "preview",
+        message:
+          "Delivery cancellation for " +
+          result.row.deliveryId +
+          " — retried " +
+          result.row.attempts +
+          " time(s). Retrying now calls the SAME delivery cancellation action the sweep uses.",
+        note: DELIVERY_CANCEL_RETRY_NOTE,
+      });
+    },
+    onError: (e, awardId) => failed("retryDeliveryCancel", awardId, e),
+  });
+  const applyRetryDeliveryCancel = useMutation({
+    mutationFn: (c: Extract<Confirmed, { kind: "retryDeliveryCancel" }>) =>
+      marketplaceApi.retryDeliveryCancellation(
+        c.targetId,
+        {
+          dryRun: false,
+          expectedAttempts: c.expectedAttempts,
+          reason: c.reason,
+        },
+        c.idempotencyKey,
+      ),
+    onMutate: () => setActive((a) => (a ? { ...a, busy: true } : a)),
+    onSuccess: (result) => {
+      setConfirmed(null);
+      setReason("");
+      setActive({
+        kind: "retryDeliveryCancel",
+        targetId: result.row.awardId,
+        phase: "result",
+        outcome: result.outcome,
+        message: result.detail ?? "no further detail",
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["mpDeliveryCancellations"],
+      });
+    },
+    onError: (e, c) => failed("retryDeliveryCancel", c.targetId, e, c),
+  });
+
+  const applying =
+    applyReconcile.isPending ||
+    applyRetry.isPending ||
+    applyRetryBusiness.isPending ||
+    applyRetryDeliveryCancel.isPending;
+
+  const confirm = (
+    kind: CommandKind,
+    targetId: string,
+    operatorReason?: string,
+  ) => {
     // Only what was previewed can be applied, and only once at a time.
     if (
       confirmed === null ||
@@ -202,8 +356,20 @@ export default function StuckSagaOperationsContainer() {
     }
     if (confirmed.kind === "reconcile") {
       applyReconcile.mutate(confirmed);
-    } else {
+    } else if (confirmed.kind === "retry") {
       applyRetry.mutate(confirmed);
+    } else if (confirmed.kind === "retryBusiness") {
+      const resolvedReason = (operatorReason ?? confirmed.reason ?? "").trim();
+      if (!resolvedReason) return;
+      const payload = { ...confirmed, reason: resolvedReason };
+      setConfirmed(payload);
+      applyRetryBusiness.mutate(payload);
+    } else {
+      const resolvedReason = (operatorReason ?? confirmed.reason ?? "").trim();
+      if (!resolvedReason) return;
+      const payload = { ...confirmed, reason: resolvedReason };
+      setConfirmed(payload);
+      applyRetryDeliveryCancel.mutate(payload);
     }
   };
 
@@ -237,14 +403,44 @@ export default function StuckSagaOperationsContainer() {
             attempts: r.attempts,
             lastError: r.lastError,
             ageSec: r.ageSec,
-            // The recovery read carries no currency: shown as the server's
-            // minor units, never converted or assumed.
             amountLine:
               r.amountMinor === undefined
                 ? undefined
-                : formatMinorUnits(r.amountMinor),
+                : r.currency
+                  ? formatServerMoney({
+                      amountMinor: r.amountMinor,
+                      currency: r.currency,
+                    })
+                  : formatMinorUnits(r.amountMinor),
+          }))}
+          owedBusinessLoading={owedBusiness.isLoading}
+          owedBusinessError={readFailure(owedBusiness, online)}
+          owedBusiness={(owedBusiness.data?.rows ?? []).map((b) => ({
+            awardId: b.awardId,
+            requestId: b.requestId,
+            organizationId: b.organizationId,
+            owedOp: b.owedOp,
+            owedLine: formatServerMoney(b.owedMinor),
+            reservedLine: formatServerMoney(b.reservedMinor),
+            attempts: b.attempts,
+            lastError: b.lastError,
+            ageSec: b.ageSec,
+          }))}
+          deliveryCancelsLoading={deliveryCancels.isLoading}
+          deliveryCancelsError={readFailure(deliveryCancels, online)}
+          deliveryCancels={(deliveryCancels.data?.rows ?? []).map((d) => ({
+            awardId: d.awardId,
+            requestId: d.requestId,
+            deliveryId: d.deliveryId,
+            cancelledBy: d.cancelledBy,
+            reason: d.reason,
+            attempts: d.attempts,
+            lastError: d.lastError,
+            ageSec: d.ageSec,
           }))}
           active={active}
+          reason={reason}
+          onReasonChange={setReason}
           // A preview arriving mid-apply would re-arm the confirm panel under
           // the in-flight command; previews wait until the apply settles.
           onPreviewReconcile={(awardId) => {
@@ -259,9 +455,26 @@ export default function StuckSagaOperationsContainer() {
             }
           }}
           onConfirmRetry={(id) => confirm("retry", id)}
+          onPreviewRetryBusiness={(awardId) => {
+            if (!applying) {
+              previewRetryBusiness.mutate(awardId);
+            }
+          }}
+          onConfirmRetryBusiness={(awardId, r) =>
+            confirm("retryBusiness", awardId, r)
+          }
+          onPreviewRetryDeliveryCancel={(awardId) => {
+            if (!applying) {
+              previewRetryDeliveryCancel.mutate(awardId);
+            }
+          }}
+          onConfirmRetryDeliveryCancel={(awardId, r) =>
+            confirm("retryDeliveryCancel", awardId, r)
+          }
           onCancel={() => {
             setConfirmed(null);
             setActive(null);
+            setReason("");
           }}
         />
       </div>

@@ -107,11 +107,79 @@ export type TripView = {
   items: LinkedItem[];
 };
 
+export type OpsTransferView = {
+  transferId: string;
+  linkedOrderId: string;
+  cityId: string;
+  direction: "arrival_pickup" | "departure_dropoff" | string;
+  legIndex: number;
+  flightNumber?: string | null;
+  airportCode: string;
+  status: string;
+  driverSecured: boolean;
+  statusLabel: string;
+  notice: string;
+  pickupWindow?: {
+    start?: string | null;
+    end?: string | null;
+    timeZone?: string;
+    label?: string;
+  } | null;
+  arriveBy?: {
+    at?: string | null;
+    timeZone?: string;
+    label?: string;
+  } | null;
+  flight?: {
+    departAt?: string | null;
+    arriveAt?: string | null;
+    status?: string;
+  } | null;
+  vehicleClass: string;
+  approvedMaxFareMinor: ServerMoney;
+  ride?: {
+    scheduledRequestId?: string | null;
+    requestId?: string | null;
+    state?: string | null;
+    requestState?: string | null;
+  } | null;
+  retimedCount: number;
+  actionRequired?: {
+    reason?: string | null;
+    message?: string | null;
+    choices?: { key?: string | null; label?: string | null }[];
+    minimumFareMinor?: ServerMoney;
+  } | null;
+  outcome?: {
+    reason?: string | null;
+    message?: string | null;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OpsTransfersPage = {
+  rows: OpsTransferView[];
+  nextCursor: string | null;
+};
+
 export const travelOpsApi = {
   exceptions: () =>
     apiClient.get<TravelOpsException[]>("/v1/ops/travel/exceptions"),
   providersHealth: () =>
     apiClient.get<ProvidersHealth>("/v1/ops/travel/providers/health"),
+  transfers: (
+    state = "action_required,failed",
+    cityId?: string,
+    cursor?: string,
+  ) => {
+    const params = new URLSearchParams({ state });
+    if (cityId) params.set("cityId", cityId);
+    if (cursor) params.set("cursor", cursor);
+    return apiClient.get<OpsTransfersPage>(
+      "/v1/ops/travel/transfers?" + params.toString(),
+    );
+  },
   /** The server takes no idempotency key on these actions (see
    * ACTION_COPY.chase_refund); the key is sent for the audit trail and the
    * board allows one confirmed action in flight at a time. */
@@ -423,20 +491,88 @@ export function toItineraryRows(trip?: TripView): ItineraryRow[] {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Ops-wide airport transfers (GET /v1/ops/travel/transfers?state=action_required,failed)
+// ---------------------------------------------------------------------------
+
+export type OpsTransferRow = {
+  transferId: string;
+  linkedOrderId: string;
+  cityId: string;
+  airportCode: string;
+  directionLabel: string;
+  flightLine: string;
+  windowLabel: string;
+  status: string;
+  statusLabel: string;
+  tone: Tone;
+  approvedMaxFare: string;
+  detail: string;
+  updatedAt: string;
+};
+
+export function toOpsTransferRows(
+  input?: OpsTransfersPage | readonly OpsTransferView[],
+): OpsTransferRow[] {
+  const list: readonly OpsTransferView[] = !input
+    ? []
+    : "rows" in input
+      ? input.rows
+      : input;
+  return list.map((t: OpsTransferView) => {
+    const directionLabel =
+      t.direction === "arrival_pickup"
+        ? "Arrival pickup"
+        : t.direction === "departure_dropoff"
+          ? "Departure drop-off"
+          : t.direction;
+    const flightParts = [
+      t.airportCode,
+      t.flightNumber ? scrubText(t.flightNumber) : null,
+      t.flight?.status ? `(${scrubText(t.flight.status)})` : null,
+    ].filter(Boolean);
+    const windowLabel =
+      t.pickupWindow?.label ??
+      t.arriveBy?.label ??
+      t.pickupWindow?.start ??
+      "—";
+    const actionMsg = t.actionRequired?.message
+      ? scrubText(t.actionRequired.message)
+      : null;
+    const outcomeMsg = t.outcome?.message ? scrubText(t.outcome.message) : null;
+    const detail = actionMsg ?? outcomeMsg ?? scrubText(t.notice ?? "—");
+    const tone: Tone =
+      t.status === "failed"
+        ? "danger"
+        : t.actionRequired
+          ? "warn"
+          : t.driverSecured
+            ? "info"
+            : "neutral";
+    return {
+      transferId: t.transferId,
+      linkedOrderId: t.linkedOrderId,
+      cityId: t.cityId,
+      airportCode: t.airportCode,
+      directionLabel,
+      flightLine: flightParts.join(" · "),
+      windowLabel: scrubText(windowLabel),
+      status: t.status,
+      statusLabel: scrubText(
+        t.statusLabel || (TRANSFER_STATUS[t.status] ?? t.status),
+      ),
+      tone,
+      approvedMaxFare: formatServerMoney(t.approvedMaxFareMinor),
+      detail,
+      updatedAt: t.updatedAt,
+    };
+  });
+}
+
 export type NamedGap = {
   title: string;
   detail: string;
   missingEndpoint: string;
-};
-
-/** Airport transfers have no ops-wide read: /v1/reservations lists only the
- * CALLER's own transfers (travel-service listTransfers filters by user id). */
-export const TRANSFERS_GAP: NamedGap = {
-  title: "Airport transfers needing action — not available yet",
-  detail:
-    "No travel-ops endpoint lists transfers across travellers (action_required, failed with outcome, requested with no driver). GET /v1/reservations answers only the caller's own transfers. A single itinerary's transfers ARE shown below via the trip lookup.",
-  missingEndpoint:
-    "GET /v1/ops/travel/transfers?state=action_required,failed (travel-service)",
 };
 
 /** What the itinerary read does not carry — named, never derived client-side. */

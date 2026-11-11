@@ -37,7 +37,7 @@ type AdminRequestsPage struct {
 // AdminRequests is the monitor: read-only rows for operators. Admin role
 // only; there are no mutation endpoints on this surface.
 func (s *Service) AdminRequests(ctx context.Context, actor Actor, cityID, state, cursor string) (*AdminRequestsPage, error) {
-	if actor.Role != move.RoleAdmin {
+	if !move.IsOperatorReadRole(actor.Role) {
 		return nil, domain.Errorf(domain.CodeForbidden, "only an operator can read the marketplace monitor")
 	}
 
@@ -126,7 +126,7 @@ type AdminTimeline struct {
 
 // AdminRequestTimeline builds the timeline for one request.
 func (s *Service) AdminRequestTimeline(ctx context.Context, actor Actor, requestID uuid.UUID) (*AdminTimeline, error) {
-	if actor.Role != move.RoleAdmin {
+	if !move.IsOperatorReadRole(actor.Role) {
 		return nil, domain.Errorf(domain.CodeForbidden, "only an operator can read the marketplace timeline")
 	}
 	request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), requestID)
@@ -152,20 +152,41 @@ func (s *Service) AdminRequestTimeline(ctx context.Context, actor Actor, request
 // — the shared read behind both the plain per-request timeline (A02) and the
 // unified resolution view (C08): its mp.* rows, the trip_access.* rows of its
 // guest passenger's link, the business_booking.* rows of its organization-
-// budget funding, and the ride.* rows of its execution rides (the awards'
-// execution ids). Every detail is REDACTED server-side (redactTimelineDetail):
-// an operator never reads a sealed envelope, SMS copy, coordinates, a raw
-// token or a phone number, whatever a payload carries.
+// budget funding, the ride.* rows of its execution rides, and any
+// vehicle_occupancy.* rows linked to its advance bookings, booking risk
+// blockers, or off-road use flags. Every detail is REDACTED server-side
+// (redactTimelineDetail): an operator never reads a sealed envelope, SMS
+// copy, coordinates, a raw token or a phone number, whatever a payload carries.
 func (s *Service) outboxTimelineEvents(ctx context.Context, requestID uuid.UUID) ([]*TimelineEvent, error) {
 	rows, err := s.deps.Store.Pool().Query(ctx, `
-		WITH awards AS (SELECT id, execution_id FROM mp.awards WHERE request_id = $1)
+		WITH awards AS (SELECT id, execution_id FROM mp.awards WHERE request_id = $1),
+			bookings AS (SELECT id, block_id FROM mp.advance_bookings WHERE request_id = $1),
+			occupancies AS (
+				SELECT o.id::text AS id
+				FROM mp.vehicle_occupancy o
+				WHERE (o.kind = 'booking' AND o.source_id IN (SELECT id::text FROM bookings))
+					OR o.id IN (SELECT block_id FROM bookings WHERE block_id IS NOT NULL)
+					OR o.id::text IN (
+						SELECT source_ref FROM mp.booking_risk_blockers
+						WHERE booking_id IN (SELECT id FROM bookings)
+					)
+					OR o.id IN (
+						SELECT occupancy_id FROM mp.offroad_use_flags
+						WHERE subject_ref IN (SELECT 'ride:' || execution_id::text FROM awards WHERE execution_id IS NOT NULL)
+							OR subject_ref IN (SELECT 'booking:' || id::text FROM bookings)
+					)
+			)
 		SELECT name, occurred_at, payload
 		FROM public.outbox_events
 		WHERE ((name LIKE 'mp.%' OR name LIKE 'trip_access.%' OR name LIKE 'business_booking.%')
 				AND (aggregate_id = $2 OR payload->>'requestId' = $2
-					OR aggregate_id IN (SELECT id::text FROM awards)))
+					OR aggregate_id IN (SELECT id::text FROM awards)
+					OR aggregate_id IN (SELECT id::text FROM bookings)
+					OR aggregate_id IN (SELECT id::text FROM mp.booking_vehicle_swaps WHERE booking_id IN (SELECT id FROM bookings))))
 			OR (name LIKE 'ride.%'
 				AND aggregate_id IN (SELECT execution_id::text FROM awards WHERE execution_id IS NOT NULL))
+			OR (name LIKE 'vehicle_occupancy.%'
+				AND aggregate_id IN (SELECT id FROM occupancies))
 		ORDER BY occurred_at ASC, id ASC`, requestID, requestID.String())
 	if err != nil {
 		return nil, asDomainError(err)

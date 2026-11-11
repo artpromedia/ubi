@@ -32,7 +32,14 @@ const (
 )
 
 func requireAdmin(actor Actor, verb string) error {
-	if actor.Role != move.RoleAdmin {
+	if !move.IsOperatorWriteRole(actor.Role) {
+		return domain.Errorf(domain.CodeForbidden, "only an operator can %s", verb)
+	}
+	return nil
+}
+
+func requireAdminRead(actor Actor, verb string) error {
+	if !move.IsOperatorReadRole(actor.Role) {
 		return domain.Errorf(domain.CodeForbidden, "only an operator can %s", verb)
 	}
 	return nil
@@ -82,7 +89,7 @@ type PendingSagasPage struct {
 // never reopened; the paired command is AdminReconcileAward, which only ever
 // re-polls the SAME saga step the sweep itself would resume.
 func (s *Service) AdminPendingSagas(ctx context.Context, actor Actor, cityID, cursor string) (*PendingSagasPage, error) {
-	if err := requireAdmin(actor, "read the stuck-saga board"); err != nil {
+	if err := requireAdminRead(actor, "read the stuck-saga board"); err != nil {
 		return nil, err
 	}
 	rows, err := s.deps.Store.PendingAwards(ctx, s.deps.Store.Pool(), cityID, cursor, feedPageSize)
@@ -259,7 +266,7 @@ func toRecoveryView(row *RecoveryRow, now time.Time) *RecoveryView {
 
 // AdminRecoveries lists unresolved reservation-recovery rows, oldest first.
 func (s *Service) AdminRecoveries(ctx context.Context, actor Actor, action, cursor string) (*RecoveriesPage, error) {
-	if err := requireAdmin(actor, "read the reservation-recovery board"); err != nil {
+	if err := requireAdminRead(actor, "read the reservation-recovery board"); err != nil {
 		return nil, err
 	}
 	rows, err := s.deps.Store.ListRecoveries(ctx, s.deps.Store.Pool(), action, cursor, feedPageSize)
@@ -430,7 +437,7 @@ func parseOptionalUUID(raw string) (*uuid.UUID, error) {
 // AdminCancellations lists marketplace-managed cancellations/no-shows,
 // newest first.
 func (s *Service) AdminCancellations(ctx context.Context, actor Actor, cityID, driverID, cursor string) (*CancellationsPage, error) {
-	if err := requireAdmin(actor, "read the cancellations board"); err != nil {
+	if err := requireAdminRead(actor, "read the cancellations board"); err != nil {
 		return nil, err
 	}
 	driver, err := parseOptionalUUID(driverID)
@@ -497,7 +504,7 @@ type DriverStandingView struct {
 // completion/cancellation/no-show aggregate over a trailing window, whether
 // they are currently blocked, and their standing-action history.
 func (s *Service) AdminDriverStanding(ctx context.Context, actor Actor, driverID uuid.UUID, windowDays int) (*DriverStandingView, error) {
-	if err := requireAdmin(actor, "read a driver's standing"); err != nil {
+	if err := requireAdminRead(actor, "read a driver's standing"); err != nil {
 		return nil, err
 	}
 	if windowDays <= 0 {
@@ -559,7 +566,7 @@ type DriverStandingListPage struct {
 // It computes the rate live from ride.rides on every call — nothing is
 // pre-flagged or cached, so the list can never go stale.
 func (s *Service) AdminDriverStandingList(ctx context.Context, actor Actor, cityID string, windowDays, minRides, limit, offset int) (*DriverStandingListPage, error) {
-	if err := requireAdmin(actor, "read the driver standing board"); err != nil {
+	if err := requireAdminRead(actor, "read the driver standing board"); err != nil {
 		return nil, err
 	}
 	if windowDays <= 0 {
@@ -970,7 +977,7 @@ func (s *Service) AdminDecideAppeal(ctx context.Context, actor Actor, id uuid.UU
 // AdminStandingActions lists the standing-action review queue by status
 // (e.g. pending_approval, appealed), newest first.
 func (s *Service) AdminStandingActions(ctx context.Context, actor Actor, status, cursor string) (*StandingActionsPage, error) {
-	if err := requireAdmin(actor, "read the standing-action review queue"); err != nil {
+	if err := requireAdminRead(actor, "read the standing-action review queue"); err != nil {
 		return nil, err
 	}
 	rows, err := s.deps.Store.ListStandingActions(ctx, s.deps.Store.Pool(), nil, status, cursor, feedPageSize)

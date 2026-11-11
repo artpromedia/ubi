@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -23,7 +24,8 @@ import (
 // retries, currency on recovery rows and a funding marker on pending sagas.
 
 // TestRound9AdminSurfacesRefuseNonAdmin: every new admin surface, and the
-// timeline it widened, refuses a rider and a driver.
+// timeline it widened, refuses a rider and a driver; read-only specialist
+// operator roles may read GETs but are refused on POST commands.
 func TestRound9AdminSurfacesRefuseNonAdmin(t *testing.T) {
 	h := newHarness(t)
 	someID := uuid.New().String()
@@ -36,16 +38,31 @@ func TestRound9AdminSurfacesRefuseNonAdmin(t *testing.T) {
 			{http.MethodPost, "/admin/mp/business-bookings/" + someID + "/retry", map[string]any{"dryRun": true}},
 			{http.MethodGet, "/admin/mp/delivery-cancellations?state=pending", nil},
 			{http.MethodPost, "/admin/mp/delivery-cancellations/" + someID + "/retry", map[string]any{"dryRun": true}},
+			{http.MethodGet, "/admin/mp/offroad-flags", nil},
+			{http.MethodPost, "/admin/mp/offroad-flags/" + someID + "/decide", map[string]any{"decision": "dismiss", "reason": "checked"}},
 			{http.MethodGet, "/admin/mp/requests/" + someID + "/timeline", nil},
 		} {
 			requireCode(t, h.Do(c.method, c.path, actor, c.body, move.IdempotencyHeader, idemKey()),
 				http.StatusForbidden, domain.CodeForbidden)
 		}
 	}
+	readOnlyOp := testutil.Actor{UserID: uuid.New(), Role: "support_agent", CityID: h.CityID}
+	requireStatus(t, h.Do(http.MethodGet, "/admin/mp/offroad-flags", readOnlyOp, nil), http.StatusOK)
+	requireCode(t, h.Do(http.MethodPost, "/admin/mp/offroad-flags/"+someID+"/decide", readOnlyOp,
+		map[string]any{"decision": "dismiss", "reason": "checked"}, move.IdempotencyHeader, idemKey()),
+		http.StatusForbidden, domain.CodeForbidden)
+	requireCode(t, h.Do(http.MethodPost, "/admin/mp/business-bookings/"+someID+"/retry", readOnlyOp,
+		map[string]any{"dryRun": true}),
+		http.StatusForbidden, domain.CodeForbidden)
+
 	admin := adminActor(h)
 	requireCode(t, h.Do(http.MethodGet, "/admin/mp/business-bookings?owed=maybe", admin, nil),
 		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
 	requireCode(t, h.Do(http.MethodGet, "/admin/mp/delivery-cancellations?state=lost", admin, nil),
+		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
+	requireCode(t, h.Do(http.MethodGet, "/admin/mp/offroad-flags?trigger=parked", admin, nil),
+		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
+	requireCode(t, h.Do(http.MethodGet, "/admin/mp/offroad-flags?since=yesterday", admin, nil),
 		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
 	requireCode(t, h.Do(http.MethodPost, "/admin/mp/business-bookings/"+someID+"/retry", admin, map[string]any{"dryRun": true}),
 		http.StatusNotFound, domain.CodeNotFound)
@@ -172,12 +189,16 @@ func TestAdminBusinessBookingsOwedWithRetry(t *testing.T) {
 		double.callCount(businessReleasePath) != sends {
 		t.Fatalf("a dry run previews and sends nothing: %+v", previewed)
 	}
-	requireCode(t, h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts}),
+	// Missing Idempotency-Key or missing/blank reason is refused before mutating anything.
+	requireCode(t, h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts, "reason": "payment-service back"}),
 		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
-	requireCode(t, h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts + 7}, move.IdempotencyHeader, idemKey()),
+	requireCode(t, h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts, "reason": "   "}, move.IdempotencyHeader, idemKey()),
+		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
+	requireCode(t, h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts + 7, "reason": "payment-service back"}, move.IdempotencyHeader, idemKey()),
 		http.StatusConflict, domain.CodeVersionConflict)
 	key := idemKey()
-	applied := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts}, move.IdempotencyHeader, key)
+	retryReason := "payment-service budget release recovered after outage"
+	applied := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts, "reason": retryReason}, move.IdempotencyHeader, key)
 	requireStatus(t, applied, http.StatusOK)
 	var result marketplace.BusinessRetryResult
 	h.DecodeBody(applied, &result)
@@ -190,12 +211,18 @@ func TestAdminBusinessBookingsOwedWithRetry(t *testing.T) {
 	if auditCount(t, h, "mp.admin.business_op_retry", f.award.ID.String()) != 1 {
 		t.Fatal("the retry is audited once")
 	}
-	replay := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts}, move.IdempotencyHeader, key)
+	var auditedReason string
+	if err := h.Pool.QueryRow(context.Background(),
+		`SELECT COALESCE(reason, '') FROM public.audit_log WHERE action = 'mp.admin.business_op_retry' AND subject_id = $1`,
+		f.award.ID.String()).Scan(&auditedReason); err != nil || auditedReason != retryReason {
+		t.Fatalf("audit_log records the operator's reason %q, got %q (err=%v)", retryReason, auditedReason, err)
+	}
+	replay := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts, "reason": retryReason}, move.IdempotencyHeader, key)
 	requireStatus(t, replay, http.StatusOK)
 	if replay.Body.String() != applied.Body.String() || auditCount(t, h, "mp.admin.business_op_retry", f.award.ID.String()) != 1 {
 		t.Fatal("a replayed retry answers the recorded result and moves nothing")
 	}
-	again := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts}, move.IdempotencyHeader, idemKey())
+	again := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts, "reason": retryReason}, move.IdempotencyHeader, idemKey())
 	requireStatus(t, again, http.StatusOK)
 	var nothing marketplace.BusinessRetryResult
 	h.DecodeBody(again, &nothing)
@@ -210,7 +237,7 @@ func TestAdminBusinessBookingsOwedWithRetry(t *testing.T) {
 // TestAdminDeliveryCancellationsPendingWithRetry: a queued delivery's
 // cancellation owed while delivery-service does not serve the route is on
 // the pending board; a dry run previews; once the route exists the retry
-// drives the SAME runner and resolves it (cancelled), audited.
+// drives the SAME runner and resolves it (cancelled), audited with reason.
 func TestAdminDeliveryCancellationsPendingWithRetry(t *testing.T) {
 	double := newDeliveryDouble(t, deliveryTestKey)
 	h := newHarness(t,
@@ -242,7 +269,10 @@ func TestAdminDeliveryCancellationsPendingWithRetry(t *testing.T) {
 	}
 
 	double.deployCancel()
-	applied := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts}, move.IdempotencyHeader, idemKey())
+	requireCode(t, h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts}, move.IdempotencyHeader, idemKey()),
+		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
+	cancelRetryReason := "delivery-service cancel route deployed"
+	applied := h.Do(http.MethodPost, path, admin, map[string]any{"expectedAttempts": row.Attempts, "reason": cancelRetryReason}, move.IdempotencyHeader, idemKey())
 	requireStatus(t, applied, http.StatusOK)
 	var result marketplace.DeliveryCancelRetryResult
 	h.DecodeBody(applied, &result)
@@ -254,6 +284,12 @@ func TestAdminDeliveryCancellationsPendingWithRetry(t *testing.T) {
 	}
 	if auditCount(t, h, "mp.admin.delivery_cancel_retry", award.ID.String()) != 1 {
 		t.Fatal("the retry is audited")
+	}
+	var auditedCancelReason string
+	if err := h.Pool.QueryRow(context.Background(),
+		`SELECT COALESCE(reason, '') FROM public.audit_log WHERE action = 'mp.admin.delivery_cancel_retry' AND subject_id = $1`,
+		award.ID.String()).Scan(&auditedCancelReason); err != nil || auditedCancelReason != cancelRetryReason {
+		t.Fatalf("audit_log records the operator's delivery retry reason %q, got %q (err=%v)", cancelRetryReason, auditedCancelReason, err)
 	}
 	pending := h.Do(http.MethodGet, "/admin/mp/delivery-cancellations?state=pending&cityId="+h.CityID, admin, nil)
 	if strings.Contains(pending.Body.String(), award.ID.String()) {
@@ -325,6 +361,120 @@ func TestAdminRecoveryCarriesCurrencyAndSagasTheirFunding(t *testing.T) {
 	if len(businessPage.Rows) != 1 || businessPage.Rows[0].AwardID != parked.award.ID.String() ||
 		businessPage.Rows[0].FundingSource != marketplace.FundingSourceBusiness || businessPage.Rows[0].Step != marketplace.AttemptStepFunding {
 		t.Fatalf("the stuck business saga carries the business funding marker: %+v", businessPage.Rows)
+	}
+}
+
+// TestAdminOffroadFlagsReadDecideAndTimeline (CC-A04 / P2-02 backend):
+//   - GET /v1/admin/mp/offroad-flags lists flags with city/vehicle/trigger/since filters;
+//   - POST /v1/admin/mp/offroad-flags/{flagId}/decide records dismiss, warn_fleet,
+//     or escalate_to_standing with required reason, Idempotency-Key replay,
+//     audit row, and maker-checker standing escalation;
+//   - GET /v1/admin/mp/requests/{requestId}/timeline includes vehicle_occupancy.*
+//     rows when linked to the request.
+func TestAdminOffroadFlagsReadDecideAndTimeline(t *testing.T) {
+	double := newFleetDouble(t)
+	h := fleetHarness(t, double)
+	vehicleA := fleetVehicle(h, double, "a")
+	vehicleB := fleetVehicle(h, double, "b")
+
+	// 1. Live trip on vehicleA reported off-road after award → trip_started flag + request timeline link.
+	rider := h.Rider()
+	trip := awardedTripFor(t, h, rider, nil)
+	double.assign(trip.driver.UserID, vehicleA, h.Clock.Now().Add(-24*time.Hour), nil)
+	t0 := h.Clock.Now()
+	reportOffRoad(t, h, "off-trip-a", vehicleA)
+	h.Clock.Set(t0.Add(30 * time.Second))
+	trip.start(t)
+
+	// 2. Driver on vehicleB reported off-road trying to go online → driver_online flag.
+	driverB := h.Driver()
+	double.assign(driverB.UserID, vehicleB, h.Clock.Now().Add(-24*time.Hour), nil)
+	h.Clock.Set(t0.Add(5 * time.Minute))
+	reportOffRoad(t, h, "off-online-b", vehicleB)
+	requireCode(t, h.Do(http.MethodPost, "/drivers/me/status", driverB, map[string]any{
+		"online":  true,
+		"filters": map[string]any{"vehicleClasses": []string{"go"}},
+	}), http.StatusConflict, domain.CodeFleetVehicleUnavailable)
+
+	opsActor := testutil.Actor{UserID: uuid.New(), Role: "ops_admin", CityID: h.CityID}
+
+	// Read all flags in city (newest first: driver_online on vehicleB, then trip_started on vehicleA).
+	allRec := h.Do(http.MethodGet, "/admin/mp/offroad-flags?city="+h.CityID, opsActor, nil)
+	requireStatus(t, allRec, http.StatusOK)
+	var allPage marketplace.OffroadUseFlagsPage
+	h.DecodeBody(allRec, &allPage)
+	if len(allPage.Rows) != 2 || allPage.Rows[0].VehicleID != vehicleB || allPage.Rows[0].Trigger != "driver_online" ||
+		allPage.Rows[1].VehicleID != vehicleA || allPage.Rows[1].Trigger != "trip_started" {
+		t.Fatalf("expected 2 flags newest-first (vehicleB driver_online, vehicleA trip_started), got: %+v", allPage.Rows)
+	}
+
+	// Filter by vehicle + trigger + since.
+	since := t0.Add(4 * time.Minute).UTC().Format(time.RFC3339)
+	filteredRec := h.Do(http.MethodGet, "/admin/mp/offroad-flags?vehicle="+vehicleB+"&trigger=driver_online&since="+since, opsActor, nil)
+	requireStatus(t, filteredRec, http.StatusOK)
+	var filtered marketplace.OffroadUseFlagsPage
+	h.DecodeBody(filteredRec, &filtered)
+	if len(filtered.Rows) != 1 || filtered.Rows[0].FlagID != allPage.Rows[0].FlagID || filtered.Rows[0].BlockID != "off-online-b" {
+		t.Fatalf("filtered read returned unexpected rows: %+v", filtered.Rows)
+	}
+
+	// Decide flag 0 as warn_fleet (missing reason → 422, valid → 200, replay → 200, second decision → 409).
+	flagOnlineID := allPage.Rows[0].FlagID
+	requireCode(t, h.Do(http.MethodPost, "/admin/mp/offroad-flags/"+flagOnlineID+"/decide", opsActor,
+		map[string]any{"decision": "warn_fleet", "reason": "  "}, move.IdempotencyHeader, idemKey()),
+		http.StatusUnprocessableEntity, domain.CodeValidationFailed)
+
+	warnKey := idemKey()
+	warnReason := "confirmed breakdown timing mismatch with fleet manager"
+	warnRec := h.Do(http.MethodPost, "/admin/mp/offroad-flags/"+flagOnlineID+"/decide", opsActor,
+		map[string]any{"decision": "warn_fleet", "reason": warnReason}, move.IdempotencyHeader, warnKey)
+	requireStatus(t, warnRec, http.StatusOK)
+	var warnResult marketplace.DecideOffroadFlagResult
+	h.DecodeBody(warnRec, &warnResult)
+	if warnResult.Row.Decision != "warn_fleet" || warnResult.Row.DecisionReason != warnReason || warnResult.StandingAction != nil {
+		t.Fatalf("warn_fleet decision did not record cleanly: %+v", warnResult)
+	}
+	replayWarn := h.Do(http.MethodPost, "/admin/mp/offroad-flags/"+flagOnlineID+"/decide", opsActor,
+		map[string]any{"decision": "warn_fleet", "reason": warnReason}, move.IdempotencyHeader, warnKey)
+	requireStatus(t, replayWarn, http.StatusOK)
+	if replayWarn.Body.String() != warnRec.Body.String() {
+		t.Fatal("replaying decide with the same Idempotency-Key must return the stored decision")
+	}
+	requireCode(t, h.Do(http.MethodPost, "/admin/mp/offroad-flags/"+flagOnlineID+"/decide", opsActor,
+		map[string]any{"decision": "dismiss", "reason": "changed mind"}, move.IdempotencyHeader, idemKey()),
+		http.StatusConflict, domain.CodeVersionConflict)
+
+	// Escalate flag 1 (trip_started on vehicleA) to driver standing → creates pending_approval suspension + links standingActionId.
+	flagTripID := allPage.Rows[1].FlagID
+	escReason := "vehicle started passenger trip while declared off-road"
+	escRec := h.Do(http.MethodPost, "/admin/mp/offroad-flags/"+flagTripID+"/decide", opsActor,
+		map[string]any{"decision": "escalate_to_standing", "reason": escReason}, move.IdempotencyHeader, idemKey())
+	requireStatus(t, escRec, http.StatusOK)
+	var escResult marketplace.DecideOffroadFlagResult
+	h.DecodeBody(escRec, &escResult)
+	if escResult.Row.Decision != "escalate_to_standing" || escResult.StandingAction == nil ||
+		escResult.StandingAction.Status != marketplace.StandingStatusPendingApproval ||
+		escResult.StandingAction.ActionType != marketplace.StandingActionSuspension ||
+		escResult.Row.StandingActionID == nil || *escResult.Row.StandingActionID != escResult.StandingAction.ID {
+		t.Fatalf("escalate_to_standing must create a pending_approval standing action linked to the flag: %+v", escResult)
+	}
+	if auditCount(t, h, "mp.admin.offroad_flag_decided", flagTripID) != 1 {
+		t.Fatal("off-road flag decision must write one audit row")
+	}
+
+	// Request timeline for the trip's request now includes vehicle_occupancy.recorded and vehicle_occupancy.offroad_use_flagged!
+	tlRec := h.Do(http.MethodGet, "/admin/mp/requests/"+trip.requestID+"/timeline", opsActor, nil)
+	requireStatus(t, tlRec, http.StatusOK)
+	var tl marketplace.AdminTimeline
+	h.DecodeBody(tlRec, &tl)
+	seen := map[string]bool{}
+	for _, ev := range tl.Events {
+		seen[ev.Type] = true
+	}
+	for _, want := range []string{"vehicle_occupancy.recorded", "vehicle_occupancy.offroad_use_flagged"} {
+		if !seen[want] {
+			t.Fatalf("request timeline must include %s when linked to the request's trip; got: %v", want, seen)
+		}
 	}
 }
 

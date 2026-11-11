@@ -89,7 +89,7 @@ type ResolutionView struct {
 // outcome), the stage is marked StageUnavailable and the exact missing
 // source is named in Gaps — never fabricated.
 func (s *Service) AdminResolution(ctx context.Context, actor Actor, requestID uuid.UUID) (*ResolutionView, error) {
-	if actor.Role != move.RoleAdmin {
+	if !move.IsOperatorReadRole(actor.Role) {
 		return nil, domain.Errorf(domain.CodeForbidden, "only an operator can read a resolution case")
 	}
 	request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), requestID)

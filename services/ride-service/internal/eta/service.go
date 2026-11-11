@@ -33,7 +33,7 @@ type ETARequest struct {
 
 type ETAResponse struct {
 	Duration     time.Duration `json:"duration"`
-	Distance     float64       `json:"distance"` // meters
+	Distance     float64       `json:"distance"`      // meters
 	TrafficLevel string        `json:"traffic_level"` // "low", "moderate", "heavy"
 	Route        []LatLng      `json:"route"`
 	Confidence   float64       `json:"confidence"` // 0-1
@@ -219,7 +219,7 @@ func (t *TrafficService) GetMultiplier(lat, lng float64, departureTime time.Time
 
 	// Rush hour adjustments
 	isWeekday := dayOfWeek >= time.Monday && dayOfWeek <= time.Friday
-	
+
 	if isWeekday {
 		// Morning rush (7-9 AM)
 		if hour >= 7 && hour <= 9 {
@@ -253,10 +253,10 @@ type MockRoutingClient struct{}
 func (m *MockRoutingClient) GetRoute(ctx context.Context, req *ETARequest) (*RouteResponse, error) {
 	// Simplified: use Haversine distance and assume 30 km/h average speed in city
 	distance := haversineDistance(req.OriginLat, req.OriginLng, req.DestLat, req.DestLng)
-	
+
 	// Distance in meters
 	distanceMeters := distance * 1000
-	
+
 	// Duration assuming 30 km/h average speed
 	durationSeconds := (distance / 30.0) * 3600
 	duration := time.Duration(durationSeconds) * time.Second

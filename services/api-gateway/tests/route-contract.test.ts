@@ -963,6 +963,48 @@ const REACHABLE: readonly ReachableCase[] = [
     downstream: "/v1/admin/mp/standing-actions/act_1/decide",
     source: "apps/admin-dashboard standing actions",
   },
+  {
+    rule: "/admin/mp/*",
+    method: "GET",
+    path: "/v1/admin/mp/business-bookings?owed=true",
+    downstream: "/v1/admin/mp/business-bookings",
+    source: "apps/admin-dashboard marketplace operations (CC-A04 / P2-01)",
+  },
+  {
+    rule: "/admin/mp/*",
+    method: "POST",
+    path: "/v1/admin/mp/business-bookings/awd_1/retry",
+    downstream: "/v1/admin/mp/business-bookings/awd_1/retry",
+    source: "apps/admin-dashboard marketplace operations (CC-A04 / P2-01)",
+  },
+  {
+    rule: "/admin/mp/*",
+    method: "GET",
+    path: "/v1/admin/mp/delivery-cancellations?state=pending",
+    downstream: "/v1/admin/mp/delivery-cancellations",
+    source: "apps/admin-dashboard marketplace operations (CC-A04 / P2-01)",
+  },
+  {
+    rule: "/admin/mp/*",
+    method: "POST",
+    path: "/v1/admin/mp/delivery-cancellations/awd_1/retry",
+    downstream: "/v1/admin/mp/delivery-cancellations/awd_1/retry",
+    source: "apps/admin-dashboard marketplace operations (CC-A04 / P2-01)",
+  },
+  {
+    rule: "/admin/mp/*",
+    method: "GET",
+    path: "/v1/admin/mp/offroad-flags?city=city_lagos&trigger=driver_online",
+    downstream: "/v1/admin/mp/offroad-flags",
+    source: "apps/admin-dashboard off-road abuse flags (CC-A04 / P2-02)",
+  },
+  {
+    rule: "/admin/mp/*",
+    method: "POST",
+    path: "/v1/admin/mp/offroad-flags/flg_1/decide",
+    downstream: "/v1/admin/mp/offroad-flags/flg_1/decide",
+    source: "apps/admin-dashboard off-road abuse flags (CC-A04 / P2-02)",
+  },
 
   // --- ask-service: mounts /v1/ask itself ---
   {
@@ -1354,6 +1396,13 @@ const REACHABLE: readonly ReachableCase[] = [
     path: "/v1/ops/travel/orders/ord_1/settlement",
     downstream: "/v1/ops/travel/orders/ord_1/settlement",
     source: "travel-service src/routes/ops.ts (settlement recon)",
+  },
+  {
+    rule: "/ops/travel/*",
+    method: "GET",
+    path: "/v1/ops/travel/transfers?state=action_required,failed",
+    downstream: "/v1/ops/travel/transfers",
+    source: `${ADMIN_OPS} travelOpsApi.transfers (CC-A04 / P2-12)`,
   },
 ];
 

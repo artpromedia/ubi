@@ -1192,5 +1192,48 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     expect(
       (await call("full", "POST", "/v1/wallet/topups", "merchant")).code,
     ).toBe("forbidden");
+
+    // mp:admin:write routes (CC-A04 / P2-01, P2-02): ops, ops_admin, admin, super_admin in full mode;
+    // refused at the gateway before reaching any service for rider, driver, support_agent (mp:admin:read only),
+    // finance_ops, config_admin, and limited-mode operators.
+    for (const path of [
+      "/v1/admin/mp/business-bookings/awd_1/retry",
+      "/v1/admin/mp/delivery-cancellations/awd_1/retry",
+      "/v1/admin/mp/offroad-flags/flg_1/decide",
+    ]) {
+      for (const role of ["ops", "ops_admin", "admin", "super_admin"]) {
+        expect((await call("full", "POST", path, role)).status).toBe(200);
+        upstream.received.length = 0;
+        const lim = await call("limited", "POST", path, role);
+        expect(lim.code).toBe("limited_mode");
+        expect(upstream.received).toHaveLength(0);
+      }
+      for (const role of [
+        "rider",
+        "driver",
+        "support_agent",
+        "support_lead",
+        "reviewer",
+        "finance_ops",
+        "config_admin",
+        "travel_ops",
+      ]) {
+        upstream.received.length = 0;
+        const denied = await call("full", "POST", path, role);
+        expect(denied.code).toBe("forbidden");
+        expect(upstream.received).toHaveLength(0);
+      }
+    }
+    // Specialist read roles still reach GET /v1/admin/mp/* in full mode:
+    for (const role of [
+      "support_agent",
+      "reviewer",
+      "finance_ops",
+      "config_admin",
+    ]) {
+      expect(
+        (await call("full", "GET", "/v1/admin/mp/offroad-flags", role)).status,
+      ).toBe(200);
+    }
   });
 });

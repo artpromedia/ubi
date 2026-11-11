@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	H3Resolution = 7  // Resolution 7 for surge zones (~5.16 km² hexagons)
+	H3Resolution  = 7 // Resolution 7 for surge zones (~5.16 km² hexagons)
 	SurgeCacheTTL = 30 * time.Second
 )
 
@@ -24,8 +24,8 @@ type SurgeService struct {
 type SurgeZone struct {
 	H3Index    string    `json:"h3_index"`
 	Multiplier float64   `json:"multiplier"`
-	Demand     int       `json:"demand"`      // Active ride requests
-	Supply     int       `json:"supply"`      // Available drivers
+	Demand     int       `json:"demand"` // Active ride requests
+	Supply     int       `json:"supply"` // Available drivers
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
@@ -191,7 +191,7 @@ func (s *SurgeService) TrackRequest(ctx context.Context, requestID string, lat, 
 	if err != nil {
 		return fmt.Errorf("locating surge cell for %f,%f: %w", lat, lng, err)
 	}
-	
+
 	// Add to zone's active requests
 	err = s.redis.SAdd(ctx, fmt.Sprintf("zone:%s:requests", h3Index.String()), requestID).Err()
 	if err != nil {

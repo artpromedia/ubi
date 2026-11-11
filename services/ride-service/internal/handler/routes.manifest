@@ -14,6 +14,7 @@ GET /v1/admin/mp/cancellations
 GET /v1/admin/mp/delivery-cancellations
 GET /v1/admin/mp/drivers/standing
 GET /v1/admin/mp/drivers/{driverId}/standing
+GET /v1/admin/mp/offroad-flags
 GET /v1/admin/mp/pending-sagas
 GET /v1/admin/mp/recoveries
 GET /v1/admin/mp/requests
@@ -64,6 +65,7 @@ POST /v1/admin/mp/awards/{awardId}/reconcile
 POST /v1/admin/mp/business-bookings/{awardId}/retry
 POST /v1/admin/mp/delivery-cancellations/{awardId}/retry
 POST /v1/admin/mp/drivers/{driverId}/standing-actions
+POST /v1/admin/mp/offroad-flags/{flagId}/decide
 POST /v1/admin/mp/recoveries/{recoveryId}/retry
 POST /v1/admin/mp/repairs/stranded-rides
 POST /v1/admin/mp/standing-actions/{actionId}/appeal
