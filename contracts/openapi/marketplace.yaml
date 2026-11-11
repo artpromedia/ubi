@@ -566,12 +566,14 @@ components:
                     pickupContact:
                       {
                         type: object,
+                        nullable: true,
                         properties:
                           { name: { type: string }, phone: { type: string } },
                       },
                     dropoffContact:
                       {
                         type: object,
+                        nullable: true,
                         properties:
                           { name: { type: string }, phone: { type: string } },
                       },
@@ -596,6 +598,7 @@ components:
                           },
                       },
                     agreedFareMinor: { type: integer },
+                    requestId: { type: string },
                     currency: { type: string },
                   },
               },
@@ -616,6 +619,9 @@ components:
                 properties:
                   {
                     returnId: { type: string },
+                    reason: { type: string },
+                    proposedByRole:
+                      { type: string, enum: [sender, driver, ""] },
                     chargeStatus:
                       {
                         type: string,

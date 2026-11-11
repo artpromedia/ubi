@@ -191,3 +191,86 @@ func TestSenderColumnRefusesARawUserID(t *testing.T) {
 		t.Fatalf("inserting a user id as sender_id must violate deliveries_sender_id_fkey, got %v", err)
 	}
 }
+
+func TestCustodyTimelineDeliveryDetailAndContactGating(t *testing.T) {
+	h := testutil.NewHarness(t)
+	ctx := context.Background()
+	sender := testutil.Sender()
+	driver := testutil.Driver()
+	stranger := testutil.Sender()
+	h.SeedUser(ctx, sender.UserID.String())
+	h.SeedRiderProfile(ctx, sender.UserID.String())
+	awardID := "awd_" + uuid.New().String()[:12]
+	cleanupAward(t, h, awardID)
+
+	body := assignBody(awardID, sender.UserID.String(), driver.UserID.String())
+	body["pickupContact"] = map[string]interface{}{"name": "Adaeze", "phone": "+2348011112222"}
+	body["dropoffContact"] = map[string]interface{}{"name": "Chinedu", "phone": "+2348033334444"}
+	rec := postAssign(h, body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("marketplace-assign: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var created assignSummary
+	decode(t, rec, &created)
+	deliveryID := created.Data.ID
+
+	// Foreign caller receives 404.
+	if r := h.Do(req(http.MethodGet, custodyPath(deliveryID, "/"), nil), stranger); r.Code != http.StatusNotFound {
+		t.Fatalf("stranger timeline status = %d, want 404", r.Code)
+	}
+
+	// At courier_assigned: driver sees pickupContact (masked) and NOT dropoffContact.
+	rDriverAssigned := h.Do(req(http.MethodGet, custodyPath(deliveryID, "/"), nil), driver)
+	if rDriverAssigned.Code != http.StatusOK {
+		t.Fatalf("driver timeline at courier_assigned: %d %s", rDriverAssigned.Code, rDriverAssigned.Body.String())
+	}
+	var tlAssigned struct {
+		Data struct {
+			Delivery map[string]interface{} `json:"delivery"`
+		} `json:"data"`
+	}
+	decode(t, rDriverAssigned, &tlAssigned)
+	if tlAssigned.Data.Delivery["pickupContact"] == nil {
+		t.Fatal("driver at courier_assigned must see pickupContact")
+	}
+	if tlAssigned.Data.Delivery["dropoffContact"] != nil {
+		t.Fatalf("driver at courier_assigned must NOT see dropoffContact, got %v", tlAssigned.Data.Delivery["dropoffContact"])
+	}
+
+	// Move to in_transit and verify driver now sees dropoffContact (masked) and NOT pickupContact.
+	if _, err := h.Pool.Exec(ctx, `UPDATE delivery_custody SET state = 'in_transit', version = version + 1 WHERE delivery_id = $1`, deliveryID); err != nil {
+		t.Fatalf("update state to in_transit: %v", err)
+	}
+	rDriverTransit := h.Do(req(http.MethodGet, custodyPath(deliveryID, "/"), nil), driver)
+	decode(t, rDriverTransit, &tlAssigned)
+	if tlAssigned.Data.Delivery["pickupContact"] != nil {
+		t.Fatalf("driver at in_transit must NOT see pickupContact, got %v", tlAssigned.Data.Delivery["pickupContact"])
+	}
+	dc, ok := tlAssigned.Data.Delivery["dropoffContact"].(map[string]interface{})
+	if !ok || dc == nil || dc["phone"] != "+234••••4444" {
+		t.Fatalf("driver at in_transit dropoffContact = %v", tlAssigned.Data.Delivery["dropoffContact"])
+	}
+
+	// Report recipient unreachable + propose return, then verify openReturn includes reason & proposedByRole.
+	if r := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/recipient-unreachable"), map[string]interface{}{"reason": "no_answer"}), driver); r.Code != http.StatusOK {
+		t.Fatalf("recipient-unreachable: %d %s", r.Code, r.Body.String())
+	}
+	if r := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/return/propose"), map[string]interface{}{"reason": "Gate locked", "feeMinor": 0}), driver); r.Code != http.StatusCreated {
+		t.Fatalf("return/propose: %d %s", r.Code, r.Body.String())
+	}
+
+	rSender := h.Do(req(http.MethodGet, custodyPath(deliveryID, "/"), nil), sender)
+	var tlSender struct {
+		Data struct {
+			Delivery   map[string]interface{} `json:"delivery"`
+			OpenReturn map[string]interface{} `json:"openReturn"`
+		} `json:"data"`
+	}
+	decode(t, rSender, &tlSender)
+	if tlSender.Data.OpenReturn["reason"] != "Gate locked" || tlSender.Data.OpenReturn["proposedByRole"] != "driver" {
+		t.Fatalf("openReturn = %+v", tlSender.Data.OpenReturn)
+	}
+	if tlSender.Data.Delivery["agreedFareMinor"] != float64(125000) || tlSender.Data.Delivery["requestId"] != "mpr_"+awardID {
+		t.Fatalf("sender delivery = %+v", tlSender.Data.Delivery)
+	}
+}

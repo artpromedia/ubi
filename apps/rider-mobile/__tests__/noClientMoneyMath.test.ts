@@ -56,6 +56,8 @@ const FILES = [
   MP + "FavouriteDrivers.tsx",
   MP + "ReceiptScreen.tsx",
   MP + "confidenceCopy.ts",
+  MP + "DeliveryReturnContainer.tsx",
+  MP + "DeliveryReturnSheet.tsx",
   // Airport transfers (round-5/6 contract).
   TRAVEL + "AttachAirportRideScreen.tsx",
   TRAVEL + "TransferStatusScreen.tsx",
@@ -75,6 +77,7 @@ const PRESENTATIONAL = [
   MP + "OfferInboxScreen.tsx",
   MP + "BidDetailScreen.tsx",
   MP + "ReceiptScreen.tsx",
+  MP + "DeliveryReturnSheet.tsx",
   TRAVEL + "TransferStatusScreen.tsx",
 ];
 

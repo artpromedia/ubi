@@ -24,4 +24,5 @@ export const MP_DRIVER_TID = {
   trip: driver.trip,
   amend: driver.amend,
   calendar: driver.calendar,
+  delivery: driver.delivery,
 } as const;

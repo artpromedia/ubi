@@ -140,7 +140,7 @@ describe("Jobs → trip stops, route changes and bookings", () => {
     second.unmount();
   });
 
-  it("does not navigate to the ride Trip stack for a delivery executionRef and shows an honest placeholder", async () => {
+  it("navigates to DeliveryJob (never the ride Trip stack) for a delivery executionRef", async () => {
     installWire((call) => {
       if (call.path === FLAGS_PATH)
         return {
@@ -172,14 +172,12 @@ describe("Jobs → trip stops, route changes and bookings", () => {
     });
     const view = harness();
     await screen.findByTestId(JOBS.current);
-    expect(
-      screen.getByText("Delivery jobs open in the next app update"),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Current delivery state: in trip · del_901"),
-    ).toBeTruthy();
     fireEvent.press(screen.getByText("Continue current trip"));
     expect(mockNavigate).not.toHaveBeenCalledWith("Trip", expect.anything());
+    expect(mockNavigate).toHaveBeenCalledWith("DeliveryJob", {
+      deliveryId: "del_901",
+      requestId: "req_del_1",
+    });
     view.unmount();
   });
 });

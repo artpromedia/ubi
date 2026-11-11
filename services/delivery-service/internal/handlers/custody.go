@@ -406,6 +406,8 @@ func (h *Handler) PostProposeReturn(w http.ResponseWriter, r *http.Request) {
 // custody in return_proposed or later.
 type openReturn struct {
 	ID               string
+	Reason           string
+	ProposedByRole   string
 	ChargeStatus     string
 	ConsentState     string
 	ConsentExpiresAt time.Time
@@ -418,14 +420,16 @@ type openReturn struct {
 func (h *Handler) loadOpenReturn(ctx context.Context, custodyID string) (*openReturn, error) {
 	var ret openReturn
 	row := h.db.Pool.QueryRow(ctx, `
-		SELECT id, charge_status, consent_state, consent_expires_at, fee_minor, currency,
+		SELECT id, COALESCE(reason, ''), COALESCE(proposed_by_role, ''),
+			charge_status, consent_state, consent_expires_at, fee_minor, currency,
 			COALESCE(charge_city_id, ''), COALESCE(charge_ref, '')
 		FROM delivery_returns
 		WHERE custody_id = $1
 		ORDER BY proposed_at DESC
 		LIMIT 1
 	`, custodyID)
-	if scanErr := row.Scan(&ret.ID, &ret.ChargeStatus, &ret.ConsentState, &ret.ConsentExpiresAt, &ret.FeeMinor, &ret.Currency,
+	if scanErr := row.Scan(&ret.ID, &ret.Reason, &ret.ProposedByRole,
+		&ret.ChargeStatus, &ret.ConsentState, &ret.ConsentExpiresAt, &ret.FeeMinor, &ret.Currency,
 		&ret.ChargeCityID, &ret.ChargeRef); scanErr != nil {
 		return nil, scanErr
 	}
@@ -780,6 +784,8 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 		openReturnView = map[string]interface{}{
 			"returnId":         ret.ID,
+			"reason":           ret.Reason,
+			"proposedByRole":   ret.ProposedByRole,
 			"chargeStatus":     ret.ChargeStatus,
 			"consentState":     ret.ConsentState,
 			"consentExpiresAt": ret.ConsentExpiresAt,
@@ -789,11 +795,7 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var deliveryView interface{}
-	var trackingNumber, pickupAddress, pickupContact, pickupPhone, dropoffAddress, dropoffContact, dropoffPhone string
-	var pkgSize, pkgDesc, delivCurrency string
-	var pickupLat, pickupLng, dropoffLat, dropoffLng, pkgWeight float64
-	var isFragile, requiresSig bool
-	var agreedFareMinor int64
+	var row deliveryDetailRow
 	if err := h.db.Pool.QueryRow(r.Context(), `
 		SELECT COALESCE(tracking_number, ''),
 		       COALESCE(pickup_address, ''), COALESCE(pickup_latitude::float8, 0), COALESCE(pickup_longitude::float8, 0),
@@ -803,48 +805,20 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(package_size::text, 'SMALL'), COALESCE(package_weight::float8, 0), COALESCE(package_description, ''),
 		       COALESCE(is_fragile, false), COALESCE(requires_signature, false),
 		       COALESCE((marketplace_metadata->>'agreedFareMinor')::bigint, 0),
+		       COALESCE(marketplace_metadata->>'marketplaceRequestId', ''),
 		       COALESCE(currency::text, 'NGN')
 		FROM deliveries WHERE id = $1
 	`, deliveryID).Scan(
-		&trackingNumber,
-		&pickupAddress, &pickupLat, &pickupLng,
-		&pickupContact, &pickupPhone,
-		&dropoffAddress, &dropoffLat, &dropoffLng,
-		&dropoffContact, &dropoffPhone,
-		&pkgSize, &pkgWeight, &pkgDesc,
-		&isFragile, &requiresSig,
-		&agreedFareMinor, &delivCurrency,
+		&row.TrackingNumber,
+		&row.PickupAddress, &row.PickupLat, &row.PickupLng,
+		&row.PickupContact, &row.PickupPhone,
+		&row.DropoffAddress, &row.DropoffLat, &row.DropoffLng,
+		&row.DropoffContact, &row.DropoffPhone,
+		&row.PackageSize, &row.PackageWeight, &row.PackageDescription,
+		&row.IsFragile, &row.RequiresSignature,
+		&row.AgreedFareMinor, &row.RequestID, &row.Currency,
 	); err == nil {
-		deliveryView = map[string]interface{}{
-			"trackingNumber": trackingNumber,
-			"pickupLocation": map[string]interface{}{
-				"address":   pickupAddress,
-				"latitude":  pickupLat,
-				"longitude": pickupLng,
-			},
-			"dropoffLocation": map[string]interface{}{
-				"address":   dropoffAddress,
-				"latitude":  dropoffLat,
-				"longitude": dropoffLng,
-			},
-			"pickupContact": map[string]interface{}{
-				"name":  pickupContact,
-				"phone": pickupPhone,
-			},
-			"dropoffContact": map[string]interface{}{
-				"name":  dropoffContact,
-				"phone": dropoffPhone,
-			},
-			"package": map[string]interface{}{
-				"size":              pkgSize,
-				"weightKg":          pkgWeight,
-				"description":       pkgDesc,
-				"fragile":           isFragile,
-				"requiresSignature": requiresSig,
-			},
-			"agreedFareMinor": agreedFareMinor,
-			"currency":        delivCurrency,
-		}
+		deliveryView = projectDeliveryDetail(row, cst.isSender(actor), cst.isAssignedDriver(actor), cst.State)
 	}
 
 	respond(w, http.StatusOK, map[string]interface{}{
@@ -860,6 +834,120 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 		"proofs": proofs,
 		"events": events,
 	})
+}
+
+type deliveryDetailRow struct {
+	TrackingNumber     string
+	PickupAddress      string
+	PickupLat          float64
+	PickupLng          float64
+	PickupContact      string
+	PickupPhone        string
+	DropoffAddress     string
+	DropoffLat         float64
+	DropoffLng         float64
+	DropoffContact     string
+	DropoffPhone       string
+	PackageSize        string
+	PackageWeight      float64
+	PackageDescription string
+	IsFragile          bool
+	RequiresSignature  bool
+	AgreedFareMinor    int64
+	RequestID          string
+	Currency           string
+}
+
+// maskContactPhone masks a contact phone number for driver custody views so
+// full raw phone numbers are never exposed on the wire.
+func maskContactPhone(phone string) string {
+	trimmed := strings.TrimSpace(phone)
+	if trimmed == "" {
+		return ""
+	}
+	runes := []rune(trimmed)
+	if len(runes) <= 4 {
+		return "••••"
+	}
+	if len(runes) >= 8 {
+		return string(runes[:4]) + "••••" + string(runes[len(runes)-4:])
+	}
+	return "••••" + string(runes[len(runes)-4:])
+}
+
+// projectDeliveryDetail shapes the delivery context on GET .../custody for
+// either the sender or the assigned driver.
+//
+// Contact privacy rules (CC-C04 / P1-07):
+//   - The sender sees the pickup and drop-off contacts they submitted (masked phone on wire).
+//   - The assigned driver receives pickupContact (masked phone) ONLY while
+//     heading to pickup (`courier_assigned`) or returning to the sender (`returning`),
+//     and receives dropoffContact (masked phone) ONLY while `in_transit`
+//     (or `delivery_attempted` / `delivery_retry`). In every other state the
+//     contact field is omitted (nil).
+func projectDeliveryDetail(d deliveryDetailRow, isSender, isDriver bool, custodyState string) map[string]interface{} {
+	var pickupContactView interface{}
+	var dropoffContactView interface{}
+
+	hasPickupContact := strings.TrimSpace(d.PickupContact) != "" || strings.TrimSpace(d.PickupPhone) != ""
+	hasDropoffContact := strings.TrimSpace(d.DropoffContact) != "" || strings.TrimSpace(d.DropoffPhone) != ""
+
+	if isSender {
+		if hasPickupContact {
+			pickupContactView = map[string]interface{}{
+				"name":  d.PickupContact,
+				"phone": maskContactPhone(d.PickupPhone),
+			}
+		}
+		if hasDropoffContact {
+			dropoffContactView = map[string]interface{}{
+				"name":  d.DropoffContact,
+				"phone": maskContactPhone(d.DropoffPhone),
+			}
+		}
+	} else if isDriver {
+		if hasPickupContact && (custodyState == custody.CourierAssigned || custodyState == custody.Returning) {
+			pickupContactView = map[string]interface{}{
+				"name":  d.PickupContact,
+				"phone": maskContactPhone(d.PickupPhone),
+			}
+		}
+		if hasDropoffContact && (custodyState == custody.InTransit || custodyState == custody.DeliveryAttempted || custodyState == custody.DeliveryRetry) {
+			dropoffContactView = map[string]interface{}{
+				"name":  d.DropoffContact,
+				"phone": maskContactPhone(d.DropoffPhone),
+			}
+		}
+	}
+
+	out := map[string]interface{}{
+		"trackingNumber": d.TrackingNumber,
+		"pickupLocation": map[string]interface{}{
+			"address":   d.PickupAddress,
+			"latitude":  d.PickupLat,
+			"longitude": d.PickupLng,
+		},
+		"dropoffLocation": map[string]interface{}{
+			"address":   d.DropoffAddress,
+			"latitude":  d.DropoffLat,
+			"longitude": d.DropoffLng,
+		},
+		"pickupContact":  pickupContactView,
+		"dropoffContact": dropoffContactView,
+		"package": map[string]interface{}{
+			"size":              d.PackageSize,
+			"weightKg":          d.PackageWeight,
+			"description":       d.PackageDescription,
+			"fragile":           d.IsFragile,
+			"requiresSignature": d.RequiresSignature,
+		},
+		"agreedFareMinor": d.AgreedFareMinor,
+		"currency":        d.Currency,
+	}
+	if d.RequestID != "" {
+		out["requestId"] = d.RequestID
+	}
+	return out
 }
 
 // seedMarketplaceCustody seeds the delivery_custody row (and its first

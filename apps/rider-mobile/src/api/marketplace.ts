@@ -167,13 +167,31 @@ export type DeliveryReturnChargeStatus =
 
 export type MpDeliveryReturnState = {
   state: "unreachable" | "retrying" | "return_approved" | "held_at_point";
+  custodyState?: string;
+  custodyStateLabel?: string;
   situation: string;
   approvedNotice: string;
   returnFeeMinor: Money;
+  agreedFareMinor?: Money;
   chargeStatus?: DeliveryReturnChargeStatus;
   delivery?: CustodyTimeline["delivery"];
+  openReturn?: {
+    returnId: string;
+    reason: string;
+    proposedByRole: string;
+    chargeStatus: DeliveryReturnChargeStatus;
+    consentState: "pending" | "consented" | "rejected" | "expired";
+    consentExpiresAt: string;
+    hasFee: boolean;
+    feeMinor: Money;
+  } | null;
   returnPolicy?: CustodyTimeline["returnPolicy"];
   proofs?: CustodyTimeline["proofs"];
+  finalOutcomeBanner?: {
+    tone: "ok" | "info" | "warn";
+    title: string;
+    body: string;
+  } | null;
   custody: {
     label: string;
     detail?: string;
@@ -190,10 +208,11 @@ export type CustodyTimeline = {
   version: number;
   delivery?: {
     trackingNumber: string;
+    requestId?: string;
     pickupLocation: { address: string; latitude: number; longitude: number };
     dropoffLocation: { address: string; latitude: number; longitude: number };
-    pickupContact?: { name?: string; phone?: string };
-    dropoffContact?: { name?: string; phone?: string };
+    pickupContact?: { name?: string; phone?: string } | null;
+    dropoffContact?: { name?: string; phone?: string } | null;
     package: {
       size: string;
       weightKg: number;
@@ -206,6 +225,8 @@ export type CustodyTimeline = {
   } | null;
   openReturn: {
     returnId: string;
+    reason?: string;
+    proposedByRole?: string;
     chargeStatus: DeliveryReturnChargeStatus;
     consentState: "pending" | "consented" | "rejected" | "expired";
     consentExpiresAt: string;
@@ -240,6 +261,14 @@ export type DeliveryReturnConsentResult = {
   consentState: "consented" | "rejected";
   chargeStatus?: DeliveryReturnChargeStatus;
   chargeRef?: string;
+};
+
+export type DeliveryProofDownloadUrl = {
+  proofId: string;
+  type: "pickup" | "delivery" | "return";
+  contentType: string;
+  url: string;
+  expiresAt: string;
 };
 
 type DeliveryEnvelope<T> = {
@@ -298,7 +327,70 @@ const CUSTODY_LADDER_LABEL: Record<string, string> = {
   collected: "Collected",
   delivery_retry: "Retrying delivery",
   delivered: "Delivered",
+  cancelled: "Cancelled",
 };
+
+export function riderDeliveryFinalOutcome(
+  state: string,
+  chargeStatus?: DeliveryReturnChargeStatus,
+  feeMinor = 0,
+): MpDeliveryReturnState["finalOutcomeBanner"] {
+  switch (state) {
+    case "delivered":
+      return {
+        tone: "ok",
+        title: "Package delivered",
+        body: "Delivery photo proof is verified. Your agreed fare is complete.",
+      };
+    case "return_to_sender":
+      if (chargeStatus === "captured" && feeMinor > 0) {
+        return {
+          tone: "ok",
+          title: "Returned to you · return fee charged",
+          body: "Your package was handed back with verified photo proof. The return fee was charged from your wallet.",
+        };
+      }
+      if (chargeStatus === "capture_pending" && feeMinor > 0) {
+        return {
+          tone: "warn",
+          title: "Returned to you · return fee settling",
+          body: "Your package was handed back with verified photo proof. Your reserved return fee is being settled.",
+        };
+      }
+      if (chargeStatus === "released") {
+        return {
+          tone: "info",
+          title: "Returned to you · fee hold released",
+          body: "Your package was handed back with verified photo proof. The return fee hold was released — no return fee was charged.",
+        };
+      }
+      return {
+        tone: "ok",
+        title: "Returned to you",
+        body: "Your package was handed back with verified photo proof. No return fee was charged.",
+      };
+    case "held_at_point":
+      return {
+        tone: "info",
+        title: "Held at partner pickup point",
+        body: "The package waits at the pickup point. Collection details are in your messages.",
+      };
+    case "collected":
+      return {
+        tone: "ok",
+        title: "Collected at partner pickup point",
+        body: "The package has been handed over at the partner pickup point. No return fee was charged.",
+      };
+    case "cancelled":
+      return {
+        tone: "warn",
+        title: "Delivery cancelled",
+        body: "This delivery was cancelled before pickup.",
+      };
+    default:
+      return null;
+  }
+}
 
 /**
  * Translates the real custody timeline into this screen's pre-existing DTO.
@@ -330,6 +422,11 @@ export function mapCustodyToReturnView(
       : "We could not reach the recipient. Choose how to resolve this delivery.";
   const chargeStatus = t.openReturn?.chargeStatus;
   const feeMinor = t.openReturn?.feeMinor ?? 0;
+  const currency = t.openReturn?.currency || t.delivery?.currency || "NGN";
+  const returnFeeMoney: Money = {
+    amountMinor: feeMinor,
+    currency,
+  };
   const approvedNotice =
     chargeStatus === "captured" && feeMinor > 0
       ? "The courier returned the package to you. The return fee was charged from your wallet."
@@ -341,16 +438,39 @@ export function mapCustodyToReturnView(
           : "The courier brings the package back to you. No return fee was charged.";
   return {
     state: coarse,
+    custodyState: t.state,
+    custodyStateLabel: CUSTODY_LADDER_LABEL[t.state] ?? t.state,
     situation,
     approvedNotice,
-    returnFeeMinor: {
-      amountMinor: feeMinor,
-      currency: t.openReturn?.currency || t.delivery?.currency || "NGN",
-    },
+    returnFeeMinor: returnFeeMoney,
+    agreedFareMinor:
+      t.delivery?.agreedFareMinor !== undefined
+        ? {
+            amountMinor: t.delivery.agreedFareMinor,
+            currency: t.delivery.currency || "NGN",
+          }
+        : undefined,
     chargeStatus,
     delivery: t.delivery,
+    openReturn: t.openReturn
+      ? {
+          returnId: t.openReturn.returnId,
+          reason: t.openReturn.reason ?? "",
+          proposedByRole: t.openReturn.proposedByRole ?? "driver",
+          chargeStatus: t.openReturn.chargeStatus,
+          consentState: t.openReturn.consentState,
+          consentExpiresAt: t.openReturn.consentExpiresAt,
+          hasFee: feeMinor > 0,
+          feeMinor: returnFeeMoney,
+        }
+      : null,
     returnPolicy: t.returnPolicy,
     proofs: t.proofs,
+    finalOutcomeBanner: riderDeliveryFinalOutcome(
+      t.state,
+      chargeStatus,
+      feeMinor,
+    ),
     custody: t.events.map((e) => ({
       label: CUSTODY_LADDER_LABEL[e.toState] ?? e.toState,
       detail: e.reason,
@@ -702,6 +822,28 @@ export const marketplaceApi = {
         "Delivery return consent response is missing custodyState or consentState.",
       );
     }
+    return marketplaceApi.deliveryReturnState(deliveryId);
+  },
+  deliveryProofUrl: (deliveryId: string, proofId: string) =>
+    api<unknown>(
+      "GET",
+      "/v1/delivery/deliveries/" +
+        encodeURIComponent(deliveryId) +
+        "/custody/proofs/" +
+        encodeURIComponent(proofId) +
+        "/url",
+    ).then((raw) => unwrapDeliveryEnvelope<DeliveryProofDownloadUrl>(raw)),
+  deliveryProposeReturn: async (deliveryId: string, reason: string) => {
+    await api<unknown>(
+      "POST",
+      "/v1/delivery/deliveries/" +
+        encodeURIComponent(deliveryId) +
+        "/custody/return/propose",
+      {
+        reason,
+        feeMinor: 0,
+      },
+    );
     return marketplaceApi.deliveryReturnState(deliveryId);
   },
 };

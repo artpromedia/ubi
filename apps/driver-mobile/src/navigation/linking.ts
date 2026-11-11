@@ -40,6 +40,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Calendar: "calendar",
       MpTrip: "trips/:requestId",
       MpAmendments: "trips/:requestId/amendments",
+      DeliveryJob: "deliveries/:deliveryId",
       WalletHolds: "wallet/holds",
       Rates: "rates",
       Preferences: "preferences",

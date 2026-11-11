@@ -34,6 +34,7 @@ import { JobsTimelineContainer } from "../screens/marketplace/JobsTimelineContai
 import { TripStopsContainer } from "../screens/marketplace/TripStopsContainer";
 import { RouteAmendmentContainer } from "../screens/marketplace/RouteAmendmentContainer";
 import { DriverCalendarContainer } from "../screens/marketplace/DriverCalendarContainer";
+import { DeliveryJobContainer } from "../screens/marketplace/DeliveryJobContainer";
 import { useSessionKeeper } from "../api/auth";
 import { SplashScreen } from "../screens/boot/SplashScreen";
 import { OnboardingScreen } from "../screens/boot/OnboardingScreen";
@@ -327,6 +328,23 @@ function GatedCalendar({
     </MarketplaceGate>
   );
 }
+function GatedDeliveryJob({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Delivery custody"
+      requires={{
+        all: ["marketplace_delivery"],
+      }}
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <DeliveryJobContainer />
+    </MarketplaceGate>
+  );
+}
 // A05 fleet calendar (handoff C1–C5). Each screen carries the deny-by-default
 // `fleet` gate so a deep link into a city without fleet tools lands on the honest
 // "not available yet" screen; fleet-service answers 404 feature_disabled as well.
@@ -404,6 +422,7 @@ export function RootNavigator() {
         <Root.Screen name="MpTrip" component={GatedTrip as never} />
         <Root.Screen name="MpAmendments" component={GatedAmendments as never} />
         <Root.Screen name="Calendar" component={GatedCalendar as never} />
+        <Root.Screen name="DeliveryJob" component={GatedDeliveryJob as never} />
         <Root.Screen
           name="FleetSchedule"
           component={GatedFleetSchedule as never}

@@ -150,10 +150,16 @@ export function BidDetailContainer() {
             ...(pickupPin ? { pickupPin } : {}),
           },
         });
+      } else if (
+        award.executionRef?.service === "delivery" &&
+        award.executionRef.id
+      ) {
+        nav.navigate("DeliveryReturn", {
+          deliveryId: award.executionRef.id,
+        });
       }
       // A confirmed current-slot award without an executionRef yet stays on the pending
-      // ladder until the next poll carries the execution id (delivery handoff is a
-      // separate execution-UI follow-up).
+      // ladder until the next poll carries the execution id.
     }
     if (award?.state === "failed")
       setFailReason(

@@ -298,6 +298,8 @@ export const CONFLICT_TITLE: Record<FleetConflict["type"], string> = {
   maintenance_overlaps_booking:
     "Your vehicle is booked in for service during this booking",
   unplanned_off_road: "Your vehicle is off the road",
+  vehicle_service_requested:
+    "Your vehicle has a service request during this booking",
   document_expiring: "A vehicle document expires before this booking",
   document_expires_in_booking: "A vehicle document expires before this booking",
   time_off_overlaps_booking: "Your time off overlaps this booking",
@@ -308,6 +310,7 @@ export const CONFLICT_TITLE: Record<FleetConflict["type"], string> = {
 export const WITHDRAW_REASON: Record<FleetConflict["type"], string> = {
   maintenance_overlaps_booking: "Fleet vehicle in planned service",
   unplanned_off_road: "Fleet vehicle off the road",
+  vehicle_service_requested: "Fleet vehicle service requested",
   document_expiring: "Vehicle document expiry",
   document_expires_in_booking: "Vehicle document expiry",
   time_off_overlaps_booking: "Taking time off",

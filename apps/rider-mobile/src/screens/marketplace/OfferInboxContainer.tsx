@@ -132,6 +132,13 @@ export function OfferInboxContainer() {
         screen: "Assigned",
         params: { rideId: award.executionRef.id, requestId: params.requestId },
       });
+    } else if (
+      award.executionRef?.service === "delivery" &&
+      award.executionRef.id
+    ) {
+      nav.navigate("DeliveryReturn", {
+        deliveryId: award.executionRef.id,
+      });
     }
   }, [award?.state, award?.executionRef?.id]);
   if (!snap)

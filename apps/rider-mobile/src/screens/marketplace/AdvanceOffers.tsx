@@ -281,12 +281,18 @@ export function AdvanceOffersContainer() {
       (nav.replace ?? nav.navigate)("Offers", { requestId });
       return;
     }
-    // Activated booking: the award now names the execution ride.
+    // Activated booking: the award now names the execution ride or delivery.
     if (award?.state === "confirmed" && award.executionRef?.id) {
-      nav.navigate("Ride", {
-        screen: "Assigned",
-        params: { rideId: award.executionRef.id, requestId },
-      });
+      if (award.executionRef.service === "delivery") {
+        nav.navigate("DeliveryReturn", {
+          deliveryId: award.executionRef.id,
+        });
+      } else {
+        nav.navigate("Ride", {
+          screen: "Assigned",
+          params: { rideId: award.executionRef.id, requestId },
+        });
+      }
       return;
     }
     const booking = (bookingsQ.data?.items ?? []).find(

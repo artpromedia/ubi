@@ -7,7 +7,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useTheme, FlagGate } from "@ubi/mobile-ui";
-import { usePushLifecycle } from "@ubi/mobile-core";
+import { useFlag, usePushLifecycle } from "@ubi/mobile-core";
 import { linking } from "./linking";
 import type {
   RootStackParamList,
@@ -296,9 +296,10 @@ function MarketplaceNavigator({
 }: {
   navigation: { navigate: (s: "Main") => void };
 }) {
+  const deliveryOn = useFlag("marketplace_delivery");
   return (
     <FlagGate
-      flag="marketplace_rides"
+      flag={deliveryOn ? "marketplace_delivery" : "marketplace_rides"}
       featureName="Fare marketplace"
       onDismiss={() => navigation.navigate("Main")}
     >

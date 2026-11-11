@@ -79,6 +79,8 @@ export type RootStackParamList = {
   // post-award route amendments — both keyed by the marketplace request id.
   MpTrip: { requestId: string };
   MpAmendments: { requestId: string };
+  // P1-07 (CC-C04): the executing marketplace delivery custody & proof capture flow.
+  DeliveryJob: { deliveryId: string; requestId?: string };
   // A03: the driver's booking calendar (future bookings, not the live slots).
   Calendar: undefined;
   // A05 fleet calendar (handoff C1–C5), each behind the deny-by-default `fleet`

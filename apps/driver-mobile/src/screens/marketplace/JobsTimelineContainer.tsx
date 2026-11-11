@@ -79,8 +79,10 @@ export function JobsTimelineContainer() {
     const cur = view.current;
     if (!cur?.executionRef?.id) return;
     if (cur.executionRef.service === "delivery" || cur.service === "delivery") {
-      // Delivery jobs do not belong to the ride Trip stack; the screen shows an
-      // honest placeholder banner with the job's state until CC-C04 lands.
+      nav.navigate("DeliveryJob", {
+        deliveryId: cur.executionRef.id,
+        ...(cur.requestId ? { requestId: cur.requestId } : {}),
+      });
       return;
     }
     // Offer (C05 / G01) is the Trip stack's one entry point from this jobs
@@ -94,9 +96,6 @@ export function JobsTimelineContainer() {
       params: { tripId: cur.executionRef.id },
     });
   };
-  const isDeliveryCurrent =
-    view.current?.executionRef?.service === "delivery" ||
-    view.current?.service === "delivery";
   return (
     <JobsTimelineScreen
       // The winner toast needs a server-composed award.confirmed projection the
@@ -106,14 +105,6 @@ export function JobsTimelineContainer() {
       next={view.next ? jobCard(view.next) : null}
       promotion={view.promotion === "none" ? null : view.promotion}
       onContinueCurrent={toCurrentJob}
-      deliveryPlaceholder={
-        isDeliveryCurrent && view.current
-          ? {
-              state: view.current.state,
-              deliveryId: view.current.executionRef?.id,
-            }
-          : null
-      }
       onBack={nav.goBack}
       tripLinks={
         // Only the server's own requestId opens the A02 trip routes — never a guess.

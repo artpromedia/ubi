@@ -44,6 +44,8 @@ const A02_A03_FILES = [
   "RouteAmendmentContainer.tsx",
   "DriverCalendarScreen.tsx",
   "DriverCalendarContainer.tsx",
+  "DeliveryJobScreen.tsx",
+  "DeliveryJobContainer.tsx",
   "TripParts.tsx",
   "tripCopy.ts",
 ];
@@ -51,6 +53,7 @@ const PRESENTATIONAL = [
   "TripStopsScreen.tsx",
   "RouteAmendmentScreen.tsx",
   "DriverCalendarScreen.tsx",
+  "DeliveryJobScreen.tsx",
 ];
 
 describe("no client money math", () => {
