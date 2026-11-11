@@ -28,7 +28,11 @@ export function HandoffSheet({
       track("ask_handoff_started", { threadId, includeTranscript: include });
       onOpened(r.supportCaseId);
     } catch {
-      setErr("Could not reach support chat. You can call instead.");
+      setErr(
+        config?.supportPhone
+          ? "Could not reach support chat. You can call instead."
+          : "Could not reach support chat. Try again in a moment.",
+      );
     } finally {
       setBusy(false);
     }
@@ -74,12 +78,14 @@ export function HandoffSheet({
           loading={busy}
           onPress={start}
         />
-        <Button
-          label={"Call " + (config?.supportPhone ?? "support") + " instead"}
-          kind="ghost"
-          size="md"
-          onPress={onDismiss}
-        />
+        {config?.supportPhone ? (
+          <Button
+            label={"Call " + config.supportPhone + " instead"}
+            kind="ghost"
+            size="md"
+            onPress={onDismiss}
+          />
+        ) : null}
       </View>
     </Sheet>
   );

@@ -214,6 +214,11 @@ export const CityConfigSchema = z.object({
   locale: z.string().min(2),
   timezone: z.string().min(1),
   emergencyNumber: z.string().min(3),
+  /** Optional E.164 support phone line; screens hide the support call button when absent. */
+  supportPhone: z
+    .string()
+    .regex(/^\+[1-9]\d{6,14}$/, "supportPhone must be an E.164 number")
+    .optional(),
   vehicleClasses: z.array(z.enum(VEHICLE_CLASSES)).min(1),
   fares: z.record(FareTableSchema),
   waitPolicy: WaitPolicySchema,

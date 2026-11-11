@@ -169,4 +169,13 @@ describe("abuja config", () => {
       "international_departures",
     ]);
   });
+
+  it("seeds supportPhone on the Lagos dev seed only", () => {
+    expect(lagos.supportPhone).toBe("+23417000824");
+    expect(abuja.supportPhone).toBeUndefined();
+    expect(
+      CityConfigSchema.safeParse({ ...lagos, supportPhone: "0800-UBI" })
+        .success,
+    ).toBe(false);
+  });
 });

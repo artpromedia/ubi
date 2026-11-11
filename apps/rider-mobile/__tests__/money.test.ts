@@ -62,4 +62,71 @@ describe("parity with @ubi/contracts formatMoney (the money source of truth)", (
     });
     expect(stripWholeKobo(contract)).toBe(core);
   });
+
+  it("parses a contract CityConfig fixture and derives display money format from currency + currencyFractionDigits", () => {
+    const { parseCityConfig, moneyFormatFor } =
+      require("@ubi/mobile-core") as typeof import("@ubi/mobile-core");
+    const { CityConfigSchema } =
+      require("@ubi/contracts") as typeof import("@ubi/contracts");
+    const raw = CityConfigSchema.parse({
+      cityId: "LOS",
+      version: 1,
+      currency: "NGN",
+      currencyFractionDigits: 2,
+      locale: "en-NG",
+      timezone: "Africa/Lagos",
+      emergencyNumber: "112",
+      supportPhone: "+23417000824",
+      vehicleClasses: ["go", "comfort", "xl"],
+      fares: {
+        go: {
+          baseMinor: 60_000,
+          perKmMinor: 18_000,
+          perMinMinor: 2_500,
+          bookingFeeMinor: 10_000,
+          minFareMinor: 120_000,
+        },
+      },
+      waitPolicy: { freeSec: 300, perMinMinor: 5_000 },
+      cancelPolicy: {
+        riderFeeAfterAssignMinor: 30_000,
+        driverFeeMinor: 0,
+        freeWindowSec: 120,
+      },
+      pinRequired: true,
+      quoteTtlSec: 300,
+      offerTtlSec: 12,
+      matchingRings: [{ radiusMeters: 2_000, maxCandidates: 5 }],
+      arrivedGeofenceMeters: 120,
+      maxPinAttempts: 3,
+      paymentMethods: [{ id: "cash", available: true }],
+      kycTiers: [
+        {
+          tier: "tier1",
+          dailyOutMinor: 5_000_000,
+          singleTransferMinor: 2_000_000,
+          balanceCapMinor: 30_000_000,
+        },
+      ],
+      serviceFeePct: 20,
+      remittanceCapMinor: 15_000_000,
+      reservationFreeReleaseSec: 900,
+      airport: {
+        codes: ["LOS"],
+        arrivalBufferMin: 20,
+        checkInCutoffMin: 90,
+        trafficBufferMin: 45,
+        doors: { domestic_arrivals: "Door 2" },
+      },
+      taxes: { vat: 7.5 },
+    });
+    const parsed = parseCityConfig(raw);
+    expect(parsed.supportPhone).toBe("+23417000824");
+    const fmt = moneyFormatFor(parsed);
+    expect(fmt.currencySymbol).toBe("₦");
+    expect(fmt.currencyFractionDigits).toBe(2);
+    expect(formatMinor({ amountMinor: 150_000, currency: "NGN" }, parsed)).toBe(
+      "₦1,500",
+    );
+  });
 });

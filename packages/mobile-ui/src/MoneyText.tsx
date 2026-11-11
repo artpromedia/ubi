@@ -1,6 +1,7 @@
 import {
   formatMinor,
   accessibleMoney,
+  moneyFormatFor,
   useCityConfig,
   type Money,
 } from "@ubi/mobile-core";
@@ -18,13 +19,7 @@ export function MoneyText({
   struck?: boolean;
 } & Omit<UbiTextProps, "children">) {
   const { config } = useCityConfig();
-  const fmt = config
-    ? {
-        currencySymbol: config.currencySymbol,
-        minorDigitsShown: config.minorDigitsShown,
-        locale: config.locale,
-      }
-    : {};
+  const fmt = config ? moneyFormatFor(config) : {};
   return (
     <Text
       tabular

@@ -46,6 +46,7 @@ export function lagosConfig(version: number): CityConfig {
     locale: "en-NG",
     timezone: LAGOS_CITY.timezone,
     emergencyNumber: "112",
+    supportPhone: "+23417000824",
     vehicleClasses: ["go", "comfort", "xl"],
     // PROVISIONAL, pending ops/finance sign-off — not on the slice 01 board.
     // NGN kobo (minor units; 100 kobo = ₦1). Defensible 2026 Lagos ride-hailing

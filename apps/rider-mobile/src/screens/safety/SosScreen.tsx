@@ -21,6 +21,7 @@ export function SosScreen() {
   const nav = useNavigation<{ goBack: () => void }>();
   const { params } = useRoute<RouteProp<RootStackParamList, "Sos">>();
   const { config, status } = useCityConfig();
+  const supportPhone = status === "ready" ? config?.supportPhone : undefined;
   const dial = (num: string) => {
     void Linking.openURL("tel:" + num.replace(/\s+/g, ""));
   };
@@ -51,7 +52,7 @@ export function SosScreen() {
           )}
         </View>
       </Card>
-      {status === "ready" && config?.supportPhone ? (
+      {supportPhone ? (
         <Card>
           <Text variant="bodyStrong">UBI safety line</Text>
           <Text variant="bodySm" tone="text2">
@@ -60,10 +61,10 @@ export function SosScreen() {
           </Text>
           <View style={{ marginTop: 8 }}>
             <Button
-              label={"Call " + config.supportPhone}
+              label={"Call " + supportPhone}
               kind="secondary"
-              accessibilityLabel={"Call UBI support " + config.supportPhone}
-              onPress={() => dial(config.supportPhone)}
+              accessibilityLabel={"Call UBI support " + supportPhone}
+              onPress={() => dial(supportPhone)}
             />
           </View>
         </Card>

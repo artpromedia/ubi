@@ -28,7 +28,7 @@ export { ABUJA_CITY };
 export const ABUJA_ENABLED_FLAGS = [] as const;
 
 export function abujaConfig(version: number): CityConfig {
-  const lagos = lagosConfig(version);
+  const { supportPhone: _lagosSupportPhone, ...lagos } = lagosConfig(version);
   return CityConfigSchema.parse({
     ...lagos,
     cityId: ABUJA_CITY.id,

@@ -51,18 +51,35 @@ const walletOverview = (balanceMinor = 250_000) => ({
 
 const cityConfigLos = () => ({
   cityId: "LOS",
-  countryCode: "NG",
+  version: 1,
   timezone: "Africa/Lagos",
   currency: "NGN",
-  currencySymbol: "₦",
-  minorDigitsShown: 0,
   currencyFractionDigits: 2,
   locale: "en-NG",
   emergencyNumber: "112",
+  supportPhone: "+23417000824",
+  vehicleClasses: ["go", "comfort", "xl"] as const,
+  fares: {
+    go: {
+      baseMinor: 60_000,
+      perKmMinor: 18_000,
+      perMinMinor: 2_500,
+      bookingFeeMinor: 10_000,
+      minFareMinor: 120_000,
+    },
+  },
+  waitPolicy: { freeSec: 300, perMinMinor: 5_000 },
+  cancelPolicy: {
+    riderFeeAfterAssignMinor: 30_000,
+    driverFeeMinor: 0,
+    freeWindowSec: 120,
+  },
+  pinRequired: true,
   offerTtlSec: 12,
   quoteTtlSec: 300,
-  reservationFreeCancelMin: 60,
-  supportPhone: "+2348000000000",
+  matchingRings: [{ radiusMeters: 2_000, maxCandidates: 5 }],
+  arrivedGeofenceMeters: 120,
+  maxPinAttempts: 3,
   paymentMethods: [
     { id: "cash", available: true },
     { id: "wallet", available: true },
@@ -73,6 +90,25 @@ const cityConfigLos = () => ({
       reason: "Dedicated virtual accounts are under maintenance.",
     },
   ],
+  kycTiers: [
+    {
+      tier: "tier1",
+      dailyOutMinor: 5_000_000,
+      singleTransferMinor: 2_000_000,
+      balanceCapMinor: 30_000_000,
+    },
+  ],
+  serviceFeePct: 20,
+  remittanceCapMinor: 15_000_000,
+  reservationFreeReleaseSec: 900,
+  airport: {
+    codes: ["LOS"],
+    arrivalBufferMin: 20,
+    checkInCutoffMin: 90,
+    trafficBufferMin: 45,
+    doors: { domestic_arrivals: "Door 2" },
+  },
+  taxes: { vat: 7.5 },
 });
 
 afterEach(() => {
