@@ -289,6 +289,7 @@ export async function remindDriver(
           occurredAt: now,
           payload: {
             conflictId: conflict.id,
+            fleetId: conflict.fleetId,
             driverId: conflict.driverId,
             type: conflict.type,
           },

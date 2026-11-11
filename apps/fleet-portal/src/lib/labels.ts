@@ -155,6 +155,7 @@ export const CONFLICT_TITLES: Readonly<Record<FleetConflictType, string>> = {
   document_expires_in_booking: "Document expires before a booking",
   driver_resolving: "Driver resolving a booking",
   termination_bookings: "Notice period ends before a booking",
+  vehicle_service_requested: "Driver requested vehicle service",
 };
 
 const RESOLVER_LABELS: Readonly<Record<ConflictResolverRole, string>> = {

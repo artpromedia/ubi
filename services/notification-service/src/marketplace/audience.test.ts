@@ -29,12 +29,18 @@ const R = "aaaaaaaa-0000-4000-8000-000000000001"; // requester (rider)
 const D = "dddddddd-0000-4000-8000-000000000002"; // driver
 const T = "tttttttt-0000-4000-8000-000000000003"; // airport traveller
 const S = "ssssssss-0000-4000-8000-000000000004"; // delivery sender
+const FO = "ffffffff-0000-4000-8000-000000000005"; // fleet owner
+const FM = "ffffffff-0000-4000-8000-000000000006"; // fleet manager
+const OPS = "00000000-0000-4000-8000-000000000007"; // UBI ops admin
 const RIVAL = "dddddddd-0000-4000-8000-00000000009f";
 const AWARD = "11111111-0000-4000-8000-000000000010";
 const REQUEST = "22222222-0000-4000-8000-000000000020";
 const TRANSFER = "trf_airport_1";
+const FLEET = "flt_lagos_1";
 const R_PHONE = "+2348030000001";
 const D_PHONE = "+2348030000002";
+const FO_PHONE = "+2348030000005";
+const FM_PHONE = "+2348030000006";
 const PASSENGER_PHONE = "+2348099999999";
 
 /** Values that must never reach a notification (title, body or data). */
@@ -48,6 +54,8 @@ const FORBIDDEN = [
   PASSENGER_PHONE,
   R_PHONE,
   D_PHONE,
+  FO_PHONE,
+  FM_PHONE,
 ];
 
 const MONEY = {
@@ -575,6 +583,387 @@ const CASES: Case[] = [
     payload: transfer("cancelled", { reason: "flight_cancelled" }),
     expect: { traveller: "Airport ride cancelled" },
   },
+  // ── advance-booking risk, choice, and vehicle swaps (Q4 / P2-03) ──
+  {
+    name: "mp.advance_booking.risk_changed",
+    subject: { type: "mp_advance_booking", id: "bkg_1" },
+    payload: booking("confirmed", {
+      risk: "at_risk",
+      reason: "vehicle_off_road",
+      decisionDeadline: "2026-09-24T06:00:00Z",
+    }),
+    expect: { driver: "Reserved job needs a decision" },
+  },
+  {
+    name: "mp.advance_booking.choice_offered",
+    subject: { type: "mp_advance_booking", id: "bkg_1" },
+    payload: {
+      bookingId: "bkg_1",
+      awardId: AWARD,
+      requestId: REQUEST,
+      requesterId: R,
+      reason: "risk_unresolved",
+      options: ["rematch", "refund"],
+      rematchAvailable: true,
+      sameFareMinor: { amountMinor: 280000, currency: "NGN" },
+      rematchBy: "2026-09-24T07:00:00Z",
+      refund: { riderCharged: false, riderFundingReleased: true },
+    },
+    expect: { requester: "Choose a rematch or refund" },
+  },
+  {
+    name: "mp.vehicle_swap.proposed",
+    subject: { type: "mp_vehicle_swap", id: "swp_1" },
+    payload: {
+      swapId: "swp_1",
+      bookingId: "bkg_1",
+      awardId: AWARD,
+      requestId: REQUEST,
+      driverId: D,
+      fleetId: FLEET,
+      fromVehicleId: "veh_1",
+      toVehicleId: "veh_2",
+      ...MONEY,
+    },
+    expect: { driver: "Vehicle swap proposed for your job" },
+  },
+  {
+    name: "mp.vehicle_swap.rider_consent_requested",
+    subject: { type: "mp_vehicle_swap", id: "swp_1" },
+    payload: {
+      swapId: "swp_1",
+      bookingId: "bkg_1",
+      awardId: AWARD,
+      requestId: REQUEST,
+      requesterId: R,
+      driverId: D,
+      fleetId: FLEET,
+      fromVehicleId: "veh_1",
+      toVehicleId: "veh_2",
+      ...MONEY,
+    },
+    expect: { requester: "Approve a replacement vehicle?" },
+  },
+  {
+    name: "mp.vehicle_swap.applied",
+    subject: { type: "mp_vehicle_swap", id: "swp_1" },
+    payload: {
+      swapId: "swp_1",
+      bookingId: "bkg_1",
+      awardId: AWARD,
+      requestId: REQUEST,
+      requesterId: R,
+      driverId: D,
+      fleetId: FLEET,
+      fromVehicleId: "veh_1",
+      toVehicleId: "veh_2",
+      ...MONEY,
+    },
+    expect: {
+      requester: "Replacement vehicle confirmed",
+      driver: "Vehicle swap confirmed",
+      fleet_owner: "Vehicle swap confirmed",
+      fleet_manager: "Vehicle swap confirmed",
+    },
+  },
+  {
+    name: "mp.vehicle_swap.rider_declined",
+    actor: RIDER,
+    subject: { type: "mp_vehicle_swap", id: "swp_1" },
+    payload: {
+      swapId: "swp_1",
+      bookingId: "bkg_1",
+      awardId: AWARD,
+      requestId: REQUEST,
+      requesterId: R,
+      driverId: D,
+      fleetId: FLEET,
+      fromVehicleId: "veh_1",
+      toVehicleId: "veh_2",
+      ...MONEY,
+    },
+    expect: {
+      driver: "Replacement vehicle declined",
+      fleet_owner: "Vehicle swap declined",
+      fleet_manager: "Vehicle swap declined",
+    },
+  },
+  {
+    name: "mp.vehicle_swap.expired",
+    subject: { type: "mp_vehicle_swap", id: "swp_1" },
+    payload: {
+      swapId: "swp_1",
+      bookingId: "bkg_1",
+      awardId: AWARD,
+      requestId: REQUEST,
+      requesterId: R,
+      driverId: D,
+      fleetId: FLEET,
+      fromVehicleId: "veh_1",
+      toVehicleId: "veh_2",
+      ...MONEY,
+    },
+    expect: {
+      requester: "Vehicle swap expired",
+      driver: "Vehicle swap expired",
+      fleet_owner: "Vehicle swap expired",
+      fleet_manager: "Vehicle swap expired",
+    },
+  },
+  // ── fleet & driver arrangements, maintenance, documents, conflicts (P1-06) ──
+  {
+    name: "assignment.proposal.status.changed",
+    actor: { type: "fleet", id: FO },
+    subject: { type: "assignment", id: "prp_1" },
+    payload: {
+      proposalId: "prp_1",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      driverId: D,
+      from: "draft",
+      to: "pending_signature",
+      ...MONEY,
+    },
+    expect: { driver: "New vehicle arrangement offer" },
+  },
+  {
+    name: "assignment.proposal.status.changed",
+    actor: DRIVER,
+    subject: { type: "assignment", id: "prp_1" },
+    payload: {
+      proposalId: "prp_1",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      driverId: D,
+      from: "pending_signature",
+      to: "declined",
+      ...MONEY,
+    },
+    expect: {
+      fleet_owner: "Arrangement offer declined",
+      fleet_manager: "Arrangement offer declined",
+    },
+  },
+  {
+    name: "assignment.signed",
+    actor: DRIVER,
+    subject: { type: "assignment", id: "asn_1" },
+    payload: {
+      assignmentId: "asn_1",
+      proposalId: "prp_1",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      driverId: D,
+      termsVersion: 1,
+      termsHash: "sha256:abc",
+      signedAt: "2026-09-23T10:00:00.000Z",
+      validFrom: "2026-09-24",
+      validTo: null,
+      ...MONEY,
+    },
+    expect: {
+      fleet_owner: "Vehicle arrangement signed",
+      fleet_manager: "Vehicle arrangement signed",
+    },
+  },
+  {
+    name: "assignment.status.changed",
+    actor: { type: "fleet", id: FO },
+    subject: { type: "assignment", id: "asn_1" },
+    payload: {
+      assignmentId: "asn_1",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      driverId: D,
+      from: "active",
+      to: "notice",
+      noticeEndsOn: "2026-10-07",
+      ...MONEY,
+    },
+    expect: {
+      driver: "Notice given on your arrangement",
+      fleet_manager: "Notice given on an arrangement",
+    },
+  },
+  {
+    name: "maintenance.status.changed",
+    actor: { type: "fleet", id: FO },
+    subject: { type: "maintenance_block", id: "mnt_1" },
+    payload: {
+      blockId: "mnt_1",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      kind: "planned_service",
+      from: "checking",
+      to: "scheduled",
+      startsAt: "2026-09-25T08:00:00.000Z",
+      endsAt: "2026-09-25T12:00:00.000Z",
+    },
+    expect: {
+      fleet_manager: "Maintenance scheduled",
+    },
+  },
+  {
+    name: "fleet.offroad.reported",
+    actor: DRIVER,
+    subject: { type: "maintenance_block", id: "mnt_2" },
+    payload: {
+      blockId: "mnt_2",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      reportedBy: D,
+      reportedByRole: "driver",
+      startsAt: "2026-09-23T10:00:00.000Z",
+      expectedEndsAt: null,
+    },
+    expect: {
+      fleet_owner: "Vehicle reported off-road",
+      fleet_manager: "Vehicle reported off-road",
+    },
+  },
+  {
+    name: "fleet.offroad.flagged",
+    subject: { type: "maintenance_block", id: "mnt_2" },
+    payload: {
+      blockId: "mnt_2",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      reportedBy: FO,
+      reason: "vehicle_on_trip_during_off_road",
+    },
+    expect: { ubi_ops: "Off-road report flagged for review" },
+  },
+  {
+    name: "fleet.alert",
+    actor: DRIVER,
+    subject: { type: "vehicle", id: "veh_1" },
+    payload: {
+      alertType: "vehicle_issue_reported",
+      issueId: "vis_1",
+      severity: "cannot_drive",
+      fleetId: FLEET,
+      vehicleId: "veh_1",
+      driverId: D,
+      blockId: "mnt_2",
+      fleetAction: "vehicle_off_road",
+      hasNote: true,
+      reportedAt: "2026-09-23T10:00:00.000Z",
+    },
+    expect: {
+      fleet_owner: "Driver reported a breakdown",
+      fleet_manager: "Driver reported a breakdown",
+    },
+  },
+  {
+    name: "fleet.conflict.opened",
+    subject: { type: "fleet_conflict", id: "fcf_1" },
+    payload: {
+      conflictId: "fcf_1",
+      fleetId: FLEET,
+      type: "unplanned_off_road",
+      severity: "critical",
+      vehicleId: "veh_1",
+      driverId: D,
+      bookingBlockId: "bkg_1",
+      maintenanceBlockId: "mnt_2",
+      deadlineAt: "2026-09-24T06:00:00.000Z",
+    },
+    expect: {
+      driver: "Schedule conflict needs your attention",
+      fleet_owner: "New fleet schedule conflict",
+      fleet_manager: "New fleet schedule conflict",
+    },
+  },
+  {
+    name: "fleet.conflict.resolved",
+    subject: { type: "fleet_conflict", id: "fcf_1" },
+    payload: {
+      conflictId: "fcf_1",
+      fleetId: FLEET,
+      driverId: D,
+      vehicleId: "veh_1",
+      type: "unplanned_off_road",
+      resolution: "vehicle_swap_applied",
+    },
+    expect: {
+      driver: "Schedule conflict resolved",
+      fleet_owner: "Fleet conflict resolved",
+      fleet_manager: "Fleet conflict resolved",
+    },
+  },
+  {
+    name: "fleet.conflict.lapsed",
+    subject: { type: "fleet_conflict", id: "fcf_1" },
+    payload: {
+      conflictId: "fcf_1",
+      fleetId: FLEET,
+      driverId: D,
+      vehicleId: "veh_1",
+      type: "unplanned_off_road",
+      deadlineAt: "2026-09-24T06:00:00.000Z",
+    },
+    expect: {
+      driver: "Conflict deadline passed",
+      fleet_owner: "Conflict deadline passed",
+      fleet_manager: "Conflict deadline passed",
+    },
+  },
+  {
+    name: "fleet.conflict.reminder_sent",
+    actor: { type: "fleet", id: FO },
+    subject: { type: "fleet_conflict", id: "fcf_1" },
+    payload: {
+      conflictId: "fcf_1",
+      fleetId: FLEET,
+      driverId: D,
+      type: "time_off_overlaps_booking",
+    },
+    expect: { driver: "Reminder: decision needed on your job" },
+  },
+  {
+    name: "vehicle.document.expiring",
+    subject: { type: "vehicle", id: "veh_1" },
+    payload: {
+      vehicleId: "veh_1",
+      fleetId: FLEET,
+      document: "insurance",
+      expiresAt: "2026-10-01T00:00:00.000Z",
+      reason: "threshold",
+      thresholdDays: 7,
+    },
+    expect: {
+      fleet_owner: "Vehicle document expiring soon",
+      fleet_manager: "Vehicle document expiring soon",
+    },
+  },
+  {
+    name: "vehicle.document.expired",
+    subject: { type: "vehicle", id: "veh_1" },
+    payload: {
+      vehicleId: "veh_1",
+      fleetId: FLEET,
+      document: "insurance",
+      expiresAt: "2026-09-23T00:00:00.000Z",
+      effect: "doc_expired",
+    },
+    expect: {
+      fleet_owner: "Vehicle held: document expired",
+      fleet_manager: "Vehicle held: document expired",
+    },
+  },
+  {
+    name: "driver.availability.saved",
+    actor: DRIVER,
+    subject: { type: "driver", id: D },
+    payload: {
+      driverId: D,
+      setVersion: 2,
+      status: "saved_with_withdrawals",
+      windows: 3,
+      withdrawalsChosen: 1,
+    },
+    expect: { driver: "Availability saved with withdrawals" },
+  },
 ];
 
 function envelope(
@@ -614,14 +1003,32 @@ function harness(
   const sms: { to: string; message: string }[] = [];
   const phoneLookups: string[] = [];
   const deadLetters: DeadLetterEntry[] = [];
+  const inbox: {
+    userId: string;
+    role: Role;
+    notification: PushNotification;
+  }[] = [];
   const logs: unknown[] = [];
   const parties: PartyDirectory = cfg.parties ?? {
     award: async (awardId) =>
       awardId === AWARD ? { requesterId: R, driverId: D } : null,
     requester: async (requestId) => (requestId === REQUEST ? R : null),
     traveller: async (transferId) => (transferId === TRANSFER ? T : null),
+    fleetStaff: async (fleetId, roles) => {
+      if (fleetId !== FLEET) return [];
+      const out: string[] = [];
+      if (roles.includes("owner")) out.push(FO);
+      if (roles.includes("manager")) out.push(FM);
+      return out;
+    },
+    ubiOps: async () => [OPS],
   };
-  const phones: Record<string, string> = { [R]: R_PHONE, [D]: D_PHONE };
+  const phones: Record<string, string> = {
+    [R]: R_PHONE,
+    [D]: D_PHONE,
+    [FO]: FO_PHONE,
+    [FM]: FM_PHONE,
+  };
   const seen = new Set<string>();
   const ports: MarketplacePushPorts = {
     devices: {
@@ -655,6 +1062,15 @@ function harness(
       },
     },
     pending: { record: async () => {} },
+    inbox: {
+      record: async (entry) => {
+        inbox.push({
+          userId: entry.userId,
+          role: entry.role,
+          notification: entry.notification,
+        });
+      },
+    },
     logger: {
       debug: vi.fn(),
       info: (obj: unknown) => logs.push(obj),
@@ -687,6 +1103,7 @@ function harness(
     sms,
     phoneLookups,
     deadLetters,
+    inbox,
     logs,
   };
 }
@@ -696,6 +1113,9 @@ const ROLE_OF: Record<string, Role> = {
   [D]: "driver",
   [T]: "traveller",
   [S]: "sender",
+  [FO]: "fleet_owner",
+  [FM]: "fleet_manager",
+  [OPS]: "ubi_ops",
 };
 
 describe("audience and per-viewer copy, per event", () => {
@@ -1067,5 +1487,104 @@ describe("SMS fallback for time-critical events", () => {
     );
     expect(h.sms.map((m) => m.to)).toEqual([D_PHONE]);
     expect(h.phoneLookups).toEqual([D]);
+  });
+
+  it("fleet.alert sends SMS fallback for cannot_drive when offline, but never for service_soon", async () => {
+    const h = harness({ tokensByUser: { [FO]: [], [FM]: [] } });
+    await h.deliverer.handle(
+      envelope({
+        name: "fleet.alert",
+        actor: DRIVER,
+        subject: { type: "vehicle", id: "veh_1" },
+        payload: {
+          alertType: "vehicle_issue_reported",
+          issueId: "vis_soon",
+          severity: "service_soon",
+          fleetId: FLEET,
+          vehicleId: "veh_1",
+          driverId: D,
+          blockId: null,
+          fleetAction: "schedule_planned_maintenance",
+          hasNote: true,
+          reportedAt: "2026-09-23T10:00:00.000Z",
+        },
+        expect: {},
+      }),
+    );
+    expect(h.sms).toHaveLength(0);
+    expect(h.inbox.map((i) => i.userId)).toEqual([FO, FM]);
+
+    await h.deliverer.handle(
+      envelope({
+        name: "fleet.alert",
+        actor: DRIVER,
+        subject: { type: "vehicle", id: "veh_1" },
+        payload: {
+          alertType: "vehicle_issue_reported",
+          issueId: "vis_break",
+          severity: "cannot_drive",
+          fleetId: FLEET,
+          vehicleId: "veh_1",
+          driverId: D,
+          blockId: "mnt_2",
+          fleetAction: "vehicle_off_road",
+          hasNote: true,
+          reportedAt: "2026-09-23T10:00:00.000Z",
+        },
+        expect: {},
+      }),
+    );
+    expect(h.sms.map((m) => m.to)).toEqual([FO_PHONE, FM_PHONE]);
+  });
+
+  it("sends ONE notification to the rider (choice_offered) and ONE to the driver (failed) when an advance booking fails with choice_offered", async () => {
+    const h = harness();
+    await h.deliverer.handle(
+      envelope({
+        name: "mp.advance_booking.failed",
+        subject: { type: "mp_advance_booking", id: "bkg_99" },
+        payload: booking("failed", {
+          bookingId: "bkg_99",
+          reason: "risk_unresolved",
+          choiceOffered: true,
+          rematchAvailable: false,
+          financialOutcome: {
+            commissionReversed: true,
+            riderFundingReleased: true,
+            riderCharged: false,
+          },
+        }),
+        expect: {},
+      }),
+    );
+    await h.deliverer.handle(
+      envelope({
+        name: "mp.advance_booking.choice_offered",
+        subject: { type: "mp_advance_booking", id: "bkg_99" },
+        payload: {
+          bookingId: "bkg_99",
+          awardId: AWARD,
+          requestId: REQUEST,
+          requesterId: R,
+          reason: "risk_unresolved",
+          options: ["refund"],
+          rematchAvailable: false,
+          sameFareMinor: null,
+          rematchBy: null,
+          refund: { riderCharged: false, riderFundingReleased: true },
+        },
+        expect: {},
+      }),
+    );
+    const riderSends = h.sent.filter((s) => s.userId === R);
+    const driverSends = h.sent.filter((s) => s.userId === D);
+    expect(riderSends).toHaveLength(1);
+    expect(driverSends).toHaveLength(1);
+    expect(riderSends[0]?.notification.title).toBe(
+      "Your reserved ride can't go ahead",
+    );
+    expect(riderSends[0]?.notification.body).toContain(
+      "Not enough time remains to rematch before pickup",
+    );
   });
 });

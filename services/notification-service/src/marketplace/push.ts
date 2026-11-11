@@ -127,6 +127,14 @@ export interface PendingEntry {
   readonly at?: string;
 }
 
+export interface InboxEntry {
+  readonly eventId: string;
+  readonly eventName: string;
+  readonly userId: string;
+  readonly role: Role;
+  readonly notification: PushNotification;
+}
+
 export interface PushLogger {
   debug(obj: unknown, msg?: string): void;
   info(obj: unknown, msg?: string): void;
@@ -160,6 +168,7 @@ export interface MarketplacePushPorts {
   };
   readonly deadLetters: { record(entry: DeadLetterEntry): Promise<void> };
   readonly pending: { record(entry: PendingEntry): Promise<void> };
+  readonly inbox?: { record(entry: InboxEntry): Promise<void> };
   readonly logger: PushLogger;
   /** Resolves parties the payload does not name. Absent: payload ids only. */
   readonly parties?: PartyDirectory;
@@ -198,6 +207,7 @@ export class MarketplacePushDeliverer {
   private readonly backoff: BackoffOptions;
   private readonly delay: (ms: number) => Promise<void>;
   private readonly specs: Readonly<Record<string, NotificationSpec>>;
+  private readonly choiceOfferedBookings = new Set<string>();
 
   constructor(private readonly ports: MarketplacePushPorts) {
     this.maxAttempts = Math.max(1, ports.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
@@ -232,11 +242,14 @@ export class MarketplacePushDeliverer {
     }
 
     // Ordering: drop an event whose sequence is not newer than what we've
-    // already processed for this subject. This tolerates out-of-order delivery
-    // and suppresses a stale (e.g. expired) event that arrives after a newer
-    // one for the same aggregate.
+    // already processed for this subject. `mp.advance_booking.choice_offered`
+    // is emitted in the same transaction as `mp.advance_booking.failed` with
+    // the same booking version, so it tracks its own sub-subject key.
     if (typeof envelope.sequence === "number") {
-      const subjectKey = `${envelope.subject.type}:${envelope.subject.id}`;
+      const subjectKey =
+        envelope.name === "mp.advance_booking.choice_offered"
+          ? `${envelope.subject.type}:${envelope.subject.id}:choice_offered`
+          : `${envelope.subject.type}:${envelope.subject.id}`;
       const fresh = await this.ports.state.advanceSubjectSequence(
         subjectKey,
         envelope.sequence,
@@ -246,6 +259,15 @@ export class MarketplacePushDeliverer {
       }
     }
 
+    const bookingId =
+      payloadId(envelope, "bookingId") ??
+      (envelope.subject.type === "mp_advance_booking"
+        ? envelope.subject.id
+        : null);
+    if (envelope.name === "mp.advance_booking.choice_offered" && bookingId) {
+      this.choiceOfferedBookings.add(bookingId);
+    }
+
     const data = buildHintData(envelope);
     const awards = new Map<string, Promise<AwardParties | null>>();
     const seen = new Set<string>();
@@ -253,6 +275,14 @@ export class MarketplacePushDeliverer {
     const unresolved: UnresolvedRole[] = [];
 
     for (const { role, copy } of roles) {
+      if (
+        envelope.name === "mp.advance_booking.failed" &&
+        role === "requester" &&
+        bookingId &&
+        this.choiceOfferedBookings.has(bookingId)
+      ) {
+        continue;
+      }
       const resolved = await this.resolve(envelope, role, awards);
       if ("reason" in resolved) {
         unresolved.push({ role, reason: resolved.reason });
@@ -275,36 +305,47 @@ export class MarketplacePushDeliverer {
         );
         continue;
       }
-      const userId = resolved.userId;
-      if (seen.has(userId)) {
-        continue;
+      for (const userId of resolved.userIds) {
+        if (seen.has(userId)) {
+          continue;
+        }
+        seen.add(userId);
+        if (
+          !spec.notifyActor &&
+          isPersonActor(envelope.actor) &&
+          envelope.actor.id === userId
+        ) {
+          // They performed the action; the response already told them.
+          perUser.push({
+            userId,
+            role,
+            outcome: "skipped_actor",
+            attempts: 0,
+          });
+          continue;
+        }
+        perUser.push(
+          await this.deliverToUser(
+            envelope,
+            spec,
+            { userId, role, copy },
+            data,
+          ),
+        );
       }
-      seen.add(userId);
-      if (
-        !spec.notifyActor &&
-        isPersonActor(envelope.actor) &&
-        envelope.actor.id === userId
-      ) {
-        // They performed the action; the response already told them.
-        perUser.push({ userId, role, outcome: "skipped_actor", attempts: 0 });
-        continue;
-      }
-      perUser.push(
-        await this.deliverToUser(envelope, spec, { userId, role, copy }, data),
-      );
     }
     return { ...base, outcome: "processed", perUser, unresolved };
   }
 
   /**
-   * The userId for one role: the payload's own id first, then the party
-   * directory. Never a list, never a guess.
+   * The userIds for one role: the payload's own id first, then the party
+   * directory. Never a rival list, never a guess.
    */
   private async resolve(
     envelope: EventEnvelope,
     role: Role,
     awards: Map<string, Promise<AwardParties | null>>,
-  ): Promise<{ userId: string } | { reason: string }> {
+  ): Promise<{ userIds: string[] } | { reason: string }> {
     const parties = this.ports.parties;
     // One award lookup per event, however many roles need it.
     const award = async (awardId: string): Promise<AwardParties | null> => {
@@ -325,7 +366,7 @@ export class MarketplacePushDeliverer {
         case "requester": {
           const direct = payloadId(envelope, "requesterId");
           if (direct) {
-            return { userId: direct };
+            return { userIds: [direct] };
           }
           if (!parties) {
             return { reason: "requester_not_in_payload" };
@@ -333,7 +374,7 @@ export class MarketplacePushDeliverer {
           if (awardId) {
             const found = (await award(awardId))?.requesterId;
             if (found) {
-              return { userId: found };
+              return { userIds: [found] };
             }
           }
           const requestId =
@@ -344,7 +385,7 @@ export class MarketplacePushDeliverer {
           if (requestId) {
             const found = await parties.requester(requestId);
             if (found) {
-              return { userId: found };
+              return { userIds: [found] };
             }
           }
           return { reason: "requester_not_found" };
@@ -352,7 +393,7 @@ export class MarketplacePushDeliverer {
         case "driver": {
           const direct = payloadId(envelope, "driverId");
           if (direct) {
-            return { userId: direct };
+            return { userIds: [direct] };
           }
           if (envelope.subject.type === "mp_bid") {
             // A bid event is about ITS bidder only: never fall back to the
@@ -365,7 +406,7 @@ export class MarketplacePushDeliverer {
           if (awardId) {
             const found = (await award(awardId))?.driverId;
             if (found) {
-              return { userId: found };
+              return { userIds: [found] };
             }
           }
           return { reason: "driver_not_found" };
@@ -373,7 +414,7 @@ export class MarketplacePushDeliverer {
         case "sender": {
           const direct = payloadId(envelope, "senderId");
           return direct
-            ? { userId: direct }
+            ? { userIds: [direct] }
             : { reason: "sender_not_in_payload" };
         }
         case "traveller": {
@@ -389,7 +430,45 @@ export class MarketplacePushDeliverer {
             return { reason: "traveller_not_in_payload" };
           }
           const found = await parties.traveller(transferId);
-          return found ? { userId: found } : { reason: "traveller_not_found" };
+          return found
+            ? { userIds: [found] }
+            : { reason: "traveller_not_found" };
+        }
+        case "fleet_owner":
+        case "fleet_manager": {
+          const fleetId =
+            payloadId(envelope, "fleetId") ??
+            (envelope.subject.type === "fleet" ? envelope.subject.id : null);
+          if (!fleetId) {
+            return { reason: "fleet_not_in_payload" };
+          }
+          if (!parties?.fleetStaff) {
+            const directOwner =
+              role === "fleet_owner" ? payloadId(envelope, "ownerId") : null;
+            return directOwner
+              ? { userIds: [directOwner] }
+              : { reason: "fleet_staff_not_in_payload" };
+          }
+          const targetRole = role === "fleet_owner" ? "owner" : "manager";
+          const staff = await parties.fleetStaff(fleetId, [targetRole]);
+          if (staff.length === 0 && role === "fleet_owner") {
+            const directOwner = payloadId(envelope, "ownerId");
+            if (directOwner) {
+              return { userIds: [directOwner] };
+            }
+            return { reason: "fleet_owner_not_found" };
+          }
+          return { userIds: staff };
+        }
+        case "ubi_ops": {
+          if (!parties?.ubiOps) {
+            return { reason: "ubi_ops_directory_missing" };
+          }
+          const ops = await parties.ubiOps();
+          if (ops.length === 0) {
+            return { reason: "ubi_ops_not_found" };
+          }
+          return { userIds: ops };
         }
       }
     } catch (err) {
@@ -413,16 +492,38 @@ export class MarketplacePushDeliverer {
     data: Record<string, string>,
   ): Promise<PerUserResult> {
     const { userId, role } = recipient;
-    if (!(await this.ports.prefs.allows(userId, spec.prefCategory))) {
-      return { userId, role, outcome: "suppressed_prefs", attempts: 0 };
-    }
-
     const notification: PushNotification = {
       title: recipient.copy.title,
       body: recipient.copy.body,
       type: spec.type,
       data,
     };
+
+    if (this.ports.inbox) {
+      try {
+        await this.ports.inbox.record({
+          eventId: envelope.id,
+          eventName: envelope.name,
+          userId,
+          role,
+          notification,
+        });
+      } catch (err) {
+        this.ports.logger.warn(
+          {
+            eventId: envelope.id,
+            eventName: envelope.name,
+            userId,
+            err: safeErrorText(err),
+          },
+          "in-app notification inbox write failed; continuing with push/SMS",
+        );
+      }
+    }
+
+    if (!(await this.ports.prefs.allows(userId, spec.prefCategory))) {
+      return { userId, role, outcome: "suppressed_prefs", attempts: 0 };
+    }
 
     let tokens = await this.ports.devices.activeTokens(userId);
     if (tokens.length === 0) {
@@ -532,7 +633,11 @@ export class MarketplacePushDeliverer {
     recipient: Recipient,
   ): Promise<SmsFallbackOutcome | undefined> {
     const sms = this.ports.sms;
-    if (!spec.smsFallback || !sms) {
+    const shouldFallback =
+      typeof spec.smsFallback === "function"
+        ? spec.smsFallback(envelope)
+        : Boolean(spec.smsFallback);
+    if (!shouldFallback || !sms) {
       return undefined;
     }
     const { userId, role } = recipient;

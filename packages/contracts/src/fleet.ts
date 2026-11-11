@@ -44,12 +44,6 @@
  *    the booking `at_risk` (never cancels) and is audited and flagged if the
  *    vehicle goes online during the claimed breakdown;
  *  - money is integer minor units with the city's currency, server-computed.
- *
- * NOT YET REGISTERED in `index.ts` / `events.ts` / `flags.ts`: the lead wires
- * `export * from "./fleet"`, appends `FLEET_EVENT_NAMES` to EVENT_NAMES,
- * `FLEET_ERROR_CODES` to ERROR_CODES and `fleet: FleetPolicySchema.optional()`
- * to CityConfigSchema at integration. Until then fleet-service imports this
- * module by path and its tests parse real responses against these schemas.
  */
 import { z } from "zod";
 
@@ -190,6 +184,7 @@ export const CONFLICT_TYPES = [
   "document_expires_in_booking",
   "time_off_overlaps_booking",
   "termination_bookings",
+  "vehicle_service_requested",
 ] as const;
 export type ConflictType = (typeof CONFLICT_TYPES)[number];
 
@@ -205,6 +200,7 @@ export const FLEET_VISIBLE_CONFLICT_TYPES = [
   "document_expires_in_booking",
   "driver_resolving",
   "termination_bookings",
+  "vehicle_service_requested",
 ] as const;
 
 export const CONFLICT_SEVERITIES = [
@@ -237,6 +233,7 @@ export const FLEET_CONFLICT_ACTIONS = [
   "ask_driver",
   "remind",
   "renew_document",
+  "plan_maintenance",
 ] as const;
 export type FleetConflictAction = (typeof FLEET_CONFLICT_ACTIONS)[number];
 
@@ -400,7 +397,7 @@ export function canFleetTransition(
   return allowed !== undefined && allowed.includes(to);
 }
 
-// ── Error codes (not yet in errors.ts ERROR_CODES) ─────────────────────────
+// ── Error codes (registered in errors.ts ERROR_CODES) ──────────────────────
 
 /** Fleet-specific codes and the HTTP status each answers with. */
 export const FLEET_ERROR_STATUS = {
@@ -426,7 +423,7 @@ export const FLEET_ERROR_CODES = Object.keys(
   FLEET_ERROR_STATUS,
 ) as readonly FleetErrorCode[];
 
-// ── Events (not yet in events.ts EVENT_NAMES) ──────────────────────────────
+// ── Events (registered in events.ts EVENT_NAMES) ───────────────────────────
 
 /**
  * Payloads carry ids, codes, times and money only — never PII. The handoff's
@@ -1860,3 +1857,212 @@ export const FLEET_RESPONSE_SCHEMAS = {
   SettlementInputsResponse: SettlementInputsResponseSchema,
   FleetWeekMoneyResponse: FleetWeekMoneyResponseSchema,
 } as const;
+
+export const FLEET_EVENT_PAYLOAD_SCHEMAS = {
+  "fleet.created": z
+    .object({
+      fleetId: z.string().min(1),
+      cityId: z.string().min(1),
+      ownerId: z.string().min(1),
+    })
+    .strict(),
+  "fleet.staff.changed": z
+    .object({
+      fleetId: z.string().min(1),
+      changes: z.array(
+        z
+          .object({
+            userId: z.string().min(1),
+            from: z.enum([...FLEET_STAFF_ROLES, "removed"] as const).nullable(),
+            to: z.enum([...FLEET_STAFF_ROLES, "removed"] as const),
+          })
+          .strict(),
+      ),
+    })
+    .strict(),
+  "fleet.vehicle.added": z
+    .object({
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      classes: z.array(z.string().min(1)),
+      capacity: z.number().int().positive(),
+    })
+    .strict(),
+  "assignment.proposal.status.changed": z
+    .object({
+      proposalId: z.string().min(1),
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      driverId: z.string().min(1),
+      from: z.enum(PROPOSAL_STATUSES).nullable(),
+      to: z.enum(PROPOSAL_STATUSES),
+      path: z.array(z.enum(PROPOSAL_STATUSES)).optional(),
+      termsVersion: z.number().int().positive().optional(),
+      expiresAt: Timestamp.optional(),
+    })
+    .strict(),
+  "assignment.signed": z
+    .object({
+      assignmentId: z.string().min(1),
+      proposalId: z.string().min(1),
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      driverId: z.string().min(1),
+      termsVersion: z.number().int().positive(),
+      termsHash: z.string().min(1),
+      signedAt: Timestamp,
+      validFrom: FleetLocalDateSchema,
+      validTo: FleetLocalDateSchema.nullable(),
+    })
+    .strict(),
+  "assignment.status.changed": z
+    .object({
+      assignmentId: z.string().min(1),
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      driverId: z.string().min(1),
+      from: z.enum(ARRANGEMENT_STATUSES),
+      to: z.enum(ARRANGEMENT_STATUSES),
+      supersededBy: z.string().min(1).optional(),
+      noticeEndsOn: FleetLocalDateSchema.optional(),
+    })
+    .strict(),
+  "maintenance.status.changed": z
+    .object({
+      blockId: z.string().min(1),
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      kind: z.enum(MAINTENANCE_KINDS),
+      from: z.enum(MAINTENANCE_STATUSES).nullable(),
+      to: z.enum(MAINTENANCE_STATUSES),
+      path: z.array(z.enum(MAINTENANCE_STATUSES)).optional(),
+      startsAt: Timestamp,
+      endsAt: Timestamp.nullable(),
+    })
+    .strict(),
+  "fleet.offroad.reported": z
+    .object({
+      blockId: z.string().min(1),
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      reportedBy: z.string().min(1),
+      reportedByRole: z.enum([...FLEET_STAFF_ROLES, "driver"] as const),
+      startsAt: Timestamp,
+      expectedEndsAt: Timestamp.nullable(),
+    })
+    .strict(),
+  "fleet.offroad.flagged": z
+    .object({
+      blockId: z.string().min(1),
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      reportedBy: z.string().min(1),
+      reason: z.enum([
+        "vehicle_on_trip_during_off_road",
+        "driver_online_on_vehicle_during_off_road",
+      ] as const),
+    })
+    .strict(),
+  "fleet.conflict.opened": z
+    .object({
+      conflictId: z.string().min(1),
+      fleetId: z.string().min(1).nullable(),
+      type: z.enum(CONFLICT_TYPES),
+      severity: z.enum(CONFLICT_SEVERITIES),
+      vehicleId: z.string().min(1).nullable(),
+      driverId: z.string().min(1).nullable(),
+      bookingBlockId: z.string().min(1).nullable(),
+      maintenanceBlockId: z.string().min(1).nullable(),
+      deadlineAt: Timestamp.nullable(),
+    })
+    .strict(),
+  "fleet.conflict.resolved": z
+    .object({
+      conflictId: z.string().min(1),
+      fleetId: z.string().min(1).nullable(),
+      driverId: z.string().min(1).nullable(),
+      vehicleId: z.string().min(1).nullable(),
+      type: z.enum(CONFLICT_TYPES),
+      resolution: z.string().min(1),
+    })
+    .strict(),
+  "fleet.conflict.lapsed": z
+    .object({
+      conflictId: z.string().min(1),
+      fleetId: z.string().min(1).nullable(),
+      driverId: z.string().min(1).nullable(),
+      vehicleId: z.string().min(1).nullable(),
+      type: z.enum(CONFLICT_TYPES),
+      deadlineAt: Timestamp,
+    })
+    .strict(),
+  "fleet.conflict.reminder_sent": z
+    .object({
+      conflictId: z.string().min(1),
+      fleetId: z.string().min(1).nullable(),
+      driverId: z.string().min(1).nullable(),
+      type: z.enum(CONFLICT_TYPES),
+    })
+    .strict(),
+  "vehicle.document.expiring": z
+    .object({
+      vehicleId: z.string().min(1),
+      fleetId: z.string().min(1),
+      document: z.enum(DOCUMENT_KINDS),
+      expiresAt: Timestamp,
+      reason: z.enum(["threshold", "booking_after_expiry"] as const),
+      thresholdDays: z.number().int().positive().optional(),
+      bookingBlockId: z.string().min(1).optional(),
+    })
+    .strict(),
+  "vehicle.document.expired": z
+    .object({
+      vehicleId: z.string().min(1),
+      fleetId: z.string().min(1),
+      document: z.enum(DOCUMENT_KINDS),
+      expiresAt: Timestamp,
+      effect: z.literal("doc_expired"),
+    })
+    .strict(),
+  "driver.availability.saved": z
+    .object({
+      driverId: z.string().min(1),
+      setVersion: z.number().int().positive(),
+      status: z.enum(AVAILABILITY_STATUSES),
+      windows: z.number().int().nonnegative(),
+      withdrawalsChosen: z.number().int().nonnegative(),
+    })
+    .strict(),
+  "fleet.vehicle_swap.requested": z
+    .object({
+      swapRequestId: z.string().min(1),
+      swapId: z.string().min(1),
+      fleetId: z.string().min(1),
+      bookingBlockId: z.string().min(1),
+      fromVehicleId: z.string().min(1).nullable(),
+      toVehicleId: z.string().min(1),
+    })
+    .strict(),
+  "fleet.alert": z
+    .object({
+      alertType: z.literal("vehicle_issue_reported"),
+      issueId: z.string().min(1),
+      severity: z.enum(VEHICLE_ISSUE_SEVERITIES),
+      fleetId: z.string().min(1),
+      vehicleId: z.string().min(1),
+      driverId: z.string().min(1),
+      blockId: z.string().min(1).nullable(),
+      fleetAction: z.enum([
+        "vehicle_off_road",
+        "schedule_planned_maintenance",
+      ] as const),
+      hasNote: z.boolean(),
+      reportedAt: Timestamp,
+    })
+    .strict(),
+} as const satisfies Record<FleetEventName | "fleet.alert", z.ZodTypeAny>;
+export type FleetEventPayloadMap = {
+  readonly [K in keyof typeof FLEET_EVENT_PAYLOAD_SCHEMAS]: z.infer<
+    (typeof FLEET_EVENT_PAYLOAD_SCHEMAS)[K]
+  >;
+};

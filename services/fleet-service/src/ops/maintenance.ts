@@ -424,10 +424,22 @@ export async function createMaintenance(
         idempotencyKey: scopedKey,
       },
     });
+    const resolvedServiceRequests = await resolveConflicts(
+      tx,
+      {
+        vehicleId: input.vehicleId,
+        type: "vehicle_service_requested",
+      },
+      "maintenance_planned",
+      access.actor,
+      access.cityId,
+      now,
+    );
     return {
       result: row,
       events: [
         statusEvent(row, null, "checking", access.actor, access.cityId, now),
+        ...resolvedServiceRequests,
       ],
       audits: [
         {

@@ -348,7 +348,8 @@ export type FleetConflictType =
   | "document_expiring"
   | "document_expires_in_booking"
   | "driver_resolving"
-  | "termination_bookings";
+  | "termination_bookings"
+  | "vehicle_service_requested";
 
 export type ConflictSeverity =
   | "critical"
@@ -369,7 +370,8 @@ export type FleetConflictAction =
   | "propose_vehicle_swap"
   | "ask_driver"
   | "remind"
-  | "renew_document";
+  | "renew_document"
+  | "plan_maintenance";
 
 export interface ConflictView {
   readonly conflictId: string;

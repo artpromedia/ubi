@@ -57,6 +57,7 @@ export const ACTION_LABELS: Readonly<Record<FleetConflictAction, string>> = {
   ask_driver: "Ask the driver to review",
   remind: "Send a reminder",
   renew_document: "Upload renewal",
+  plan_maintenance: "Plan maintenance",
 };
 
 /** The route that performs one allowed action on one conflict. */
@@ -85,6 +86,20 @@ export function planAction(
             kind: "unavailable",
             reason: "No booking is linked to this conflict.",
           };
+    case "plan_maintenance": {
+      const vehicleId = subject?.vehicleId ?? null;
+      return {
+        action,
+        label,
+        kind: "maintenance",
+        href:
+          vehicleId !== null
+            ? `/maintenance/new?vehicleId=${encodeURIComponent(vehicleId)}`
+            : "/maintenance/new",
+        maintenanceBlockId: null,
+        vehicleId,
+      };
+    }
     case "move_block":
     case "cancel_block":
     case "complete_block": {

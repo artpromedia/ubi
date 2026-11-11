@@ -25,6 +25,7 @@ import { isKnownEventName, type EventName } from "@ubi/contracts";
 
 import {
   FLEET_EVENT_NAMES,
+  FLEET_EVENT_PAYLOAD_SCHEMAS,
   type FleetActorType,
   type FleetEventName,
   type FleetSubjectType,
@@ -105,6 +106,15 @@ function actorTypeOf(input: OutboxInput): FleetActorType {
 
 async function publishEvent(tx: FleetTx, input: OutboxInput): Promise<void> {
   const name = assertFleetEventName(input.name);
+  const schema = (
+    FLEET_EVENT_PAYLOAD_SCHEMAS as Readonly<
+      Record<string, { parse: (val: unknown) => unknown } | undefined>
+    >
+  )[name];
+  const payload =
+    schema !== undefined
+      ? (schema.parse(input.payload) as JsonRecord)
+      : { ...input.payload };
   await tx.outboxEvent.create({
     data: {
       id: generateId("evt"),
@@ -121,7 +131,7 @@ async function publishEvent(tx: FleetTx, input: OutboxInput): Promise<void> {
           `${name}:${input.aggregateId}:v${input.toVersion}`,
       ),
       correlationId: input.correlationId ?? null,
-      payload: { ...input.payload },
+      payload,
       occurredAt: input.occurredAt,
     },
   });

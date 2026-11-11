@@ -25,7 +25,14 @@
 import type { EventEnvelope } from "@ubi/contracts";
 
 /** Who a notification is for, relative to the event. */
-export type Role = "requester" | "driver" | "sender" | "traveller";
+export type Role =
+  | "requester"
+  | "driver"
+  | "sender"
+  | "traveller"
+  | "fleet_owner"
+  | "fleet_manager"
+  | "ubi_ops";
 
 /** Resolution order (and the order recipients are processed in). */
 export const ROLES: readonly Role[] = [
@@ -33,6 +40,9 @@ export const ROLES: readonly Role[] = [
   "driver",
   "sender",
   "traveller",
+  "fleet_owner",
+  "fleet_manager",
+  "ubi_ops",
 ];
 
 /** Which preference category gates this push. */
@@ -64,7 +74,7 @@ export interface NotificationSpec {
    * Time-critical: when no device can take the push, fall back to ONE SMS to
    * the recipient's own verified account phone (never anyone else's).
    */
-  readonly smsFallback?: boolean;
+  readonly smsFallback?: boolean | ((envelope: EventEnvelope) => boolean);
 }
 
 export interface AddressedRole {
@@ -113,6 +123,15 @@ function hintKind(name: string): string {
   if (name.startsWith("shipment.")) {
     return "delivery";
   }
+  if (
+    name.startsWith("fleet.") ||
+    name.startsWith("assignment.") ||
+    name.startsWith("maintenance.") ||
+    name.startsWith("vehicle.document.") ||
+    name === "driver.availability.saved"
+  ) {
+    return "fleet";
+  }
   return "marketplace";
 }
 
@@ -123,6 +142,14 @@ export const HINT_DATA_KEYS: readonly string[] = [
   "subjectType",
   "subjectId",
   "requestId",
+  "bookingId",
+  "fleetId",
+  "vehicleId",
+  "proposalId",
+  "assignmentId",
+  "blockId",
+  "conflictId",
+  "swapId",
   "seq",
 ];
 
@@ -137,15 +164,51 @@ export function buildHintData(envelope: EventEnvelope): Record<string, string> {
   const requestId =
     payloadId(envelope, "requestId") ??
     (envelope.subject.type === "mp_request" ? envelope.subject.id : null);
+  const bookingId =
+    payloadId(envelope, "bookingId") ??
+    (envelope.subject.type === "mp_advance_booking"
+      ? envelope.subject.id
+      : null);
+  const fleetId =
+    payloadId(envelope, "fleetId") ??
+    (envelope.subject.type === "fleet" ? envelope.subject.id : null);
+  const vehicleId =
+    payloadId(envelope, "vehicleId") ??
+    (envelope.subject.type === "vehicle" ? envelope.subject.id : null);
+  const proposalId = payloadId(envelope, "proposalId");
+  const assignmentId =
+    payloadId(envelope, "assignmentId") ??
+    (envelope.subject.type === "assignment" && !proposalId
+      ? envelope.subject.id
+      : null);
+  const blockId =
+    payloadId(envelope, "blockId") ??
+    payloadId(envelope, "maintenanceBlockId") ??
+    (envelope.subject.type === "maintenance_block"
+      ? envelope.subject.id
+      : null);
+  const conflictId =
+    payloadId(envelope, "conflictId") ??
+    (envelope.subject.type === "fleet_conflict" ? envelope.subject.id : null);
+  const swapId =
+    payloadId(envelope, "swapId") ??
+    (envelope.subject.type === "mp_vehicle_swap" ? envelope.subject.id : null);
+
   const data: Record<string, string> = {
     kind: hintKind(envelope.name),
     name: envelope.name,
     subjectType: envelope.subject.type,
     subjectId: envelope.subject.id,
   };
-  if (requestId) {
-    data.requestId = requestId;
-  }
+  if (requestId) data.requestId = requestId;
+  if (bookingId) data.bookingId = bookingId;
+  if (fleetId) data.fleetId = fleetId;
+  if (vehicleId) data.vehicleId = vehicleId;
+  if (proposalId) data.proposalId = proposalId;
+  if (assignmentId) data.assignmentId = assignmentId;
+  if (blockId) data.blockId = blockId;
+  if (conflictId) data.conflictId = conflictId;
+  if (swapId) data.swapId = swapId;
   if (typeof envelope.sequence === "number") {
     data.seq = String(envelope.sequence);
   }

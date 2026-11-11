@@ -39,6 +39,16 @@ export interface PartyDirectory {
   requester(requestId: string): Promise<string | null>;
   /** The airport transfer's traveller (owner), or null. */
   traveller(transferId: string): Promise<string | null>;
+  /**
+   * Active staff userIds of `fleetId` whose role is in `roles` (`owner`,
+   * `manager` — never `read_only` or `removed`).
+   */
+  fleetStaff?(
+    fleetId: string,
+    roles: readonly ("owner" | "manager")[],
+  ): Promise<string[]>;
+  /** Active UBI ops / admin userIds (`ADMIN`, `SUPER_ADMIN`). */
+  ubiOps?(): Promise<string[]>;
 }
 
 export interface PhoneDirectory {
@@ -117,6 +127,39 @@ export class SqlPartyDirectory implements PartyDirectory, PhoneDirectory {
       select: { userId: true },
     });
     return row?.userId ?? null;
+  }
+
+  async fleetStaff(
+    fleetId: string,
+    roles: readonly ("owner" | "manager")[],
+  ): Promise<string[]> {
+    if (
+      fleetId.length === 0 ||
+      fleetId.length > MAX_TEXT_ID ||
+      roles.length === 0
+    ) {
+      return [];
+    }
+    const rows = await this.db.fleetStaff.findMany({
+      where: {
+        fleetId,
+        status: "active",
+        role: { in: [...roles] },
+      },
+      select: { userId: true },
+    });
+    return [...new Set(rows.map((r: { userId: string }) => r.userId))];
+  }
+
+  async ubiOps(): Promise<string[]> {
+    const rows = await this.db.user.findMany({
+      where: {
+        role: { in: ["ADMIN", "SUPER_ADMIN"] },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return rows.map((r: { id: string }) => r.id);
   }
 
   async verifiedPhone(userId: string): Promise<string | null> {

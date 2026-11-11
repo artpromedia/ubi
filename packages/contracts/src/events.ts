@@ -672,3 +672,8 @@ export function decideResume(
   }
   return { action: "replay", fromSequence: lastSeenSequence + 1, count: gap };
 }
+
+export {
+  FLEET_EVENT_PAYLOAD_SCHEMAS,
+  type FleetEventPayloadMap,
+} from "./fleet";

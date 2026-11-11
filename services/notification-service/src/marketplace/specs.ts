@@ -104,6 +104,8 @@ const RIDER_BOOKING_REASON: Readonly<Record<string, string>> = {
   execution_blocked: "Your reserved ride couldn't be started.",
   reconfirmation_missed: "Your reserved driver didn't reconfirm in time.",
   funding_not_secured: "Payment for this ride couldn't be secured in time.",
+  risk_unresolved:
+    "Your reserved ride couldn't be kept by the assigned vehicle or driver in time.",
   award_cancelled: "This reserved ride was cancelled.",
   trip_cancelled: "This reserved ride was cancelled.",
 };
@@ -119,6 +121,8 @@ const DRIVER_BOOKING_REASON: Readonly<Record<string, string>> = {
     "This reserved job was released because you're still on another trip.",
   funding_not_secured:
     "This reserved job was released: the booking couldn't be completed.",
+  risk_unresolved:
+    "This reserved job wasn't resolved before the deadline, so it was released.",
   execution_blocked: "This reserved job couldn't be started.",
   award_cancelled: "This reserved job was cancelled.",
   trip_cancelled: "This reserved job was cancelled.",
@@ -555,13 +559,63 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
     prefCategory: "ride",
     type: "GENERAL",
     smsFallback: true,
-    copy: { requester: riderBookingEnded, driver: driverBookingEnded },
+    copy: {
+      requester: (e) =>
+        e.payload.choiceOffered === true ? null : riderBookingEnded(e),
+      driver: driverBookingEnded,
+    },
   },
   "mp.advance_booking.cancelled": {
     prefCategory: "ride",
     type: "GENERAL",
     smsFallback: true,
     copy: { requester: riderBookingEnded, driver: driverBookingEnded },
+  },
+  "mp.advance_booking.risk_changed": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: (e) =>
+        text(e, "risk") === "at_risk"
+          ? {
+              title: "Reserved job needs a decision",
+              body: "A vehicle or schedule change affects your reserved job. Open UBI to review your options before the deadline.",
+            }
+          : {
+              title: "Reserved job back on track",
+              body: "Your reserved job is no longer at risk. Open UBI for the details.",
+            },
+    },
+  },
+  "mp.advance_booking.choice_offered": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    smsFallback: true,
+    copy: {
+      requester: (e) => {
+        const reason =
+          RIDER_BOOKING_REASON[text(e, "reason") ?? ""] ??
+          "Your reserved ride can't go ahead with its original driver.";
+        const money = financialOutcome(e);
+        const refundNote =
+          money.riderCharged === false
+            ? money.riderFundingReleased === true
+              ? "You weren't charged and your payment hold was released."
+              : "You weren't charged."
+            : "Your payment is protected.";
+        const choiceNote =
+          e.payload.rematchAvailable === true
+            ? "Open UBI to request a same-fare rematch or take a full refund."
+            : "Not enough time remains to rematch before pickup — open UBI to confirm your refund or request a live ride.";
+        return {
+          title:
+            e.payload.rematchAvailable === true
+              ? "Choose a rematch or refund"
+              : "Your reserved ride can't go ahead",
+          body: `${reason} ${refundNote} ${choiceNote}`,
+        };
+      },
+    },
   },
   "mp.advance_booking.activated": {
     prefCategory: "ride",
@@ -581,6 +635,91 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
               title: "Reserved job is now active",
               body: "Your reserved pickup is now your current job. Open UBI to head to the pickup.",
             },
+    },
+  },
+
+  // ── Vehicle swaps on advance bookings (Q4) ─────────────────────────────
+  "mp.vehicle_swap.proposed": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: {
+        title: "Vehicle swap proposed for your job",
+        body: "Your fleet proposed a replacement vehicle for one of your reserved jobs. Open UBI to accept or decline.",
+      },
+    },
+  },
+  "mp.vehicle_swap.rider_consent_requested": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    smsFallback: true,
+    copy: {
+      requester: {
+        title: "Approve a replacement vehicle?",
+        body: "Your driver's original vehicle is unavailable and a replacement vehicle of the same class is ready. Open UBI to approve or decline.",
+      },
+    },
+  },
+  "mp.vehicle_swap.applied": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      requester: {
+        title: "Replacement vehicle confirmed",
+        body: "Your reserved ride is confirmed on the replacement vehicle. Open UBI for the updated vehicle details.",
+      },
+      driver: {
+        title: "Vehicle swap confirmed",
+        body: "The replacement vehicle is confirmed for your reserved job. Open UBI for the details.",
+      },
+      fleet_owner: {
+        title: "Vehicle swap confirmed",
+        body: "The rider and driver confirmed the replacement vehicle for a booked trip. Open the Fleet Portal for details.",
+      },
+      fleet_manager: {
+        title: "Vehicle swap confirmed",
+        body: "The rider and driver confirmed the replacement vehicle for a booked trip. Open the Fleet Portal for details.",
+      },
+    },
+  },
+  "mp.vehicle_swap.rider_declined": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: {
+        title: "Replacement vehicle declined",
+        body: "The rider declined the replacement vehicle, so the reserved job was released and your commission is returned. Open UBI for details.",
+      },
+      fleet_owner: {
+        title: "Vehicle swap declined",
+        body: "A replacement vehicle swap was not accepted for a booked trip. Open the Fleet Portal for details.",
+      },
+      fleet_manager: {
+        title: "Vehicle swap declined",
+        body: "A replacement vehicle swap was not accepted for a booked trip. Open the Fleet Portal for details.",
+      },
+    },
+  },
+  "mp.vehicle_swap.expired": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      requester: {
+        title: "Vehicle swap expired",
+        body: "The replacement vehicle offer for your reserved ride expired before it was confirmed. Open UBI for your booking options.",
+      },
+      driver: {
+        title: "Vehicle swap expired",
+        body: "The replacement vehicle proposal for your reserved job expired in time. Open UBI to check the booking.",
+      },
+      fleet_owner: {
+        title: "Vehicle swap expired",
+        body: "A replacement vehicle proposal expired before confirmation. Open the Fleet Portal for details.",
+      },
+      fleet_manager: {
+        title: "Vehicle swap expired",
+        body: "A replacement vehicle proposal expired before confirmation. Open the Fleet Portal for details.",
+      },
     },
   },
 
@@ -729,6 +868,400 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
       },
     },
   },
+
+  // ── Fleet & driver arrangements, maintenance, documents, conflicts ─────
+  "assignment.proposal.status.changed": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: (e) => {
+        const to = text(e, "to");
+        if (to === "pending_signature") {
+          return {
+            title: "New vehicle arrangement offer",
+            body: "A fleet sent you a vehicle arrangement offer. Open UBI to review the terms and sign or decline.",
+          };
+        }
+        if (to === "expired") {
+          return {
+            title: "Arrangement offer expired",
+            body: "A vehicle arrangement offer expired before it was signed. Open UBI for details.",
+          };
+        }
+        if (to === "withdrawn") {
+          return {
+            title: "Arrangement offer withdrawn",
+            body: "A fleet withdrew a pending vehicle arrangement offer. Open UBI for details.",
+          };
+        }
+        return null;
+      },
+      fleet_owner: (e) => {
+        const to = text(e, "to");
+        if (to === "declined") {
+          return {
+            title: "Arrangement offer declined",
+            body: "A driver declined a vehicle arrangement proposal. Open the Fleet Portal to review.",
+          };
+        }
+        if (to === "expired") {
+          return {
+            title: "Arrangement offer expired",
+            body: "A vehicle arrangement proposal expired unsigned. Open the Fleet Portal to review.",
+          };
+        }
+        return null;
+      },
+      fleet_manager: (e) => {
+        const to = text(e, "to");
+        if (to === "declined") {
+          return {
+            title: "Arrangement offer declined",
+            body: "A driver declined a vehicle arrangement proposal. Open the Fleet Portal to review.",
+          };
+        }
+        if (to === "expired") {
+          return {
+            title: "Arrangement offer expired",
+            body: "A vehicle arrangement proposal expired unsigned. Open the Fleet Portal to review.",
+          };
+        }
+        return null;
+      },
+    },
+  },
+  "assignment.signed": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      fleet_owner: {
+        title: "Vehicle arrangement signed",
+        body: "A driver signed a vehicle arrangement proposal. Open the Fleet Portal to view the active arrangement.",
+      },
+      fleet_manager: {
+        title: "Vehicle arrangement signed",
+        body: "A driver signed a vehicle arrangement proposal. Open the Fleet Portal to view the active arrangement.",
+      },
+    },
+  },
+  "assignment.status.changed": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: (e) => {
+        const to = text(e, "to");
+        if (to === "notice") {
+          return {
+            title: "Notice given on your arrangement",
+            body: "A two-week notice period has started on your vehicle arrangement. Open UBI to review your schedule and bookings.",
+          };
+        }
+        if (to === "ended") {
+          return {
+            title: "Vehicle arrangement ended",
+            body: "Your vehicle arrangement has ended. Open UBI for your schedule.",
+          };
+        }
+        return null;
+      },
+      fleet_owner: (e) => {
+        const to = text(e, "to");
+        if (to === "notice") {
+          return {
+            title: "Notice given on an arrangement",
+            body: "A two-week notice period has started on a vehicle arrangement. Open the Fleet Portal to review.",
+          };
+        }
+        if (to === "ended") {
+          return {
+            title: "Vehicle arrangement ended",
+            body: "A vehicle arrangement has ended. Open the Fleet Portal for details.",
+          };
+        }
+        return null;
+      },
+      fleet_manager: (e) => {
+        const to = text(e, "to");
+        if (to === "notice") {
+          return {
+            title: "Notice given on an arrangement",
+            body: "A two-week notice period has started on a vehicle arrangement. Open the Fleet Portal to review.",
+          };
+        }
+        if (to === "ended") {
+          return {
+            title: "Vehicle arrangement ended",
+            body: "A vehicle arrangement has ended. Open the Fleet Portal for details.",
+          };
+        }
+        return null;
+      },
+    },
+  },
+  "maintenance.status.changed": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      fleet_owner: (e) => {
+        const to = text(e, "to");
+        if (to === "scheduled") {
+          return {
+            title: "Maintenance scheduled",
+            body: "A planned maintenance block is now scheduled. Open the Fleet Portal calendar for details.",
+          };
+        }
+        if (to === "cancelled") {
+          return {
+            title: "Maintenance block cancelled",
+            body: "A planned maintenance block was cancelled. Open the Fleet Portal calendar for details.",
+          };
+        }
+        if (to === "completed") {
+          return {
+            title: "Vehicle back in service",
+            body: "A maintenance block was marked complete and the vehicle is back in service. Open the Fleet Portal for details.",
+          };
+        }
+        return null;
+      },
+      fleet_manager: (e) => {
+        const to = text(e, "to");
+        if (to === "scheduled") {
+          return {
+            title: "Maintenance scheduled",
+            body: "A planned maintenance block is now scheduled. Open the Fleet Portal calendar for details.",
+          };
+        }
+        if (to === "cancelled") {
+          return {
+            title: "Maintenance block cancelled",
+            body: "A planned maintenance block was cancelled. Open the Fleet Portal calendar for details.",
+          };
+        }
+        if (to === "completed") {
+          return {
+            title: "Vehicle back in service",
+            body: "A maintenance block was marked complete and the vehicle is back in service. Open the Fleet Portal for details.",
+          };
+        }
+        return null;
+      },
+    },
+  },
+  "fleet.offroad.reported": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      fleet_owner: {
+        title: "Vehicle reported off-road",
+        body: "A fleet vehicle was reported off-road. Open the Fleet Portal to review affected shifts and bookings.",
+      },
+      fleet_manager: {
+        title: "Vehicle reported off-road",
+        body: "A fleet vehicle was reported off-road. Open the Fleet Portal to review affected shifts and bookings.",
+      },
+    },
+  },
+  "fleet.offroad.flagged": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      ubi_ops: {
+        title: "Off-road report flagged for review",
+        body: "A vehicle reported off-road was seen active during the claimed breakdown window. Open Admin to review.",
+      },
+    },
+  },
+  "fleet.alert": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    smsFallback: (e) => text(e, "severity") === "cannot_drive",
+    copy: {
+      fleet_owner: (e) =>
+        text(e, "severity") === "cannot_drive"
+          ? {
+              title: "Driver reported a breakdown",
+              body: "A driver reported that a fleet vehicle cannot be driven. Open the Fleet Portal to arrange cover or a vehicle swap.",
+            }
+          : {
+              title: "Driver requested vehicle service",
+              body: "A driver reported that a fleet vehicle needs service soon. Open the Fleet Portal to plan maintenance.",
+            },
+      fleet_manager: (e) =>
+        text(e, "severity") === "cannot_drive"
+          ? {
+              title: "Driver reported a breakdown",
+              body: "A driver reported that a fleet vehicle cannot be driven. Open the Fleet Portal to arrange cover or a vehicle swap.",
+            }
+          : {
+              title: "Driver requested vehicle service",
+              body: "A driver reported that a fleet vehicle needs service soon. Open the Fleet Portal to plan maintenance.",
+            },
+    },
+  },
+  "fleet.conflict.opened": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: (e) =>
+        text(e, "driverId") !== null &&
+        text(e, "type") !== "vehicle_service_requested"
+          ? {
+              title: "Schedule conflict needs your attention",
+              body: "A schedule or vehicle conflict affects one of your reserved jobs. Open UBI to review your options before the deadline.",
+            }
+          : null,
+      fleet_owner: (e) => {
+        if (text(e, "fleetId") === null) return null;
+        const type = text(e, "type");
+        if (type === "time_off_overlaps_booking") {
+          return {
+            title: "Driver resolving a booking",
+            body: "A driver is resolving a conflict on an upcoming booking. Open the Fleet Portal conflict centre for status.",
+          };
+        }
+        if (type === "vehicle_service_requested") {
+          return {
+            title: "Vehicle service requested",
+            body: "A driver flagged a vehicle as needing service soon. Open the Fleet Portal conflict centre to plan maintenance.",
+          };
+        }
+        return {
+          title: "New fleet schedule conflict",
+          body: "A schedule or vehicle conflict needs attention in your fleet. Open the Fleet Portal conflict centre.",
+        };
+      },
+      fleet_manager: (e) => {
+        if (text(e, "fleetId") === null) return null;
+        const type = text(e, "type");
+        if (type === "time_off_overlaps_booking") {
+          return {
+            title: "Driver resolving a booking",
+            body: "A driver is resolving a conflict on an upcoming booking. Open the Fleet Portal conflict centre for status.",
+          };
+        }
+        if (type === "vehicle_service_requested") {
+          return {
+            title: "Vehicle service requested",
+            body: "A driver flagged a vehicle as needing service soon. Open the Fleet Portal conflict centre to plan maintenance.",
+          };
+        }
+        return {
+          title: "New fleet schedule conflict",
+          body: "A schedule or vehicle conflict needs attention in your fleet. Open the Fleet Portal conflict centre.",
+        };
+      },
+    },
+  },
+  "fleet.conflict.resolved": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: (e) =>
+        text(e, "driverId") !== null &&
+        text(e, "type") !== "vehicle_service_requested"
+          ? {
+              title: "Schedule conflict resolved",
+              body: "A conflict on your schedule has been resolved. Open UBI to view your updated schedule.",
+            }
+          : null,
+      fleet_owner: (e) =>
+        text(e, "fleetId") !== null
+          ? {
+              title: "Fleet conflict resolved",
+              body: "A conflict in your fleet's conflict centre has been resolved. Open the Fleet Portal for details.",
+            }
+          : null,
+      fleet_manager: (e) =>
+        text(e, "fleetId") !== null
+          ? {
+              title: "Fleet conflict resolved",
+              body: "A conflict in your fleet's conflict centre has been resolved. Open the Fleet Portal for details.",
+            }
+          : null,
+    },
+  },
+  "fleet.conflict.lapsed": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    smsFallback: true,
+    copy: {
+      driver: (e) =>
+        text(e, "driverId") !== null
+          ? {
+              title: "Conflict deadline passed",
+              body: "The decision deadline on a schedule conflict has passed. Open UBI to check the affected job.",
+            }
+          : null,
+      fleet_owner: (e) =>
+        text(e, "fleetId") !== null
+          ? {
+              title: "Conflict deadline passed",
+              body: "A conflict in your fleet passed its decision deadline without resolution. Open the Fleet Portal conflict centre.",
+            }
+          : null,
+      fleet_manager: (e) =>
+        text(e, "fleetId") !== null
+          ? {
+              title: "Conflict deadline passed",
+              body: "A conflict in your fleet passed its decision deadline without resolution. Open the Fleet Portal conflict centre.",
+            }
+          : null,
+    },
+  },
+  "fleet.conflict.reminder_sent": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: {
+        title: "Reminder: decision needed on your job",
+        body: "Your fleet sent a reminder about an open booking conflict on your schedule. Open UBI to choose an option before the deadline.",
+      },
+    },
+  },
+  "vehicle.document.expiring": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      fleet_owner: {
+        title: "Vehicle document expiring soon",
+        body: "A required document on one of your fleet vehicles is expiring soon. Open the Fleet Portal to upload a renewal.",
+      },
+      fleet_manager: {
+        title: "Vehicle document expiring soon",
+        body: "A required document on one of your fleet vehicles is expiring soon. Open the Fleet Portal to upload a renewal.",
+      },
+    },
+  },
+  "vehicle.document.expired": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    smsFallback: true,
+    copy: {
+      fleet_owner: {
+        title: "Vehicle held: document expired",
+        body: "A required document on one of your fleet vehicles has expired and the vehicle is held from service. Open the Fleet Portal for details.",
+      },
+      fleet_manager: {
+        title: "Vehicle held: document expired",
+        body: "A required document on one of your fleet vehicles has expired and the vehicle is held from service. Open the Fleet Portal for details.",
+      },
+    },
+  },
+  "driver.availability.saved": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    notifyActor: true,
+    copy: {
+      driver: (e) =>
+        Number(e.payload.withdrawalsChosen) > 0
+          ? {
+              title: "Availability saved with withdrawals",
+              body: "Your availability windows were saved. Open UBI to finish any booking withdrawals you selected.",
+            }
+          : null,
+    },
+  },
 };
 
 /** Redis glob patterns whose events this table can notify. */
@@ -737,4 +1270,9 @@ export const NOTIFICATION_PATTERNS: readonly string[] = [
   "event:trip_access.declined",
   "event:reservation.*",
   "event:shipment.return_proposed",
+  "event:fleet.*",
+  "event:assignment.*",
+  "event:maintenance.*",
+  "event:vehicle.document.*",
+  "event:driver.availability.saved",
 ];

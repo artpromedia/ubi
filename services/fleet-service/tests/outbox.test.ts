@@ -27,11 +27,13 @@ import {
 import {
   FLEET_ACTOR_TYPES,
   FLEET_EVENT_NAMES,
+  FLEET_EVENT_PAYLOAD_SCHEMAS,
   FLEET_SUBJECT_TYPES,
   MaintenancePreviewViewSchema,
 } from "../src/contract";
 import { assertIdentityConfigured } from "../src/lib/identity-context";
 import { documentSweep } from "../src/ops/documents";
+import { withOutbox } from "../src/ops/outbox";
 
 let h: Harness;
 
@@ -163,6 +165,12 @@ describe("the outbox", () => {
       expect(parsed.ok, `${row.name}: ${parsed.ok ? "" : parsed.error}`).toBe(
         true,
       );
+      const schema =
+        FLEET_EVENT_PAYLOAD_SCHEMAS[
+          row.name as keyof typeof FLEET_EVENT_PAYLOAD_SCHEMAS
+        ];
+      expect(schema).toBeDefined();
+      expect(() => schema.parse(row.payload)).not.toThrow();
       expect(JSON.stringify(row.payload)).not.toMatch(
         /Okafor|firstName|phone|email/,
       );
@@ -175,6 +183,27 @@ describe("the outbox", () => {
     // Driver-side events are recorded as the driver.
     const signed = rows.find((row) => row.name === "assignment.signed");
     expect(signed?.actor_type).toBe("driver");
+  });
+
+  it("rejects a fleet event whose payload drifts from FLEET_EVENT_PAYLOAD_SCHEMAS", async () => {
+    await expect(
+      withOutbox(h.db, async () => ({
+        result: null,
+        events: [
+          {
+            name: "fleet.created",
+            aggregateType: "fleet",
+            aggregateId: "flt_bad",
+            fromVersion: null,
+            toVersion: 1,
+            actor: { id: "usr_1", role: "fleet_owner" },
+            cityId: "lagos",
+            occurredAt: new Date("2026-09-28T08:00:00.000Z"),
+            payload: { fleetId: "flt_bad" },
+          },
+        ],
+      })),
+    ).rejects.toThrow();
   });
 });
 

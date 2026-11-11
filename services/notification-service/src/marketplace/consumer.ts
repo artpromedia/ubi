@@ -15,6 +15,8 @@
  * listener does not filter by pattern, so two patterns on one connection
  * would hand every message to every handler.
  */
+import { createHash } from "node:crypto";
+
 import { Redis } from "ioredis";
 
 import { subscribeOutbox, type OutboxSubscription } from "@ubi/outbox";
@@ -23,6 +25,7 @@ import { SqlPartyDirectory, type PartyDirectory } from "./parties.js";
 import {
   MarketplacePushDeliverer,
   type DeadLetterEntry,
+  type InboxEntry,
   type MarketplacePushPorts,
   type PendingEntry,
   type PushLogger,
@@ -36,6 +39,7 @@ import { firebaseService } from "../providers/firebase.js";
 import { smsSender } from "../providers/sms.js";
 
 import type { PushPrefCategory } from "./audience.js";
+import type { NotificationType, Prisma } from "@prisma/client";
 
 /** Redis glob pattern for marketplace event-type channels. */
 export const MARKETPLACE_PUSH_PATTERN = "event:mp.*";
@@ -68,6 +72,8 @@ export interface PushPortOverrides {
   readonly parties?: PartyDirectory | null;
   /** null disables the SMS fallback. */
   readonly sms?: MarketplacePushPorts["sms"] | null;
+  /** null disables in-app inbox persistence. */
+  readonly inbox?: MarketplacePushPorts["inbox"] | null;
   readonly logger?: PushLogger;
   /** Redis key namespace (default `notif:mp:`). */
   readonly keyPrefix?: string;
@@ -80,6 +86,14 @@ async function preferenceRow(userId: string) {
     where: { userId },
   });
   return row;
+}
+
+function deterministicInboxId(eventId: string, userId: string): string {
+  const digest = createHash("sha256")
+    .update(`${eventId}:${userId}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `notif_${digest}`;
 }
 
 export function buildMarketplacePushPorts(
@@ -206,6 +220,44 @@ export function buildMarketplacePushPorts(
           .exec();
       },
     },
+    ...(overrides.inbox === null
+      ? {}
+      : {
+          inbox: overrides.inbox ?? {
+            async record(entry: InboxEntry): Promise<void> {
+              const pref = await preferenceRow(entry.userId);
+              if (pref && !pref.inAppEnabled) {
+                return;
+              }
+              const id = deterministicInboxId(entry.eventId, entry.userId);
+              await prisma.inAppNotification.upsert({
+                where: { id },
+                update: {},
+                create: {
+                  id,
+                  userId: entry.userId,
+                  type: (entry.notification.type ||
+                    "GENERAL") as NotificationType,
+                  title: entry.notification.title,
+                  body: entry.notification.body,
+                  data: {
+                    ...entry.notification.data,
+                    role: entry.role,
+                  } as Prisma.InputJsonValue,
+                },
+              });
+              const unreadCount = await prisma.inAppNotification.count({
+                where: { userId: entry.userId, readAt: null },
+              });
+              await commands.set(
+                `user:${entry.userId}:badge`,
+                unreadCount,
+                "EX",
+                SEEN_TTL_SECONDS,
+              );
+            },
+          },
+        }),
     logger: overrides.logger ?? pushLogger,
     ...(overrides.parties === null
       ? {}

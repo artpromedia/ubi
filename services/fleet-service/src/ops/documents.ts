@@ -341,6 +341,9 @@ export async function lapseConflicts(deps: FleetDeps): Promise<number> {
             occurredAt: now,
             payload: {
               conflictId: conflict.id,
+              fleetId: conflict.fleetId,
+              driverId: conflict.driverId,
+              vehicleId: conflict.vehicleId,
               type: conflict.type,
               deadlineAt: iso((conflict.deadlineAt ?? now).getTime()),
             },

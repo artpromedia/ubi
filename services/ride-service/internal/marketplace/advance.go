@@ -900,6 +900,7 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 				"commissionReversed": true, "riderFundingReleased": fundingHeld, "riderCharged": false,
 			},
 			"rematchAvailable": rematch,
+			"choiceOffered":    end.to == machine.MpBookingFailed,
 		}); err != nil {
 			return err
 		}

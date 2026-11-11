@@ -129,7 +129,12 @@ export async function openConflict(
 /** Resolves every open conflict matching `where`, returning their events. */
 export async function resolveConflicts(
   tx: OutboxTx,
-  where: { maintenanceBlockId?: string; ids?: readonly string[] },
+  where: {
+    maintenanceBlockId?: string;
+    vehicleId?: string;
+    type?: ConflictType;
+    ids?: readonly string[];
+  },
   resolution: string,
   actor: Actor,
   cityId: string | null,
@@ -141,6 +146,8 @@ export async function resolveConflicts(
       ...(where.maintenanceBlockId === undefined
         ? {}
         : { maintenanceBlockId: where.maintenanceBlockId }),
+      ...(where.vehicleId === undefined ? {} : { vehicleId: where.vehicleId }),
+      ...(where.type === undefined ? {} : { type: where.type }),
       ...(where.ids === undefined ? {} : { id: { in: [...where.ids] } }),
     },
   });
@@ -173,7 +180,14 @@ export async function resolveConflicts(
       actor,
       cityId,
       occurredAt: now,
-      payload: { conflictId: row.id, type: row.type, resolution },
+      payload: {
+        conflictId: row.id,
+        fleetId: row.fleetId,
+        driverId: row.driverId,
+        vehicleId: row.vehicleId,
+        type: row.type,
+        resolution,
+      },
     });
   }
   return events;
@@ -197,6 +211,7 @@ const FLEET_ACTIONS: Readonly<
   ],
   time_off_overlaps_booking: ["remind"],
   termination_bookings: ["propose_vehicle_swap", "ask_driver"],
+  vehicle_service_requested: ["plan_maintenance"],
 };
 
 /** What a caller with `role` may do about a conflict right now. */

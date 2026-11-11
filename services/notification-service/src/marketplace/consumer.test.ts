@@ -117,6 +117,9 @@ beforeAll(async () => {
           },
           allows: async () => true,
         },
+        inbox: {
+          record: async () => {},
+        },
         maxAttempts: 2,
         delay: async () => {},
         logger: {
@@ -143,6 +146,11 @@ describe("outbox push consumer (real Redis)", () => {
       "event:trip_access.declined",
       "event:reservation.*",
       "event:shipment.return_proposed",
+      "event:fleet.*",
+      "event:assignment.*",
+      "event:maintenance.*",
+      "event:vehicle.document.*",
+      "event:driver.availability.saved",
     ]);
   });
 

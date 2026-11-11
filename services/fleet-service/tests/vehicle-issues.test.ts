@@ -501,7 +501,18 @@ describe("service_soon: the vehicle stays on the road", () => {
     expect(
       await h.db.fleetMaintenanceBlock.count({ where: { vehicleId } }),
     ).toBe(0);
-    expect(await h.db.fleetConflict.count({ where: { vehicleId } })).toBe(0);
+    const serviceConflict = await h.db.fleetConflict.findFirstOrThrow({
+      where: { vehicleId, type: "vehicle_service_requested" },
+    });
+    expect(serviceConflict).toMatchObject({
+      fleetId: world.fleetId,
+      vehicleId,
+      driverId,
+      type: "vehicle_service_requested",
+      severity: "medium",
+      status: "open",
+      resolverRoles: ["fleet"],
+    });
     const alert = await h.db.outboxEvent.findFirstOrThrow({
       where: { name: "fleet.alert", aggregateId: vehicleId },
     });
@@ -604,6 +615,15 @@ describe("service_soon: the vehicle stays on the road", () => {
       },
     });
     expect(planned.status).toBe(201);
+    const resolvedConflict = await h.db.fleetConflict.findFirstOrThrow({
+      where: {
+        vehicleId,
+        type: "vehicle_service_requested",
+        dedupeKey: `service_soon:${firstView.issueId}`,
+      },
+    });
+    expect(resolvedConflict.status).toBe("resolved");
+    expect(resolvedConflict.resolution).toBe("maintenance_planned");
 
     h.clock.now = new Date("2026-09-28T08:30:00.000Z");
     const third = await report(

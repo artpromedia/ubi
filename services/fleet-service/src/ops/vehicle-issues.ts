@@ -33,6 +33,7 @@
  */
 import { ContractError } from "@ubi/contracts";
 
+import { openConflict } from "./conflicts";
 import { requireFleetEnabled } from "./config";
 import { FleetError, isUniqueViolation } from "./errors";
 import {
@@ -444,9 +445,29 @@ async function requestService(
           }
         }
       }
+      const opened = await openConflict(
+        tx,
+        {
+          type: "vehicle_service_requested",
+          severity: "medium",
+          fleetId: input.fleet.id,
+          vehicleId: input.vehicleId,
+          driverId: actor.id,
+          resolverRoles: ["fleet"],
+          dedupeKey: `service_soon:${input.issueId}`,
+          detail: {
+            issueId: input.issueId,
+            reportedAt: iso(now.getTime()),
+            hasNote: input.note !== null,
+          },
+        },
+        actor,
+        cityId,
+        now,
+      );
       return {
         result: null,
-        events: [alert],
+        events: [alert, ...opened.events],
         audits: [
           {
             actor,

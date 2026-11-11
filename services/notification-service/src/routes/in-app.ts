@@ -114,6 +114,31 @@ inAppRoutes.get(
 );
 
 /**
+ * GET /notifications/badge - Get badge count
+ * Must be registered before `GET /:id` so `/badge` is not shadowed.
+ */
+inAppRoutes.get("/badge", auth, async (c) => {
+  const userId = c.get("userId");
+
+  // Try cache first
+  let badgeCount = await redis.get(`user:${userId}:badge`);
+
+  if (badgeCount === null) {
+    badgeCount = String(
+      await prisma.inAppNotification.count({
+        where: { userId, readAt: null },
+      }),
+    );
+    await redis.set(`user:${userId}:badge`, badgeCount, "EX", 86400);
+  }
+
+  return c.json({
+    success: true,
+    data: { unreadCount: Number.parseInt(badgeCount, 10) },
+  });
+});
+
+/**
  * GET /notifications/:id - Get notification
  */
 inAppRoutes.get("/:id", auth, async (c) => {
@@ -370,30 +395,6 @@ inAppRoutes.delete("/", auth, async (c) => {
   await redis.set(`user:${userId}:badge`, 0, "EX", 86400);
 
   return c.json({ success: true });
-});
-
-/**
- * GET /notifications/badge - Get badge count
- */
-inAppRoutes.get("/badge", auth, async (c) => {
-  const userId = c.get("userId");
-
-  // Try cache first
-  let badgeCount = await redis.get(`user:${userId}:badge`);
-
-  if (badgeCount === null) {
-    badgeCount = String(
-      await prisma.inAppNotification.count({
-        where: { userId, readAt: null },
-      }),
-    );
-    await redis.set(`user:${userId}:badge`, badgeCount, "EX", 86400);
-  }
-
-  return c.json({
-    success: true,
-    data: { unreadCount: Number.parseInt(badgeCount, 10) },
-  });
 });
 
 export { inAppRoutes };
