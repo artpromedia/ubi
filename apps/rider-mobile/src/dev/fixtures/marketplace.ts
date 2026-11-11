@@ -222,6 +222,30 @@ const returnTimeline = () => {
     deliveryId: "del_fixture",
     state: custodyState,
     version: 1,
+    delivery: {
+      trackingNumber: "UBI-DEL-FIX1",
+      pickupLocation: {
+        address: PICKUP.label,
+        latitude: PICKUP.lat,
+        longitude: PICKUP.lng,
+      },
+      dropoffLocation: {
+        address: DROPOFF.label,
+        latitude: DROPOFF.lat,
+        longitude: DROPOFF.lng,
+      },
+      pickupContact: { name: "Sender", phone: "+2348010000001" },
+      dropoffContact: { name: "Adaeze", phone: "+2348010000002" },
+      package: {
+        size: "SMALL",
+        weightKg: 1.5,
+        description: "Documents",
+        fragile: false,
+        requiresSignature: false,
+      },
+      agreedFareMinor: NGN(2800).amountMinor,
+      currency: "NGN",
+    },
     openReturn:
       uiState === "unreachable" || uiState === "return_approved"
         ? {
@@ -236,6 +260,22 @@ const returnTimeline = () => {
             currency: fee.currency,
           }
         : null,
+    returnPolicy: {
+      chargedReturnsOffered: false,
+      feeFreeOnly: true,
+    },
+    proofs: [
+      {
+        proofId: "prf_pickup_1",
+        type: "pickup" as const,
+        contentType: "image/jpeg",
+        sizeBytes: 42110,
+        sha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        verified: true,
+        createdAt: iso(-25 * 60 * 1000),
+      },
+    ],
     events: [
       {
         toState: "recipient_unreachable",
@@ -542,53 +582,66 @@ export async function marketplaceFixtures(i: FixtureInput) {
       delayed: null,
     });
   }
-  // Delivery custody/returns (C07, G08) — REAL delivery-service endpoints in
-  // production; see src/api/marketplace.ts. This fixture mirrors the real
-  // custody-timeline shape (state/openReturn/events), not a bespoke one, so
-  // mapCustodyToReturnView behaves identically against either.
+  // Delivery custody/returns (C07, G08, CC-A08) — REAL delivery-service
+  // endpoints in production; see src/api/marketplace.ts. This fixture mirrors
+  // the real `{ success, data, error }` envelope and custody-timeline /
+  // return-consent shapes so `unwrapDeliveryEnvelope` and
+  // `mapCustodyToReturnView` behave identically against either.
   if (
     i.method === "GET" &&
     /^\/v1\/delivery\/deliveries\/[^/]+\/custody$/.test(i.path)
   )
-    return ok(returnTimeline());
+    return ok({ success: true, data: returnTimeline() });
   if (
     i.method === "POST" &&
     /^\/v1\/delivery\/deliveries\/[^/]+\/custody\/return\/consent$/.test(i.path)
   ) {
     const action = (i.body as { action?: string })?.action;
-    // "retry_recipient" is not a real server action (see the type doc in
-    // src/api/marketplace.ts) — the real endpoint would answer
-    // VALIDATION_ERROR; the fixture mirrors that rather than pretending it
-    // works.
-    if (action === "retry_recipient")
-      return {
-        status: 400,
-        json: {
-          code: "VALIDATION_ERROR",
-          message: 'action must be "consent" or "reject"',
-        },
-      };
     if (action === "reject") {
       s.returnState = "held_at_point";
-      return ok(returnTimeline());
+      return ok({
+        success: true,
+        data: {
+          deliveryId: "del_fixture",
+          custodyState: "held_at_point",
+          consentState: "rejected",
+        },
+      });
     }
     if (action !== "consent")
       return {
         status: 400,
-        json: { code: "VALIDATION_ERROR", message: "unknown action" },
+        json: {
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: 'action must be "consent" or "reject"',
+          },
+        },
       };
     s.returnTries += 1;
     if (s.returnTries === 1)
       return {
         status: 409,
         json: {
-          code: "RETURN_CHARGE_UNSUPPORTED",
-          message:
-            "This return proposes a fee delivery-service cannot yet authorize. Reject it to hold the package at a pickup point instead.",
+          success: false,
+          error: {
+            code: "RETURN_CHARGE_UNSUPPORTED",
+            message:
+              "This return proposes a fee delivery-service cannot yet authorize. Reject it to hold the package at a pickup point instead.",
+          },
         },
       };
     s.returnState = "return_approved";
-    return ok(returnTimeline());
+    return ok({
+      success: true,
+      data: {
+        deliveryId: "del_fixture",
+        custodyState: "return_to_sender",
+        consentState: "consented",
+        chargeStatus: "not_required",
+      },
+    });
   }
   return undefined;
 }

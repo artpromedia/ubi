@@ -248,26 +248,120 @@ components:
             handling: { type: array, items: { type: string } },
           },
       }
-    ProofReference:
+    DeliveryErrorEnvelope:
       {
         type: object,
-        description: "A proof REFERENCE only, never the bytes (C07 — no object storage client is wired into delivery-service today; see docs/marketplace/DELIVERY_CUSTODY.md).",
-        required: [objectKey, contentType, sizeBytes, sha256],
+        required: [success, error],
         properties:
           {
-            objectKey:
+            success: { type: boolean, enum: [false] },
+            error:
               {
-                type: string,
-                description: "Client-supplied storage key; validated (no path traversal, no leading slash, 4-256 chars).",
+                type: object,
+                required: [code, message],
+                properties:
+                  {
+                    code:
+                      {
+                        type: string,
+                        enum:
+                          [
+                            VALIDATION_ERROR,
+                            NOT_FOUND,
+                            FORBIDDEN,
+                            STATE_CONFLICT,
+                            PROOF_STORAGE_NOT_CONFIGURED,
+                            PROOF_STORAGE_UNAVAILABLE,
+                            PROOF_UPLOAD_LIMIT,
+                            PROOF_UPLOAD_REQUIRED,
+                            PROOF_UPLOAD_NOT_FOUND,
+                            PROOF_UPLOAD_NOT_YOURS,
+                            PROOF_UPLOAD_TYPE_MISMATCH,
+                            PROOF_UPLOAD_REJECTED,
+                            PROOF_UPLOAD_EXPIRED,
+                            PROOF_OBJECT_MISSING,
+                            PROOF_OBJECT_TOO_LARGE,
+                            PROOF_SIZE_MISMATCH,
+                            PROOF_CHECKSUM_MISMATCH,
+                            PROOF_CONTENT_TYPE_MISMATCH,
+                            PROOF_NOT_VERIFIED,
+                            CHARGED_RETURNS_NOT_OFFERED,
+                            RETURN_CHARGE_UNSUPPORTED,
+                            RETURN_FEE_OUT_OF_BOUNDS,
+                            RETURN_FEE_INSUFFICIENT_FUNDS,
+                            RETURN_FEE_REFUSED,
+                            RETURN_FEE_PENDING,
+                          ],
+                      },
+                    message: { type: string },
+                    details: {},
+                  },
               },
+          },
+      }
+    ProofUploadRequest:
+      {
+        type: object,
+        description: "Presigned S3/MinIO proof upload declaration (P17). Assigned driver only.",
+        required: [type, contentType, sizeBytes, sha256],
+        properties:
+          {
+            type: { type: string, enum: [pickup, delivery, return] },
             contentType:
               { type: string, enum: [image/jpeg, image/png, image/webp] },
-            sizeBytes: { type: integer, maximum: 15728640 },
+            sizeBytes: { type: integer, minimum: 1, maximum: 15728640 },
             sha256:
               {
                 type: string,
                 description: "64-character hex digest; case-insensitive, stored lowercase.",
               },
+          },
+      }
+    ProofUploadResponse:
+      {
+        type: object,
+        required:
+          [
+            uploadId,
+            objectKey,
+            uploadUrl,
+            method,
+            headers,
+            expiresAt,
+            maxBytes,
+          ],
+        properties:
+          {
+            uploadId: { type: string },
+            objectKey: { type: string },
+            uploadUrl: { type: string, format: uri },
+            method: { type: string, enum: [PUT] },
+            headers: { type: object, additionalProperties: { type: string } },
+            expiresAt: { type: string, format: date-time },
+            maxBytes: { type: integer },
+          },
+      }
+    ProofAttachRequest:
+      {
+        type: object,
+        description: "Attaches a verified proof upload (from POST /proof-uploads) to the delivery's custody timeline.",
+        required: [uploadId],
+        properties: { uploadId: { type: string } },
+      }
+    ProofUrlResponse:
+      {
+        type: object,
+        required:
+          [proofId, type, contentType, sizeBytes, sha256, url, expiresAt],
+        properties:
+          {
+            proofId: { type: string },
+            type: { type: string, enum: [pickup, delivery, return] },
+            contentType: { type: string },
+            sizeBytes: { type: integer },
+            sha256: { type: string },
+            url: { type: string, format: uri },
+            expiresAt: { type: string, format: date-time },
           },
       }
     ProofResult:
@@ -278,7 +372,7 @@ components:
           {
             proofId: { type: string },
             deliveryId: { type: string },
-            type: { type: string, enum: [pickup, delivery] },
+            type: { type: string, enum: [pickup, delivery, return] },
             replay:
               {
                 type: boolean,
@@ -307,10 +401,114 @@ components:
             chargeStatus:
               {
                 type: string,
-                enum: [not_required, unsupported],
-                description: "not_required: fee-free (or will resolve to a hold point). unsupported: a fee was proposed but cannot be authorized — see the endpoint description.",
+                enum:
+                  [
+                    not_required,
+                    unsupported,
+                    authorization_required,
+                    reserving,
+                    reserved,
+                    capture_pending,
+                    captured,
+                    released,
+                  ],
+                description: "not_required: fee-free (or will resolve to a hold point). authorization_required/reserving/reserved/capture_pending/captured/released: charged return lifecycle when DELIVERY_CHARGED_RETURNS_ENABLED is on.",
               },
             consentExpiresAt: { type: string, format: date-time },
+          },
+      }
+    ReturnConsentResult:
+      {
+        type: object,
+        required: [deliveryId, custodyState, consentState],
+        properties:
+          {
+            deliveryId: { type: string },
+            custodyState: { type: string },
+            consentState: { type: string, enum: [consented, rejected] },
+            chargeStatus:
+              {
+                type: string,
+                enum:
+                  [
+                    not_required,
+                    unsupported,
+                    authorization_required,
+                    reserving,
+                    reserved,
+                    capture_pending,
+                    captured,
+                    released,
+                  ],
+              },
+            chargeRef: { type: string },
+          },
+      }
+    ReturnCompleteResult:
+      {
+        type: object,
+        required:
+          [deliveryId, returnId, proofId, replay, custodyState, chargeStatus],
+        properties:
+          {
+            deliveryId: { type: string },
+            returnId: { type: string },
+            proofId: { type: string },
+            replay: { type: boolean },
+            custodyState: { type: string },
+            chargeStatus:
+              {
+                type: string,
+                enum:
+                  [
+                    not_required,
+                    unsupported,
+                    authorization_required,
+                    reserving,
+                    reserved,
+                    capture_pending,
+                    captured,
+                    released,
+                  ],
+              },
+            chargeRef: { type: string },
+          },
+      }
+    ReturnCancelChargeResult:
+      {
+        type: object,
+        required: [deliveryId, returnId, chargeStatus],
+        properties:
+          {
+            deliveryId: { type: string },
+            returnId: { type: string },
+            chargeStatus: { type: string, enum: [released] },
+          },
+      }
+    ReturnPolicy:
+      {
+        type: object,
+        required: [chargedReturnsOffered, feeFreeOnly],
+        properties:
+          {
+            chargedReturnsOffered: { type: boolean },
+            feeFreeOnly: { type: boolean },
+          },
+      }
+    ProofMetadata:
+      {
+        type: object,
+        required:
+          [proofId, type, contentType, sizeBytes, sha256, verified, createdAt],
+        properties:
+          {
+            proofId: { type: string },
+            type: { type: string, enum: [pickup, delivery, return] },
+            contentType: { type: string },
+            sizeBytes: { type: integer },
+            sha256: { type: string },
+            verified: { type: boolean },
+            createdAt: { type: string, format: date-time },
           },
       }
     CustodyEvent:
@@ -330,12 +528,77 @@ components:
     CustodyTimeline:
       {
         type: object,
-        required: [deliveryId, state, version, events],
+        required: [deliveryId, state, version, returnPolicy, proofs, events],
         properties:
           {
             deliveryId: { type: string },
             state: { type: string },
             version: { type: integer },
+            delivery:
+              {
+                type: object,
+                nullable: true,
+                properties:
+                  {
+                    trackingNumber: { type: string },
+                    pickupLocation:
+                      {
+                        type: object,
+                        required: [address, latitude, longitude],
+                        properties:
+                          {
+                            address: { type: string },
+                            latitude: { type: number },
+                            longitude: { type: number },
+                          },
+                      },
+                    dropoffLocation:
+                      {
+                        type: object,
+                        required: [address, latitude, longitude],
+                        properties:
+                          {
+                            address: { type: string },
+                            latitude: { type: number },
+                            longitude: { type: number },
+                          },
+                      },
+                    pickupContact:
+                      {
+                        type: object,
+                        properties:
+                          { name: { type: string }, phone: { type: string } },
+                      },
+                    dropoffContact:
+                      {
+                        type: object,
+                        properties:
+                          { name: { type: string }, phone: { type: string } },
+                      },
+                    package:
+                      {
+                        type: object,
+                        required:
+                          [
+                            size,
+                            weightKg,
+                            description,
+                            fragile,
+                            requiresSignature,
+                          ],
+                        properties:
+                          {
+                            size: { type: string },
+                            weightKg: { type: number },
+                            description: { type: string },
+                            fragile: { type: boolean },
+                            requiresSignature: { type: boolean },
+                          },
+                      },
+                    agreedFareMinor: { type: integer },
+                    currency: { type: string },
+                  },
+              },
             openReturn:
               {
                 type: object,
@@ -354,7 +617,20 @@ components:
                   {
                     returnId: { type: string },
                     chargeStatus:
-                      { type: string, enum: [not_required, unsupported] },
+                      {
+                        type: string,
+                        enum:
+                          [
+                            not_required,
+                            unsupported,
+                            authorization_required,
+                            reserving,
+                            reserved,
+                            capture_pending,
+                            captured,
+                            released,
+                          ],
+                      },
                     consentState:
                       {
                         type: string,
@@ -368,6 +644,12 @@ components:
                         description: "Empty when feeMinor is 0.",
                       },
                   },
+              },
+            returnPolicy: { $ref: "#/components/schemas/ReturnPolicy" },
+            proofs:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/ProofMetadata" },
               },
             events:
               {
@@ -5054,7 +5336,7 @@ paths:
   /api/v1/webhooks/marketplace-assign:
     post:
       summary: Delivery execution hand-off (internal, marketplace engine → delivery-service)
-      description: "Service-authenticated adapter per ADR-0002. Idempotent on awardId: creates the delivery already DRIVER_ASSIGNED with the award id, agreed fare (authoritative in minor units in the marketplace/ledger) and fencing token carried in the package metadata; a replay returns the existing delivery. Marketplace-managed deliveries are refused by the legacy first-come AcceptDelivery path."
+      description: "Service-authenticated adapter per ADR-0002. Idempotent on awardId: creates the delivery already DRIVER_ASSIGNED with the award id, agreed fare (authoritative in minor units in the marketplace/ledger), senderProfileId (resolved from riders.user_id), custody row and fencing token; a replay returns the existing delivery. Marketplace-managed deliveries are refused by the legacy first-come AcceptDelivery path."
       security: [{ serviceKey: [] }]
       requestBody:
         content:
@@ -5084,9 +5366,134 @@ paths:
                     currency: { type: string },
                     pickup: { $ref: "#/components/schemas/Area" },
                     dropoff: { $ref: "#/components/schemas/Area" },
+                    pickupContact:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            name: { type: string },
+                            phone: { type: string },
+                            email: { type: string },
+                          },
+                      },
+                    dropoffContact:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            name: { type: string },
+                            phone: { type: string },
+                            email: { type: string },
+                          },
+                      },
                     packageDetails:
                       { $ref: "#/components/schemas/DeliveryDetails" },
                     fencingToken: { type: integer },
+                  },
+              }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        {
+                          type: object,
+                          required:
+                            [
+                              id,
+                              trackingNumber,
+                              status,
+                              driverId,
+                              customerId,
+                              senderProfileId,
+                              marketplaceAwardId,
+                              agreedFareMinor,
+                              currency,
+                              createdAt,
+                            ],
+                          properties:
+                            {
+                              id: { type: string },
+                              trackingNumber: { type: string },
+                              status: { type: string },
+                              driverId: { type: string },
+                              customerId: { type: string },
+                              senderProfileId: { type: string },
+                              marketplaceAwardId: { type: string },
+                              agreedFareMinor: { type: integer },
+                              currency: { type: string },
+                              createdAt: { type: string, format: date-time },
+                            },
+                        },
+                    },
+                }
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        {
+                          type: object,
+                          required:
+                            [
+                              id,
+                              trackingNumber,
+                              status,
+                              driverId,
+                              customerId,
+                              senderProfileId,
+                              marketplaceAwardId,
+                              agreedFareMinor,
+                              currency,
+                              createdAt,
+                            ],
+                          properties:
+                            {
+                              id: { type: string },
+                              trackingNumber: { type: string },
+                              status: { type: string },
+                              driverId: { type: string },
+                              customerId: { type: string },
+                              senderProfileId: { type: string },
+                              marketplaceAwardId: { type: string },
+                              agreedFareMinor: { type: integer },
+                              currency: { type: string },
+                              createdAt: { type: string, format: date-time },
+                            },
+                        },
+                    },
+                }
+  /api/v1/webhooks/marketplace-cancel:
+    post:
+      summary: Queued delivery award cancellation (internal, marketplace engine → delivery-service)
+      description: "Service-authenticated adapter (round 8). Cancels a marketplace delivery still in courier_assigned custody under a row lock and fencing token check."
+      security: [{ serviceKey: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, deliveryId, fencingToken, reason],
+                properties:
+                  {
+                    awardId: { type: string },
+                    deliveryId: { type: string },
+                    fencingToken: { type: integer },
+                    reason: { type: string },
                   },
               }
       responses:
@@ -5096,14 +5503,40 @@ paths:
               schema:
                 {
                   type: object,
-                  required: [deliveryId, awardId],
+                  required: [success, data],
                   properties:
-                    { deliveryId: { type: string }, awardId: { type: string } },
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        {
+                          type: object,
+                          required:
+                            [
+                              id,
+                              status,
+                              marketplaceAwardId,
+                              custodyState,
+                              cancelledAt,
+                            ],
+                          properties:
+                            {
+                              id: { type: string },
+                              status: { type: string, enum: [CANCELLED] },
+                              marketplaceAwardId: { type: string },
+                              custodyState: { type: string, enum: [cancelled] },
+                              cancelledAt: { type: string, format: date-time },
+                            },
+                        },
+                    },
                 }
-  /api/v1/deliveries/{deliveryId}/custody:
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody:
     get:
-      summary: Custody timeline (C07, G08) — sender or assigned driver only
-      description: "Marketplace-managed deliveries only (no delivery_custody row exists for an open-market delivery). Foreign actor, unknown delivery id, or a legacy delivery with no custody row all answer 404 — the marketplace 404 convention: existence is not revealed to a caller who is not a party."
+      summary: Custody timeline (C07, G08, CC-A08) — sender or assigned driver only
+      description: "Gateway path `/v1/delivery/deliveries/{deliveryId}/custody` → downstream `/api/v1/deliveries/{deliveryId}/custody`. Wrapped in `{ success: true, data: CustodyTimeline }`."
       parameters:
         - {
             name: deliveryId,
@@ -5115,15 +5548,24 @@ paths:
         "200":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/CustodyTimeline" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/CustodyTimeline" },
+                    },
+                }
         "404":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-  /api/v1/deliveries/{deliveryId}/custody/pickup-proof:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/proof-uploads:
     post:
-      summary: Post a pickup custody proof (C07) — assigned driver only
-      description: "A proof REFERENCE, never the bytes: no S3/MinIO client is wired into delivery-service today, so this validates and stores a client-supplied object key + checksum + content-type only (see docs/marketplace/DELIVERY_CUSTODY.md). Idempotent on (deliveryId, type, sha256): an identical replay answers 200 with the existing row, never a second one. courier_assigned -> picked_up -> in_transit (a pickup starts transit immediately)."
+      summary: Request a presigned proof upload slot (P17) — assigned driver only
+      description: "Issues a presigned S3/MinIO PUT URL with signed Content-Type and X-Amz-Checksum-Sha256 headers for pickup, delivery, or return proof."
       parameters:
         - {
             name: deliveryId,
@@ -5134,24 +5576,67 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ProofReference" }
+            schema: { $ref: "#/components/schemas/ProofUploadRequest" }
       responses:
         "201":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ProofResult" }
-        "200":
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProofResult" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        { $ref: "#/components/schemas/ProofUploadResponse" },
+                    },
+                }
         "409":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-  /api/v1/deliveries/{deliveryId}/custody/delivery-proof:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+        "503":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/proofs/{proofId}/url:
+    get:
+      summary: Presigned GET URL for a verified custody proof (P17) — sender, assigned driver, or ops
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: proofId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/ProofUrlResponse" },
+                    },
+                }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/pickup-proof:
     post:
-      summary: Post a delivery custody proof (C07) — assigned driver only
-      description: "Reaches `delivered` from in_transit, delivery_attempted or delivery_retry directly; from recipient_unreachable it chains through delivery_retry — a successful retry IS a delivery proof, there is no separate 'start retry' call. Same idempotency rule as pickup-proof."
+      summary: Attach a verified pickup custody proof (C07, P17) — assigned driver only
+      description: "Verifies the uploaded object in S3/MinIO (size, SHA-256, image MIME magic bytes) and transitions `courier_assigned -> picked_up -> in_transit`. Idempotent on replay."
       parameters:
         - {
             name: deliveryId,
@@ -5162,21 +5647,93 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ProofReference" }
+            schema: { $ref: "#/components/schemas/ProofAttachRequest" }
       responses:
         "201":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ProofResult" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/ProofResult" },
+                    },
+                }
         "200":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ProofResult" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/ProofResult" },
+                    },
+                }
         "409":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-  /api/v1/deliveries/{deliveryId}/custody/recipient-unreachable:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/delivery-proof:
+    post:
+      summary: Attach a verified delivery custody proof (C07, P17) — assigned driver only
+      description: "Reaches `delivered` from `in_transit`, `delivery_attempted`, or `delivery_retry` directly; from `recipient_unreachable` it chains through `delivery_retry`."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProofAttachRequest" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/ProofResult" },
+                    },
+                }
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/ProofResult" },
+                    },
+                }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/recipient-unreachable:
     post:
       summary: Report the recipient unreachable (C07) — assigned driver only
       description: "in_transit -> delivery_attempted -> recipient_unreachable. Starts the return/hold-point timer (recipient_unreachable_at); the safe default (held_at_point) applies automatically once a subsequent return proposal's consent window elapses with no sender response — never an auto-charge."
@@ -5195,15 +5752,24 @@ paths:
         "200":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/CustodyStateResult" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/CustodyStateResult" },
+                    },
+                }
         "409":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-  /api/v1/deliveries/{deliveryId}/custody/return/propose:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/return/propose:
     post:
-      summary: Propose a return (C07) — sender or assigned driver
-      description: "recipient_unreachable -> return_proposed only. A proposed feeMinor is recorded honestly but NEVER authorizes a charge: delivery-service owns no money, and there is no payment-service delivery-return funding endpoint to call without reusing the delivery's own award-scoped commission/fare reservation — which this must never do (see docs/marketplace/DELIVERY_CUSTODY.md 'return-leg charge'). A fee-bearing proposal is gated `chargeStatus: unsupported`; only `not_required` (fee-free, or diverted to a hold point) can complete."
+      summary: Propose a return (C07, P17) — sender or assigned driver
+      description: "recipient_unreachable -> return_proposed only. When DELIVERY_CHARGED_RETURNS_ENABLED is off, any feeMinor > 0 is refused with 409 CHARGED_RETURNS_NOT_OFFERED. When on, 0 < feeMinor <= agreedFareMinor is recorded as authorization_required for sender consent."
       parameters:
         - {
             name: deliveryId,
@@ -5233,15 +5799,29 @@ paths:
         "201":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ReturnProposalResult" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        { $ref: "#/components/schemas/ReturnProposalResult" },
+                    },
+                }
+        "400":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
         "409":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-  /api/v1/deliveries/{deliveryId}/custody/return/consent:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/return/consent:
     post:
-      summary: Sender consent/reject on a proposed return (C07) — sender ONLY
-      description: "The assigned driver may propose a return but never authorize or refuse one (403 otherwise). `action: consent` on a chargeStatus=unsupported return is refused with RETURN_CHARGE_UNSUPPORTED (409) — consent is necessary but never sufficient for a charged return. `action: reject` always succeeds and moves to held_at_point, exactly like an unanswered consent window expiring (the lazy expiry check runs at the top of this endpoint, GET custody, and collected-at-point)."
+      summary: Sender consent/reject on a proposed return (C07, P17) — sender ONLY
+      description: "The assigned driver may propose a return but never authorize or refuse one (403 otherwise). `action: consent` reserves a charged return fee via payment-service (`reserved`, or 402 `RETURN_FEE_INSUFFICIENT_FUNDS`, or 409 `RETURN_CHARGE_UNSUPPORTED`). `action: reject` moves to `held_at_point`."
       parameters:
         - {
             name: deliveryId,
@@ -5263,17 +5843,136 @@ paths:
         "200":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/CustodyStateResult" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        { $ref: "#/components/schemas/ReturnConsentResult" },
+                    },
+                }
+        "402":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
         "403":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
         "409":
-          description: "STATE_CONFLICT (no pending proposal) or RETURN_CHARGE_UNSUPPORTED (consenting to a charged return)."
+          description: "STATE_CONFLICT or RETURN_CHARGE_UNSUPPORTED."
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-  /api/v1/deliveries/{deliveryId}/custody/collected:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+        "503":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/return/complete:
+    post:
+      summary: Complete a return to sender with a verified return proof (P17) — assigned driver only
+      description: "Verifies the `return` proof upload, moves `returning -> return_to_sender`, and captures any reserved return fee (answers 202 when capture is still pending settlement)."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProofAttachRequest" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        { $ref: "#/components/schemas/ReturnCompleteResult" },
+                    },
+                }
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        { $ref: "#/components/schemas/ReturnCompleteResult" },
+                    },
+                }
+        "202":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        { $ref: "#/components/schemas/ReturnCompleteResult" },
+                    },
+                }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/return/cancel-charge:
+    post:
+      summary: Release a reserved return fee so the return completes fee-free (P17) — ops only
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data:
+                        {
+                          $ref: "#/components/schemas/ReturnCancelChargeResult",
+                        },
+                    },
+                }
+        "403":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
+  /v1/delivery/deliveries/{deliveryId}/custody/collected:
     post:
       summary: Collected at a hold point (C07) — assigned driver or ops
       description: "held_at_point -> collected. Also accepts recipient_unreachable or return_proposed directly, chaining through held_at_point, so a driver taking the parcel straight to a hold point converges on the same endpoint."
@@ -5288,11 +5987,20 @@ paths:
         "200":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/CustodyStateResult" }
+              schema:
+                {
+                  type: object,
+                  required: [success, data],
+                  properties:
+                    {
+                      success: { type: boolean, enum: [true] },
+                      data: { $ref: "#/components/schemas/CustodyStateResult" },
+                    },
+                }
         "409":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
+              schema: { $ref: "#/components/schemas/DeliveryErrorEnvelope" }
   /v1/wallet/mp/holds/{reservationId}/reverse:
     post:
       summary: Reverse a captured fee with a linked journal entry (internal; compensation)

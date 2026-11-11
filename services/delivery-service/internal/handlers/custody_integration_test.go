@@ -82,16 +82,53 @@ func TestCustodyHappyPath(t *testing.T) {
 		t.Fatalf("timeline: status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var timeline struct {
-		Data struct {
-			State  string `json:"state"`
+		Success bool `json:"success"`
+		Data    struct {
+			DeliveryID string `json:"deliveryId"`
+			State      string `json:"state"`
+			Version    int    `json:"version"`
+			Delivery   *struct {
+				TrackingNumber string `json:"trackingNumber"`
+				PickupLocation struct {
+					Address string `json:"address"`
+				} `json:"pickupLocation"`
+				DropoffLocation struct {
+					Address string `json:"address"`
+				} `json:"dropoffLocation"`
+				Package struct {
+					Size string `json:"size"`
+				} `json:"package"`
+				Currency string `json:"currency"`
+			} `json:"delivery"`
+			ReturnPolicy struct {
+				ChargedReturnsOffered bool `json:"chargedReturnsOffered"`
+				FeeFreeOnly           bool `json:"feeFreeOnly"`
+			} `json:"returnPolicy"`
+			Proofs []struct {
+				ProofID  string `json:"proofId"`
+				Type     string `json:"type"`
+				Verified bool   `json:"verified"`
+			} `json:"proofs"`
 			Events []struct {
 				ToState string `json:"toState"`
 			} `json:"events"`
 		} `json:"data"`
 	}
 	decode(t, rec, &timeline)
+	if !timeline.Success {
+		t.Fatalf("timeline envelope success = false, want true")
+	}
 	if timeline.Data.State != "delivered" {
 		t.Fatalf("final custody state = %q, want delivered", timeline.Data.State)
+	}
+	if timeline.Data.Delivery == nil || timeline.Data.Delivery.TrackingNumber == "" {
+		t.Fatalf("expected delivery summary in timeline response, got %+v", timeline.Data.Delivery)
+	}
+	if !timeline.Data.ReturnPolicy.FeeFreeOnly || timeline.Data.ReturnPolicy.ChargedReturnsOffered {
+		t.Fatalf("expected default returnPolicy {chargedReturnsOffered:false, feeFreeOnly:true}, got %+v", timeline.Data.ReturnPolicy)
+	}
+	if len(timeline.Data.Proofs) != 2 {
+		t.Fatalf("expected 2 verified proofs (pickup + delivery), got %d: %+v", len(timeline.Data.Proofs), timeline.Data.Proofs)
 	}
 	if len(timeline.Data.Events) != 3 {
 		t.Fatalf("expected 3 custody events (courier_assigned->picked_up, picked_up->in_transit, in_transit->delivered), got %d: %+v", len(timeline.Data.Events), timeline.Data.Events)

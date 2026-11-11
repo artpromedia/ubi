@@ -75,16 +75,28 @@ export function JobsTimelineContainer() {
         <Skeleton height={120} />
       </Screen>
     );
-  const toTrip = (tripId: string | null | undefined) => {
-    if (!tripId) return;
+  const toCurrentJob = () => {
+    const cur = view.current;
+    if (!cur?.executionRef?.id) return;
+    if (cur.executionRef.service === "delivery" || cur.service === "delivery") {
+      // Delivery jobs do not belong to the ride Trip stack; the screen shows an
+      // honest placeholder banner with the job's state until CC-C04 lands.
+      return;
+    }
     // Offer (C05 / G01) is the Trip stack's one entry point from this jobs
     // surface, win or resume — it is always safe to land here because every
     // downstream Trip screen re-checks the real ride state itself
     // (useTripView's tripScreenFor) and redirects forward on its own; this
     // container never has to guess which lifecycle step the ride is actually
     // in before navigating.
-    nav.navigate("Trip", { screen: "Offer", params: { tripId } });
+    nav.navigate("Trip", {
+      screen: "Offer",
+      params: { tripId: cur.executionRef.id },
+    });
   };
+  const isDeliveryCurrent =
+    view.current?.executionRef?.service === "delivery" ||
+    view.current?.service === "delivery";
   return (
     <JobsTimelineScreen
       // The winner toast needs a server-composed award.confirmed projection the
@@ -93,7 +105,15 @@ export function JobsTimelineContainer() {
       current={view.current ? jobCard(view.current) : null}
       next={view.next ? jobCard(view.next) : null}
       promotion={view.promotion === "none" ? null : view.promotion}
-      onContinueCurrent={() => toTrip(view.current?.executionRef?.id ?? null)}
+      onContinueCurrent={toCurrentJob}
+      deliveryPlaceholder={
+        isDeliveryCurrent && view.current
+          ? {
+              state: view.current.state,
+              deliveryId: view.current.executionRef?.id,
+            }
+          : null
+      }
       onBack={nav.goBack}
       tripLinks={
         // Only the server's own requestId opens the A02 trip routes — never a guess.

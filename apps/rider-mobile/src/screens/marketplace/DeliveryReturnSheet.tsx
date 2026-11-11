@@ -20,7 +20,6 @@ export type DeliveryReturnSheetProps = {
   returnFeeMinor: Money;
   approving: boolean;
   approveError: string | null;
-  onRetryRecipient: () => void;
   onApproveReturn: () => void;
   onHoldAtPoint: () => void;
 };
@@ -30,12 +29,6 @@ export function DeliveryReturnSheet(p: DeliveryReturnSheetProps) {
     <Sheet visible={p.visible} onDismiss={p.onDismiss}>
       <Text variant="title">Recipient unreachable</Text>
       <Banner tone="error" body={p.situation} />
-      <Button
-        testID={TEST_IDS.mp.rider.delivery.retryRecipient}
-        label="Try recipient again"
-        kind="secondary"
-        onPress={p.onRetryRecipient}
-      />
       <Card>
         <Row
           label="Return to sender"

@@ -93,11 +93,7 @@ export function DeliveryReturnContainer() {
       }
     >
       {v.state === "return_approved" ? (
-        <Banner
-          tone="ok"
-          title="Return approved"
-          body="The courier brings the package back to you. The return fee was funded from your wallet."
-        />
+        <Banner tone="ok" title="Return approved" body={v.approvedNotice} />
       ) : null}
       {v.state === "held_at_point" ? (
         <Banner
@@ -122,7 +118,6 @@ export function DeliveryReturnContainer() {
         returnFeeMinor={v.returnFeeMinor}
         approving={act.isPending && act.variables === "approve_return"}
         approveError={approveError}
-        onRetryRecipient={() => act.mutate("retry_recipient")}
         onApproveReturn={() => act.mutate("approve_return")}
         onHoldAtPoint={() => act.mutate("hold_at_point")}
       />

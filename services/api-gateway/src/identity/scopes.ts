@@ -878,6 +878,22 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     requiresCity: true,
   },
   {
+    methods: ["GET"],
+    prefix: "/v1/delivery/deliveries",
+    anyOf: [
+      "ride:read",
+      "history:read",
+      "mp:request",
+      "mp:bid",
+      "mp:admin:read",
+    ],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/delivery/deliveries",
+    anyOf: ["shipment:create", "mp:request", "mp:bid", "mp:admin:write"],
+  },
+  {
     methods: ["POST"],
     prefix: "/v1/delivery",
     anyOf: ["shipment:create"],

@@ -1,7 +1,7 @@
 // Requester-side negotiated-fare marketplace (M08, boards R01–R11).
 // Paths follow contracts/openapi/marketplace.yaml; DTO shapes come straight from
 // @ubi/contracts/src/marketplace.ts. Money is server minor units, never computed here.
-import { api, type Money } from "@ubi/mobile-core";
+import { api, ApiError, type Money } from "@ubi/mobile-core";
 import {
   mpQuoteStopsParam,
   type MpAdvanceBooking,
@@ -147,48 +147,84 @@ export type MpRequestSnapshot = {
  * (`GET /v1/delivery/deliveries/:id/custody`,
  * `POST .../custody/return/consent`, contracts/openapi/marketplace.yaml) is
  * a real, DB-backed, tested endpoint — see
- * docs/marketplace/DELIVERY_CUSTODY.md. This screen's own DTO shape
- * (`state`/`situation`/`returnFeeMinor`/`custody` ladder) predates that
- * endpoint and does not match its response 1:1, so `mapCustodyToReturnView`
- * below translates one into the other; the screen/container are unchanged.
+ * docs/marketplace/DELIVERY_CUSTODY.md.
  *
- * `retry_recipient` STAYS GATED: delivery-service has no standalone
- * "mark retrying" transition — a retry only exists as part of posting an
- * actual delivery proof (`POST .../custody/delivery-proof`), which this
- * screen does not capture (no camera/proof-capture UI here — out of scope
- * per this feature's "do not rebuild RN screens" boundary). Calling it hits
- * the real server, which refuses cleanly with a validation error; the
- * container's existing `onError` path renders that as the recoverable error
- * banner it already has, never a crash.
+ * Every delivery-service endpoint wraps its response in `{ success, data, error }`;
+ * `unwrapDeliveryEnvelope` unwraps that envelope at the delivery API boundary and
+ * maps `{ success: false, error }` to `ApiError`. Only the driver's delivery proof
+ * (`POST .../custody/delivery-proof`) retries delivery, so `MpDeliveryReturnAction`
+ * exposes only `"approve_return"` and `"hold_at_point"`.
  */
+export type DeliveryReturnChargeStatus =
+  | "not_required"
+  | "unsupported"
+  | "authorization_required"
+  | "reserving"
+  | "reserved"
+  | "capture_pending"
+  | "captured"
+  | "released";
+
 export type MpDeliveryReturnState = {
   state: "unreachable" | "retrying" | "return_approved" | "held_at_point";
   situation: string;
+  approvedNotice: string;
   returnFeeMinor: Money;
+  chargeStatus?: DeliveryReturnChargeStatus;
+  delivery?: CustodyTimeline["delivery"];
+  returnPolicy?: CustodyTimeline["returnPolicy"];
+  proofs?: CustodyTimeline["proofs"];
   custody: {
     label: string;
     detail?: string;
     state: "done" | "active" | "pending" | "skipped";
   }[];
 };
-export type MpDeliveryReturnAction =
-  | "approve_return"
-  | "retry_recipient"
-  | "hold_at_point";
+
+export type MpDeliveryReturnAction = "approve_return" | "hold_at_point";
 
 /** delivery-service's real custody timeline shape (GetCustodyTimeline). */
-type CustodyTimeline = {
+export type CustodyTimeline = {
   deliveryId: string;
   state: string;
   version: number;
+  delivery?: {
+    trackingNumber: string;
+    pickupLocation: { address: string; latitude: number; longitude: number };
+    dropoffLocation: { address: string; latitude: number; longitude: number };
+    pickupContact?: { name?: string; phone?: string };
+    dropoffContact?: { name?: string; phone?: string };
+    package: {
+      size: string;
+      weightKg: number;
+      description: string;
+      fragile: boolean;
+      requiresSignature: boolean;
+    };
+    agreedFareMinor?: number;
+    currency: string;
+  } | null;
   openReturn: {
     returnId: string;
-    chargeStatus: "not_required" | "unsupported";
+    chargeStatus: DeliveryReturnChargeStatus;
     consentState: "pending" | "consented" | "rejected" | "expired";
     consentExpiresAt: string;
     feeMinor: number;
     currency: string;
   } | null;
+  returnPolicy?: {
+    chargedReturnsOffered: boolean;
+    feeFreeOnly: boolean;
+  };
+  proofs?: {
+    proofId: string;
+    type: "pickup" | "delivery" | "return";
+    contentType: string;
+    sizeBytes: number;
+    sha256: string;
+    verified: boolean;
+    createdAt: string;
+  }[];
   events: {
     fromState?: string;
     toState: string;
@@ -197,6 +233,56 @@ type CustodyTimeline = {
     createdAt: string;
   }[];
 };
+
+export type DeliveryReturnConsentResult = {
+  deliveryId: string;
+  custodyState: string;
+  consentState: "consented" | "rejected";
+  chargeStatus?: DeliveryReturnChargeStatus;
+  chargeRef?: string;
+};
+
+type DeliveryEnvelope<T> = {
+  success?: boolean;
+  data?: T;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: unknown;
+  };
+};
+
+/**
+ * Unwraps delivery-service's `{ success, data, error }` response envelope.
+ * Rejects unwrapped or malformed payloads so client code never reads `undefined`
+ * fields off an outer wrapper.
+ */
+export function unwrapDeliveryEnvelope<T>(raw: unknown): T {
+  if (!raw || typeof raw !== "object") {
+    throw new ApiError(
+      502,
+      "invalid_delivery_envelope",
+      "Delivery service response was not an object envelope.",
+    );
+  }
+  const env = raw as DeliveryEnvelope<T>;
+  if (env.success === false) {
+    throw new ApiError(
+      400,
+      env.error?.code ?? "delivery_error",
+      env.error?.message ?? "Delivery action could not be completed.",
+      env.error?.details,
+    );
+  }
+  if (env.success !== true || env.data === undefined || env.data === null) {
+    throw new ApiError(
+      502,
+      "invalid_delivery_envelope",
+      "Delivery service response is missing the {success:true,data} envelope.",
+    );
+  }
+  return env.data;
+}
 
 const CUSTODY_LADDER_LABEL: Record<string, string> = {
   courier_assigned: "Courier assigned",
@@ -221,6 +307,13 @@ const CUSTODY_LADDER_LABEL: Record<string, string> = {
 export function mapCustodyToReturnView(
   t: CustodyTimeline,
 ): MpDeliveryReturnState {
+  if (!t || typeof t.state !== "string" || !Array.isArray(t.events)) {
+    throw new ApiError(
+      502,
+      "invalid_custody_timeline",
+      "Delivery custody timeline payload is malformed.",
+    );
+  }
   const coarse: MpDeliveryReturnState["state"] =
     t.state === "delivery_retry"
       ? "retrying"
@@ -235,13 +328,29 @@ export function mapCustodyToReturnView(
     t.openReturn?.chargeStatus === "unsupported"
       ? "This return proposes a fee we cannot yet collect. It will be held at a pickup point instead."
       : "We could not reach the recipient. Choose how to resolve this delivery.";
+  const chargeStatus = t.openReturn?.chargeStatus;
+  const feeMinor = t.openReturn?.feeMinor ?? 0;
+  const approvedNotice =
+    chargeStatus === "captured" && feeMinor > 0
+      ? "The courier returned the package to you. The return fee was charged from your wallet."
+      : (chargeStatus === "reserved" || chargeStatus === "capture_pending") &&
+          feeMinor > 0
+        ? "The courier brings the package back to you. The return fee is reserved from your wallet and charged when the package is returned."
+        : chargeStatus === "released"
+          ? "The courier brings the package back to you. The return fee hold was released — no return fee was charged."
+          : "The courier brings the package back to you. No return fee was charged.";
   return {
     state: coarse,
     situation,
+    approvedNotice,
     returnFeeMinor: {
-      amountMinor: t.openReturn?.feeMinor ?? 0,
-      currency: t.openReturn?.currency || "NGN",
+      amountMinor: feeMinor,
+      currency: t.openReturn?.currency || t.delivery?.currency || "NGN",
     },
+    chargeStatus,
+    delivery: t.delivery,
+    returnPolicy: t.returnPolicy,
+    proofs: t.proofs,
     custody: t.events.map((e) => ({
       label: CUSTODY_LADDER_LABEL[e.toState] ?? e.toState,
       detail: e.reason,
@@ -557,36 +666,42 @@ export const marketplaceApi = {
   // Rider queue projection (R10 / G07) — real ride-service endpoint.
   queue: (requestId: string) =>
     api<MpQueueView>("GET", "/v1/mp/requests/" + requestId + "/queue"),
-  // Delivery custody/returns (C07, G08). REAL delivery-service endpoints —
-  // see contracts/openapi/marketplace.yaml and
+  // Delivery custody/returns (C07, G08, CC-A08). REAL delivery-service
+  // endpoints — see contracts/openapi/marketplace.yaml and
   // docs/marketplace/DELIVERY_CUSTODY.md. The gateway proxies `/v1/delivery/*`
-  // to delivery-service, which mounts these at `/api/v1/deliveries/:id/
-  // custody/*`; see the C07 report for a separate, pre-existing gateway
-  // path-stripping mismatch this inherits (unrelated to this feature, out of
-  // its writable scope to fix — every other delivery-service route has the
-  // same gap).
+  // to delivery-service's `/api/v1/*`, and delivery-service wraps every JSON
+  // response in `{ success, data, error }`.
   deliveryReturnState: (deliveryId: string) =>
-    api<CustodyTimeline>(
+    api<unknown>(
       "GET",
-      "/v1/delivery/deliveries/" + deliveryId + "/custody",
-    ).then(mapCustodyToReturnView),
-  // "retry_recipient" is NOT implemented server-side (see the type doc
-  // above): delivery-service has no standalone "mark retrying" transition,
-  // only a retry bundled with an actual delivery-proof capture this screen
-  // does not perform. The call still reaches the real server, which refuses
-  // it with a validation error the container's existing onError path
-  // displays — never faked as a success.
-  deliveryReturnConsent: (deliveryId: string, action: MpDeliveryReturnAction) =>
-    api<CustodyTimeline>(
+      "/v1/delivery/deliveries/" + encodeURIComponent(deliveryId) + "/custody",
+    )
+      .then((raw) => unwrapDeliveryEnvelope<CustodyTimeline>(raw))
+      .then(mapCustodyToReturnView),
+  deliveryReturnConsent: async (
+    deliveryId: string,
+    action: MpDeliveryReturnAction,
+  ) => {
+    const raw = await api<unknown>(
       "POST",
-      "/v1/delivery/deliveries/" + deliveryId + "/custody/return/consent",
+      "/v1/delivery/deliveries/" +
+        encodeURIComponent(deliveryId) +
+        "/custody/return/consent",
       {
-        action:
-          action === "approve_return"
-            ? "consent"
-            : action === "hold_at_point"
-              ? "reject"
-              : action,
+        action: action === "approve_return" ? "consent" : "reject",
       },
-    ).then(mapCustodyToReturnView),
+    );
+    const consent = unwrapDeliveryEnvelope<DeliveryReturnConsentResult>(raw);
+    if (
+      typeof consent.custodyState !== "string" ||
+      typeof consent.consentState !== "string"
+    ) {
+      throw new ApiError(
+        502,
+        "invalid_return_consent_response",
+        "Delivery return consent response is missing custodyState or consentState.",
+      );
+    }
+    return marketplaceApi.deliveryReturnState(deliveryId);
+  },
 };

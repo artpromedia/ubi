@@ -52,6 +52,11 @@ export type JobsTimelineProps = {
   };
   // A03: the booking calendar (future bookings never occupy these two slots).
   onCalendar: (() => void) | null;
+  // CC-A08: honest placeholder when the current job is a delivery job (until CC-C04 lands).
+  deliveryPlaceholder?: {
+    state: string;
+    deliveryId?: string;
+  } | null;
 };
 
 export function JobsTimelineScreen(p: JobsTimelineProps) {
@@ -199,6 +204,19 @@ export function JobsTimelineScreen(p: JobsTimelineProps) {
         tone="neutral"
         body="Navigation to your next pickup unlocks only when the current job completes. A third job can’t be taken — bids for either slot are blocked until one frees."
       />
+      {p.deliveryPlaceholder ? (
+        <Banner
+          tone="info"
+          title="Delivery jobs open in the next app update"
+          body={
+            "Current delivery state: " +
+            p.deliveryPlaceholder.state +
+            (p.deliveryPlaceholder.deliveryId
+              ? " · " + p.deliveryPlaceholder.deliveryId
+              : "")
+          }
+        />
+      ) : null}
       {p.current ? (
         <Button label="Continue current trip" onPress={p.onContinueCurrent} />
       ) : null}

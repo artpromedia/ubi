@@ -20,8 +20,8 @@ This page is the precise list of what the flag still waits for, as of P17
 | Queued-award cancellation, `marketplace-cancel` (r8)   |     yes     | `marketplace_cancel_test.go` (real schema, pickup race)                |    no    |   off   |
 | `shipment.return_proposed` / `shipment.cancelled` (r8) |     yes     | `return_outbox_test.go`, `marketplace_cancel_test.go`                  |    no    |   off   |
 | Service calls exempt from the client limiter (r8)      |     yes     | `middleware/ratelimit_test.go`, `marketplace_cancel_test.go`           |    no    |   n/a   |
-| **Gateway path + scopes for the custody/proof routes** |   **no**    | —                                                                      |    no    |   off   |
-| OpenAPI / rider-mobile for the new routes              |   **no**    | —                                                                      |    no    |   off   |
+| **Gateway path + scopes for the custody/proof routes** |   **yes**   | `api-gateway tests/route-contract.test.ts`, `scopes.ts`                |    no    |   off   |
+| OpenAPI / rider-mobile for the new routes              |   **yes**   | `contracts/openapi/marketplace.yaml`, `marketplaceContract.test.tsx`   |    no    |   off   |
 
 ## 1. Sender identity
 
@@ -208,26 +208,16 @@ gateway identity is counted as its user; everything else per client address
 peers in `DELIVERY_TRUSTED_PROXIES` (unset: nobody) — set it to the
 api-gateway/ingress addresses. See `internal/middleware/ratelimit.go`.
 
-### 4b. Gateway (api-gateway — not in this slice)
+### 4b. Gateway (api-gateway — served in CC-A08)
 
-- Path: the gateway forwards `/v1/delivery/*` as `/delivery/*`
-  (`downstreamPath` strips only `/v1`), but delivery-service serves
-  `/api/v1/*`. Map `/v1/delivery/<rest>` → `/api/v1/<rest>` for this service.
-- Scopes: add the new custody routes to the scope matrix
-  (`proof-uploads`, `proofs/:proofId/url`, `return/complete` for drivers and
-  senders as documented above; `return/cancel-charge` for ops/admin only).
+- Path: `services/api-gateway/src/routes/proxy-map.ts` rewrites `/v1/delivery/<rest>` → `/api/v1/<rest>` and `services/api-gateway/tests/route-contract.test.ts` asserts every custody and proof route against `services/delivery-service/internal/handlers/routes.manifest`.
+- Scopes: `services/api-gateway/src/identity/scopes.ts` maps `GET /v1/delivery/deliveries` and `POST /v1/delivery/deliveries` for senders, drivers, and ops; fine-grained object-ownership and role checks (`isSender`, `isAssignedDriver`, `isOps`) are enforced in `services/delivery-service/internal/handlers/custody.go`.
 
-### 4c. Contracts and clients (not in this slice)
+### 4c. Contracts and clients (contract half served in CC-A08; full RN proof-capture UI in CC-C04)
 
-- `contracts/openapi/marketplace.yaml`: the proof body is now `{uploadId}`;
-  add `proof-uploads`, `proofs/{proofId}/url`, `return/complete`,
-  `return/cancel-charge`, the new error codes, `returnPolicy`/`proofs` on the
-  timeline, `senderProfileId` on the marketplace-assign answer; add
-  `/v1/finance/delivery-returns` to a finance contract.
-- `docs/marketplace/DELIVERY_CUSTODY.md`: its "object storage", "return-leg
-  charge" and "sender FK" sections describe the pre-P17 state.
-- rider-mobile / driver-mobile: capture + upload a proof image (driver),
-  show `returnPolicy`, the fee approval (402 handling) and proof viewing.
+- `contracts/openapi/marketplace.yaml`: documents the `/v1/delivery/deliveries/{deliveryId}/custody...` gateway paths, the `{success, data, error}` envelope, `{uploadId}` proof attach body, `proof-uploads`, `proofs/{proofId}/url`, `return/complete`, `return/cancel-charge`, `marketplace-cancel`, `returnPolicy`/`proofs`/`delivery` on the timeline, `senderProfileId` on the marketplace-assign answer, and all `PROOF_*` / `RETURN_FEE_*` error codes.
+- `apps/rider-mobile/src/api/marketplace.ts` & `DeliveryReturnContainer.tsx`: unwraps the `{success, data, error}` envelope, maps `POST .../custody/return/consent` and re-reads the timeline, renders the honest money outcome from `chargeStatus`, and removes the unsupported `"retry_recipient"` action.
+- `apps/driver-mobile/src/screens/marketplace/JobsTimelineContainer.tsx`: routes `"Continue current trip"` by `executionRef.service` so delivery jobs render an honest placeholder instead of navigating to the ride `Trip` stack until the full RN delivery custody screens (`CC-C04`) land.
 
 ### 4d. Operations
 

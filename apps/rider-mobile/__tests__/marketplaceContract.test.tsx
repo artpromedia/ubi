@@ -14,8 +14,11 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@ubi/mobile-ui";
 import { TEST_IDS } from "@ubi/contracts";
+import { installFixtures, ApiError } from "@ubi/mobile-core";
 import { BidDetailContainer } from "../src/screens/marketplace/BidDetailContainer";
 import { FareEditorContainer } from "../src/screens/marketplace/FareEditorContainer";
+import { DeliveryReturnContainer } from "../src/screens/marketplace/DeliveryReturnContainer";
+import type * as marketplaceApiModule from "../src/api/marketplace";
 import type * as marketplaceFixturesModule from "../src/dev/fixtures/marketplace";
 
 const mockNavigate = jest.fn();
@@ -296,5 +299,281 @@ describe("dev fixture — select 202 body is the contract wrapper", () => {
     expect(json.award?.bidId).toBe("bid_emeka");
     expect(json.bidId).toBeUndefined(); // the bare-award shape is gone
     (globalThis as { __ubiMpFix?: unknown }).__ubiMpFix = undefined;
+  });
+});
+
+describe("CC-A08 — delivery custody {success, data, error} envelope + return consent re-read", () => {
+  const realMp = jest.requireActual(
+    "../src/api/marketplace",
+  ) as typeof marketplaceApiModule;
+
+  afterEach(() => {
+    installFixtures(async () => undefined);
+  });
+
+  const wrappedTimeline = (
+    over: Partial<marketplaceApiModule.CustodyTimeline> = {},
+  ) => ({
+    success: true,
+    data: {
+      deliveryId: "del_901",
+      state: "return_proposed",
+      version: 2,
+      delivery: {
+        trackingNumber: "UBI-DEL-901",
+        pickupLocation: {
+          address: "Lekki Phase 1",
+          latitude: 6.44,
+          longitude: 3.47,
+        },
+        dropoffLocation: {
+          address: "Victoria Island",
+          latitude: 6.42,
+          longitude: 3.42,
+        },
+        pickupContact: { name: "Sender", phone: "+2348010000001" },
+        dropoffContact: { name: "Adaeze", phone: "+2348010000002" },
+        package: {
+          size: "SMALL",
+          weightKg: 1.5,
+          description: "Documents",
+          fragile: false,
+          requiresSignature: false,
+        },
+        agreedFareMinor: 280000,
+        currency: "NGN",
+      },
+      openReturn: {
+        returnId: "ret_901",
+        chargeStatus: "reserved" as const,
+        consentState: "pending" as const,
+        consentExpiresAt: iso(86_400_000),
+        feeMinor: 90000,
+        currency: "NGN",
+      },
+      returnPolicy: {
+        chargedReturnsOffered: true,
+        feeFreeOnly: false,
+      },
+      proofs: [
+        {
+          proofId: "prf_1",
+          type: "pickup" as const,
+          contentType: "image/jpeg",
+          sizeBytes: 31200,
+          sha256:
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          verified: true,
+          createdAt: iso(-600_000),
+        },
+      ],
+      events: [
+        {
+          toState: "recipient_unreachable",
+          actorType: "driver",
+          reason: "Recipient did not answer",
+          createdAt: iso(-300_000),
+        },
+        {
+          fromState: "recipient_unreachable",
+          toState: "return_proposed",
+          actorType: "driver",
+          reason: "Proposing return to sender",
+          createdAt: iso(-120_000),
+        },
+      ],
+      ...over,
+    },
+  });
+
+  it("loads the wrapped timeline, consents, and re-reads the updated timeline with real money outcome", async () => {
+    let consented = false;
+    const calls: string[] = [];
+    installFixtures(async ({ method, path }) => {
+      calls.push(method + " " + path);
+      if (
+        method === "GET" &&
+        path === "/v1/delivery/deliveries/del_901/custody"
+      ) {
+        return {
+          status: 200,
+          json: consented
+            ? wrappedTimeline({
+                state: "return_consented",
+                version: 3,
+                openReturn: {
+                  returnId: "ret_901",
+                  chargeStatus: "reserved",
+                  consentState: "consented",
+                  consentExpiresAt: iso(86_400_000),
+                  feeMinor: 90000,
+                  currency: "NGN",
+                },
+                events: [
+                  {
+                    toState: "recipient_unreachable",
+                    actorType: "driver",
+                    reason: "Recipient did not answer",
+                    createdAt: iso(-300_000),
+                  },
+                  {
+                    fromState: "return_proposed",
+                    toState: "return_consented",
+                    actorType: "sender",
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+              })
+            : wrappedTimeline(),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === "/v1/delivery/deliveries/del_901/custody/return/consent"
+      ) {
+        consented = true;
+        return {
+          status: 200,
+          json: {
+            success: true,
+            data: {
+              deliveryId: "del_901",
+              custodyState: "return_consented",
+              consentState: "consented",
+              chargeStatus: "reserved",
+              chargeRef: "hold_ret_901",
+            },
+          },
+        };
+      }
+      return undefined;
+    });
+
+    const initial = await realMp.marketplaceApi.deliveryReturnState("del_901");
+    expect(initial.state).toBe("unreachable");
+    expect(initial.returnFeeMinor).toEqual({
+      amountMinor: 90000,
+      currency: "NGN",
+    });
+    expect(initial.delivery?.trackingNumber).toBe("UBI-DEL-901");
+    expect(initial.returnPolicy).toEqual({
+      chargedReturnsOffered: true,
+      feeFreeOnly: false,
+    });
+    expect(initial.proofs).toHaveLength(1);
+
+    const afterConsent = await realMp.marketplaceApi.deliveryReturnConsent(
+      "del_901",
+      "approve_return",
+    );
+    expect(afterConsent.state).toBe("return_approved");
+    expect(afterConsent.approvedNotice).toBe(
+      "The courier brings the package back to you. The return fee is reserved from your wallet and charged when the package is returned.",
+    );
+    expect(calls).toEqual([
+      "GET /v1/delivery/deliveries/del_901/custody",
+      "POST /v1/delivery/deliveries/del_901/custody/return/consent",
+      "GET /v1/delivery/deliveries/del_901/custody",
+    ]);
+  });
+
+  it("surfaces 409 RETURN_CHARGE_UNSUPPORTED server message from the error envelope", async () => {
+    installFixtures(async ({ method, path }) => {
+      if (
+        method === "POST" &&
+        path === "/v1/delivery/deliveries/del_901/custody/return/consent"
+      ) {
+        return {
+          status: 409,
+          json: {
+            success: false,
+            error: {
+              code: "RETURN_CHARGE_UNSUPPORTED",
+              message:
+                "This return proposes a fee delivery-service cannot yet authorize. Reject it to hold the package at a pickup point instead.",
+            },
+          },
+        };
+      }
+      return undefined;
+    });
+
+    await expect(
+      realMp.marketplaceApi.deliveryReturnConsent("del_901", "approve_return"),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "RETURN_CHARGE_UNSUPPORTED",
+      message:
+        "This return proposes a fee delivery-service cannot yet authorize. Reject it to hold the package at a pickup point instead.",
+    });
+  });
+
+  it("negative control: rejects an old unwrapped fixture that lacks {success:true, data}", async () => {
+    installFixtures(async () => ({
+      status: 200,
+      json: {
+        // Old unwrapped fixture shape without {success: true, data: ...}
+        deliveryId: "del_old",
+        state: "recipient_unreachable",
+        version: 1,
+        openReturn: null,
+        events: [],
+      },
+    }));
+
+    await expect(
+      realMp.marketplaceApi.deliveryReturnState("del_old"),
+    ).rejects.toBeInstanceOf(ApiError);
+    await expect(
+      realMp.marketplaceApi.deliveryReturnState("del_old"),
+    ).rejects.toMatchObject({
+      code: "invalid_delivery_envelope",
+    });
+  });
+
+  it("DeliveryReturnContainer renders honest fee-free notice and omits removed Try recipient again button", async () => {
+    mockRouteParams = { deliveryId: "del_901" };
+    marketplaceApi.deliveryReturnState.mockResolvedValue({
+      state: "unreachable",
+      situation:
+        "We could not reach the recipient. Choose how to resolve this delivery.",
+      approvedNotice:
+        "The courier brings the package back to you. No return fee was charged.",
+      returnFeeMinor: { amountMinor: 0, currency: "NGN" },
+      custody: [{ label: "Recipient unreachable", state: "active" }],
+    });
+    marketplaceApi.deliveryReturnConsent.mockResolvedValue({
+      state: "return_approved",
+      situation:
+        "We could not reach the recipient. Choose how to resolve this delivery.",
+      approvedNotice:
+        "The courier brings the package back to you. No return fee was charged.",
+      returnFeeMinor: { amountMinor: 0, currency: "NGN" },
+      custody: [
+        { label: "Recipient unreachable", state: "done" },
+        { label: "Return approved", state: "active" },
+      ],
+    });
+
+    const view = wrap(<DeliveryReturnContainer />);
+    const resolveBtn = await screen.findByText(
+      "Resolve · recipient unreachable",
+    );
+    fireEvent.press(resolveBtn);
+
+    // "Try recipient again" is removed because only the driver's delivery proof retries delivery.
+    expect(screen.queryByText("Try recipient again")).toBeNull();
+
+    fireEvent.press(
+      screen.getByTestId(TEST_IDS.mp.rider.delivery.approveReturn),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "The courier brings the package back to you. No return fee was charged.",
+        ),
+      ).toBeTruthy(),
+    );
+    view.unmount();
   });
 });

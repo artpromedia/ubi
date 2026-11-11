@@ -38,11 +38,6 @@ export const UNSUPPORTED = {
     reason:
       "food-service routes exist but the Bites boards are out of C05 scope and unaudited; surfacing them would imply availability (G12)",
   },
-  sendParcels: {
-    wanted: "parcel send journey (/v1/delivery custody/returns)",
-    reason:
-      "delivery-service has no custody/return endpoints (G08); publishing the Send surface would imply availability",
-  },
 } as const;
 
 export type UnsupportedKey = keyof typeof UNSUPPORTED;

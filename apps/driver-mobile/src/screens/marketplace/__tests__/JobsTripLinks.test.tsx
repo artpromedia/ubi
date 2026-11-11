@@ -139,4 +139,47 @@ describe("Jobs → trip stops, route changes and bookings", () => {
     expect(screen.queryByTestId(JOBS.calendar)).toBeNull();
     second.unmount();
   });
+
+  it("does not navigate to the ride Trip stack for a delivery executionRef and shows an honest placeholder", async () => {
+    installWire((call) => {
+      if (call.path === FLAGS_PATH)
+        return {
+          status: 200,
+          json: {
+            marketplace_rides: true,
+            marketplace_delivery: true,
+          },
+        };
+      if (call.path === "/v1/mp/driver/jobs")
+        return {
+          status: 200,
+          json: {
+            current: {
+              claimId: "clm_del_1",
+              requestId: "req_del_1",
+              slot: "current",
+              service: "delivery",
+              state: "in trip",
+              fareMinor: NGN(4500_00),
+              commissionMinor: NGN(450_00),
+              receiptId: "rcpt_del_1",
+              executionRef: { service: "delivery", id: "del_901" },
+            },
+            promotion: "none",
+          },
+        };
+      return undefined;
+    });
+    const view = harness();
+    await screen.findByTestId(JOBS.current);
+    expect(
+      screen.getByText("Delivery jobs open in the next app update"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Current delivery state: in trip · del_901"),
+    ).toBeTruthy();
+    fireEvent.press(screen.getByText("Continue current trip"));
+    expect(mockNavigate).not.toHaveBeenCalledWith("Trip", expect.anything());
+    view.unmount();
+  });
 });

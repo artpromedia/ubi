@@ -788,10 +788,70 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var deliveryView interface{}
+	var trackingNumber, pickupAddress, pickupContact, pickupPhone, dropoffAddress, dropoffContact, dropoffPhone string
+	var pkgSize, pkgDesc, delivCurrency string
+	var pickupLat, pickupLng, dropoffLat, dropoffLng, pkgWeight float64
+	var isFragile, requiresSig bool
+	var agreedFareMinor int64
+	if err := h.db.Pool.QueryRow(r.Context(), `
+		SELECT COALESCE(tracking_number, ''),
+		       COALESCE(pickup_address, ''), COALESCE(pickup_latitude::float8, 0), COALESCE(pickup_longitude::float8, 0),
+		       COALESCE(pickup_contact, ''), COALESCE(pickup_phone, ''),
+		       COALESCE(dropoff_address, ''), COALESCE(dropoff_latitude::float8, 0), COALESCE(dropoff_longitude::float8, 0),
+		       COALESCE(dropoff_contact, ''), COALESCE(dropoff_phone, ''),
+		       COALESCE(package_size::text, 'SMALL'), COALESCE(package_weight::float8, 0), COALESCE(package_description, ''),
+		       COALESCE(is_fragile, false), COALESCE(requires_signature, false),
+		       COALESCE((marketplace_metadata->>'agreedFareMinor')::bigint, 0),
+		       COALESCE(currency::text, 'NGN')
+		FROM deliveries WHERE id = $1
+	`, deliveryID).Scan(
+		&trackingNumber,
+		&pickupAddress, &pickupLat, &pickupLng,
+		&pickupContact, &pickupPhone,
+		&dropoffAddress, &dropoffLat, &dropoffLng,
+		&dropoffContact, &dropoffPhone,
+		&pkgSize, &pkgWeight, &pkgDesc,
+		&isFragile, &requiresSig,
+		&agreedFareMinor, &delivCurrency,
+	); err == nil {
+		deliveryView = map[string]interface{}{
+			"trackingNumber": trackingNumber,
+			"pickupLocation": map[string]interface{}{
+				"address":   pickupAddress,
+				"latitude":  pickupLat,
+				"longitude": pickupLng,
+			},
+			"dropoffLocation": map[string]interface{}{
+				"address":   dropoffAddress,
+				"latitude":  dropoffLat,
+				"longitude": dropoffLng,
+			},
+			"pickupContact": map[string]interface{}{
+				"name":  pickupContact,
+				"phone": pickupPhone,
+			},
+			"dropoffContact": map[string]interface{}{
+				"name":  dropoffContact,
+				"phone": dropoffPhone,
+			},
+			"package": map[string]interface{}{
+				"size":              pkgSize,
+				"weightKg":          pkgWeight,
+				"description":       pkgDesc,
+				"fragile":           isFragile,
+				"requiresSignature": requiresSig,
+			},
+			"agreedFareMinor": agreedFareMinor,
+			"currency":        delivCurrency,
+		}
+	}
+
 	respond(w, http.StatusOK, map[string]interface{}{
 		"deliveryId": deliveryID,
 		"state":      cst.State,
 		"version":    cst.Version,
+		"delivery":   deliveryView,
 		"openReturn": openReturnView,
 		"returnPolicy": map[string]interface{}{
 			"chargedReturnsOffered": h.chargedReturnsOffered(),

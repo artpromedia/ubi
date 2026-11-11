@@ -82,16 +82,18 @@ const placeholderPaymentMethod = "WALLET"
 // custody row keeps the USER id (delivery_custody.sender_id), because the
 // custody access matrix compares it against the gateway-verified actor.
 type MarketplaceAssignRequest struct {
-	AwardID        string          `json:"awardId"`
-	RequestID      string          `json:"requestId"`
-	DriverID       string          `json:"driverId"`
-	CustomerID     string          `json:"customerId"`
-	FareMinor      int64           `json:"fareMinor"`
-	Currency       string          `json:"currency"`
-	Pickup         models.Location `json:"pickup"`
-	Dropoff        models.Location `json:"dropoff"`
-	PackageDetails models.Package  `json:"packageDetails"`
-	FencingToken   int64           `json:"fencingToken"`
+	AwardID        string              `json:"awardId"`
+	RequestID      string              `json:"requestId"`
+	DriverID       string              `json:"driverId"`
+	CustomerID     string              `json:"customerId"`
+	FareMinor      int64               `json:"fareMinor"`
+	Currency       string              `json:"currency"`
+	Pickup         models.Location     `json:"pickup"`
+	Dropoff        models.Location     `json:"dropoff"`
+	PickupContact  *models.ContactInfo `json:"pickupContact,omitempty"`
+	DropoffContact *models.ContactInfo `json:"dropoffContact,omitempty"`
+	PackageDetails models.Package      `json:"packageDetails"`
+	FencingToken   int64               `json:"fencingToken"`
 }
 
 // committedDefaultServiceKey is the INTERNAL_SERVICE_KEY fallback baked into
@@ -453,6 +455,16 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
 
+	var pickupContactName, pickupContactPhone, dropoffContactName, dropoffContactPhone string
+	if req.PickupContact != nil {
+		pickupContactName = req.PickupContact.Name
+		pickupContactPhone = req.PickupContact.Phone
+	}
+	if req.DropoffContact != nil {
+		dropoffContactName = req.DropoffContact.Name
+		dropoffContactPhone = req.DropoffContact.Phone
+	}
+
 	var createdAt time.Time
 	err = tx.QueryRow(r.Context(), query,
 		// sender_id is the requester's rider PROFILE (riders.id), never the
@@ -465,8 +477,8 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 		// seeds (courier_assigned) is the actual source of truth for "a
 		// driver is already assigned" from here on.
 		"PENDING",
-		req.Pickup.Address, req.Pickup.Latitude, req.Pickup.Longitude, "", "",
-		req.Dropoff.Address, req.Dropoff.Latitude, req.Dropoff.Longitude, "", "",
+		req.Pickup.Address, req.Pickup.Latitude, req.Pickup.Longitude, pickupContactName, pickupContactPhone,
+		req.Dropoff.Address, req.Dropoff.Latitude, req.Dropoff.Longitude, dropoffContactName, dropoffContactPhone,
 		string(req.PackageDetails.Size), req.PackageDetails.Weight, req.PackageDetails.Description,
 		req.PackageDetails.Fragile, req.PackageDetails.RequiresPOD,
 		storagePrice, req.Currency, placeholderPaymentMethod,
