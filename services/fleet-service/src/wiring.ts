@@ -9,8 +9,15 @@
  */
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
-import { FLEET_RIDE_SERVICE_KEY_ENV } from "./lib/service-key";
+import {
+  FLEET_PAYMENT_SERVICE_KEY_ENV,
+  FLEET_RIDE_SERVICE_KEY_ENV,
+} from "./lib/service-key";
 import { createCityConfigProvider } from "./ops/config";
+import {
+  createHttpPaymentPort,
+  paymentServiceKeyFromEnv,
+} from "./ports/payment-port";
 import { createHttpPinPort } from "./ports/pin-port";
 import { createHttpRidePort, rideServiceKeyFromEnv } from "./ports/ride-port";
 
@@ -21,6 +28,8 @@ const RIDE_SERVICE_URL =
   process.env.RIDE_SERVICE_URL ?? "http://ride-service:4002";
 const USER_SERVICE_URL =
   process.env.USER_SERVICE_URL ?? "http://user-service:4001";
+const PAYMENT_SERVICE_URL =
+  process.env.PAYMENT_SERVICE_URL ?? "http://payment-service:3005";
 
 export function createDeps(): FleetDeps {
   const db = prisma as unknown as FleetDb;
@@ -28,6 +37,12 @@ export function createDeps(): FleetDeps {
   if (rideKey === undefined) {
     logger.warn(
       `${FLEET_RIDE_SERVICE_KEY_ENV} is not set (or shorter than 32 characters): every call to ride-service is refused, so maintenance, off-road, calendars with bookings and schedules answer 503`,
+    );
+  }
+  const paymentKey = paymentServiceKeyFromEnv(process.env);
+  if (paymentKey === undefined) {
+    logger.warn(
+      `${FLEET_PAYMENT_SERVICE_KEY_ENV} is not set (or shorter than 32 characters): fleet week-money calls to payment-service will degrade to MONEY_UNAVAILABLE`,
     );
   }
   return {
@@ -38,6 +53,10 @@ export function createDeps(): FleetDeps {
       serviceKey: rideKey,
     }),
     pins: createHttpPinPort({ baseUrl: USER_SERVICE_URL }),
+    payments: createHttpPaymentPort({
+      baseUrl: PAYMENT_SERVICE_URL,
+      serviceKey: paymentKey,
+    }),
     now: () => new Date(),
   };
 }

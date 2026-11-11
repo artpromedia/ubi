@@ -67,7 +67,12 @@ import {
   type SettlementInputItem,
   type SettlementInputsClient,
 } from "./inputs";
-import { carryBalances, carryMemoLines, driverNetMinor } from "./ledger-reads";
+import {
+  carryBalances,
+  carryMemoLines,
+  driverGrossAndCommissionMinor,
+  driverNetMinor,
+} from "./ledger-reads";
 import {
   allocateOutstanding,
   centiHours,
@@ -84,6 +89,7 @@ import {
   assertWeekStart,
   FLEET_FLAG,
   FLEET_WALLET_OWNER,
+  isLinkId,
   pairLockKey,
   REMITTANCE_AGGREGATE,
   REMITTANCE_EVENT_KIND,
@@ -1170,6 +1176,320 @@ export async function carryForwardView(
       currency,
     ),
     origins,
+  };
+}
+
+// ── Internal service-keyed fleet money read (CC-A02 / P1-09, DEC-9 = A) ────
+
+export const FLEET_MONEY_EXCLUDES = ["cash_fares", "tips"] as const;
+
+export interface FleetMoneySummary {
+  readonly weekGross: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly ubiCommission: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly fleetRemittance: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
+  readonly remittanceStatus: string;
+  readonly remittance: {
+    readonly due: { readonly amountMinor: number; readonly currency: string };
+    readonly collected: {
+      readonly amountMinor: number;
+      readonly currency: string;
+    };
+    readonly shortfall: {
+      readonly amountMinor: number;
+      readonly currency: string;
+    };
+    readonly carried: {
+      readonly amountMinor: number;
+      readonly currency: string;
+    };
+    readonly refunded: {
+      readonly amountMinor: number;
+      readonly currency: string;
+    };
+  };
+}
+
+export interface FleetWeekMoneyAssignmentSlice {
+  readonly assignmentId: string;
+  readonly driverId: string;
+  readonly vehicleId: string;
+  readonly activeFrom: string;
+  readonly activeTo: string | null;
+}
+
+export interface FleetWeekMoneyInput {
+  readonly fleetId: string;
+  readonly cityId: string;
+  readonly weekStart: string;
+  readonly vehicleIds?: readonly string[] | undefined;
+  readonly assignments?: readonly FleetWeekMoneyAssignmentSlice[] | undefined;
+}
+
+export interface FleetWeekMoneyView {
+  readonly fleetId: string;
+  readonly cityId: string;
+  readonly weekStart: string;
+  readonly weekEnd: string;
+  readonly asOf: string;
+  readonly excludes: readonly ["cash_fares", "tips"];
+  readonly fleet: FleetMoneySummary;
+  readonly vehicles: Readonly<Record<string, FleetMoneySummary>>;
+  readonly assignments: Readonly<Record<string, FleetMoneySummary>>;
+}
+
+interface AssignmentAccum {
+  readonly assignmentId: string;
+  readonly vehicleId: string;
+  readonly grossMinor: number;
+  readonly ubiCommissionMinor: number;
+  readonly settled: boolean;
+  readonly dueMinor: number;
+  readonly collectedMinor: number;
+  readonly shortfallMinor: number;
+  readonly carriedMinor: number;
+  readonly refundedMinor: number;
+}
+
+function summariseMoney(
+  entries: readonly AssignmentAccum[],
+  currency: string,
+): FleetMoneySummary {
+  if (entries.length === 0) {
+    const zero = money(0, currency);
+    return {
+      weekGross: zero,
+      ubiCommission: zero,
+      fleetRemittance: zero,
+      remittanceStatus: "No active arrangement",
+      remittance: {
+        due: zero,
+        collected: zero,
+        shortfall: zero,
+        carried: zero,
+        refunded: zero,
+      },
+    };
+  }
+  let grossMinor = 0;
+  let ubiCommissionMinor = 0;
+  let dueMinor = 0;
+  let collectedMinor = 0;
+  let shortfallMinor = 0;
+  let carriedMinor = 0;
+  let refundedMinor = 0;
+  let anySettled = false;
+  let allSettled = true;
+  for (const entry of entries) {
+    grossMinor += entry.grossMinor;
+    ubiCommissionMinor += entry.ubiCommissionMinor;
+    dueMinor += entry.dueMinor;
+    collectedMinor += entry.collectedMinor;
+    shortfallMinor += entry.shortfallMinor;
+    carriedMinor += entry.carriedMinor;
+    refundedMinor += entry.refundedMinor;
+    if (entry.settled) {
+      anySettled = true;
+    } else {
+      allSettled = false;
+    }
+  }
+  let remittanceStatus: string;
+  if (!anySettled) {
+    remittanceStatus = "Pending settlement";
+  } else if (shortfallMinor > 0) {
+    remittanceStatus = "Shortfall";
+  } else if (carriedMinor > 0) {
+    remittanceStatus = "Carried forward";
+  } else if (refundedMinor > 0 && dueMinor === 0) {
+    remittanceStatus = "Refunded";
+  } else if (allSettled) {
+    remittanceStatus = "Settled";
+  } else {
+    remittanceStatus = "Pending settlement";
+  }
+  return {
+    weekGross: money(grossMinor, currency),
+    ubiCommission: money(ubiCommissionMinor, currency),
+    fleetRemittance: money(dueMinor, currency),
+    remittanceStatus,
+    remittance: {
+      due: money(dueMinor, currency),
+      collected: money(collectedMinor, currency),
+      shortfall: money(shortfallMinor, currency),
+      carried: money(carriedMinor, currency),
+      refunded: money(refundedMinor, currency),
+    },
+  };
+}
+
+/**
+ * Service-keyed internal read for `fleet-service` (CC-A02 / P1-09, DEC-9 = A).
+ * Returns week gross (`NET_EARNING_KINDS`), UBI commission
+ * (`NET_COMMISSION_KINDS`), and settled remittance figures per fleet, vehicle,
+ * and assignment — never a driver's net earnings or a per-trip split.
+ */
+export async function fleetWeekMoney(
+  deps: WalletDeps,
+  client: SettlementInputsClient | undefined,
+  input: FleetWeekMoneyInput,
+): Promise<FleetWeekMoneyView> {
+  assertWeekStart(input.weekStart);
+  if (!isLinkId(input.fleetId)) {
+    throw new ContractError(
+      "validation_failed",
+      "fleetId must be 1-128 letters, digits, '_', '.' or '-'",
+      { fleetId: input.fleetId },
+    );
+  }
+  const { city, flags } = await deps.config.load(input.cityId);
+  assertFlagEnabled(flags, FLEET_FLAG);
+  const weekEnd = addDays(input.weekStart, 6);
+  const window = rangeWindow(input.weekStart, weekEnd, city.timezone);
+  const weekRecords = await settlementsOfWeek(
+    deps,
+    input.cityId,
+    input.weekStart,
+  );
+  const fleetSettlements = weekRecords.settlements.filter(
+    (record) => record.fleetId === input.fleetId,
+  );
+  const settledByAssignment = new Map<string, RemittanceRecord>(
+    fleetSettlements.map((record) => [record.assignmentId, record]),
+  );
+
+  const slicesById = new Map<string, FleetWeekMoneyAssignmentSlice>();
+  if (input.assignments !== undefined) {
+    for (const slice of input.assignments) {
+      slicesById.set(slice.assignmentId, slice);
+    }
+  } else if (client !== undefined) {
+    try {
+      const fetched = await client.fetchInputs(input.cityId, input.weekStart);
+      for (const item of fetched.items) {
+        if (item.fleetId === input.fleetId) {
+          slicesById.set(item.assignmentId, {
+            assignmentId: item.assignmentId,
+            driverId: item.driverId,
+            vehicleId: item.vehicleId,
+            activeFrom: item.activeFrom,
+            activeTo: item.activeTo,
+          });
+        }
+      }
+    } catch (error) {
+      if (
+        !(
+          error instanceof ContractError && error.code === "service_unavailable"
+        )
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  for (const settled of fleetSettlements) {
+    if (!slicesById.has(settled.assignmentId)) {
+      slicesById.set(settled.assignmentId, {
+        assignmentId: settled.assignmentId,
+        driverId: settled.driverId,
+        vehicleId: settled.vehicleId,
+        activeFrom: window.start.toISOString(),
+        activeTo: window.end.toISOString(),
+      });
+    }
+  }
+
+  const slices = [...slicesById.values()];
+  const driverIds = [...new Set(slices.map((slice) => slice.driverId))];
+  const walletRows =
+    driverIds.length === 0
+      ? []
+      : await deps.db.wallet.findMany({
+          where: {
+            ownerType: "user",
+            ownerId: { in: driverIds },
+            currency: city.currency,
+          },
+          select: { id: true, ownerId: true },
+        });
+  const walletByDriver = new Map<string, string>(
+    walletRows.map((row) => [row.ownerId, row.id]),
+  );
+
+  const accums: AssignmentAccum[] = [];
+  for (const slice of slices) {
+    const from = new Date(slice.activeFrom);
+    const to = slice.activeTo === null ? null : new Date(slice.activeTo);
+    const start = from.getTime() > window.start.getTime() ? from : window.start;
+    const end =
+      to !== null && to.getTime() < window.end.getTime() ? to : window.end;
+    const walletId = walletByDriver.get(slice.driverId);
+    const { grossMinor, ubiCommissionMinor } =
+      walletId === undefined
+        ? { grossMinor: 0, ubiCommissionMinor: 0 }
+        : await driverGrossAndCommissionMinor(
+            deps.db,
+            walletId,
+            city.currency,
+            {
+              start,
+              end,
+            },
+          );
+    const settled = settledByAssignment.get(slice.assignmentId);
+    accums.push({
+      assignmentId: slice.assignmentId,
+      vehicleId: slice.vehicleId,
+      grossMinor,
+      ubiCommissionMinor,
+      settled: settled !== undefined,
+      dueMinor: settled?.dueMinor ?? 0,
+      collectedMinor: settled?.collectedMinor ?? 0,
+      shortfallMinor: settled?.shortfallMinor ?? 0,
+      carriedMinor: settled?.carryOutMinor ?? 0,
+      refundedMinor: settled?.refundedMinor ?? 0,
+    });
+  }
+
+  const assignmentsView: Record<string, FleetMoneySummary> = {};
+  for (const accum of accums) {
+    assignmentsView[accum.assignmentId] = summariseMoney(
+      [accum],
+      city.currency,
+    );
+  }
+
+  const allVehicleIds = new Set<string>([
+    ...(input.vehicleIds ?? []),
+    ...accums.map((accum) => accum.vehicleId),
+  ]);
+  const vehiclesView: Record<string, FleetMoneySummary> = {};
+  for (const vehicleId of allVehicleIds) {
+    const vehicleAccums = accums.filter(
+      (accum) => accum.vehicleId === vehicleId,
+    );
+    vehiclesView[vehicleId] = summariseMoney(vehicleAccums, city.currency);
+  }
+
+  return {
+    fleetId: input.fleetId,
+    cityId: input.cityId,
+    weekStart: input.weekStart,
+    weekEnd,
+    asOf: deps.now().toISOString(),
+    excludes: FLEET_MONEY_EXCLUDES,
+    fleet: summariseMoney(accums, city.currency),
+    vehicles: vehiclesView,
+    assignments: assignmentsView,
   };
 }
 

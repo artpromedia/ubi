@@ -11,6 +11,7 @@ import Link from "next/link";
 
 import { useSelectedFleet } from "@/components/fleet/fleet-context";
 import { ReadGate } from "@/components/states/states";
+import { WeekMoneyPanel } from "@/components/vehicle/VehicleDetail";
 import { toReadState, type ReadState } from "@/lib/access";
 import { fleetApi, fleetKeys } from "@/lib/fleet-api";
 import { useOnlineStatus } from "@/lib/hooks";
@@ -115,14 +116,18 @@ export const OverviewView = ({
             {data.openConflicts.high} high · {data.openConflicts.medium} medium
             · {data.openConflicts.status} status only
           </p>
-          <div className="rounded-xl border border-[#222] bg-[#141414] p-4 text-xs text-zinc-400">
-            <p className="font-semibold text-zinc-200">Money</p>
-            <p>
-              Gross, UBI commission and your remittance are settled by UBI and
-              aren&apos;t published to the portal yet. Nothing is estimated
-              here, and fleets never see a driver&apos;s net earnings.
-            </p>
-          </div>
+          {data.money.available ? (
+            <WeekMoneyPanel money={data.money} />
+          ) : (
+            <div className="rounded-xl border border-[#222] bg-[#141414] p-4 text-xs text-zinc-400">
+              <p className="font-semibold text-zinc-200">Money</p>
+              <p>
+                Gross, UBI commission and your remittance are settled by UBI and
+                aren&apos;t published to the portal yet. Nothing is estimated
+                here, and fleets never see a driver&apos;s net earnings.
+              </p>
+            </div>
+          )}
           <p className="text-[11px] text-zinc-500">
             From the server · {dateTimeIn(data.asOf, data.zone)}{" "}
             {zoneShort(data.zone, new Date(data.asOf).getTime())}

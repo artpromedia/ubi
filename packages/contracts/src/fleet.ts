@@ -866,6 +866,87 @@ export type SettlementInputsResponse = z.infer<
   typeof SettlementInputsResponseSchema
 >;
 
+/**
+ * INTERNAL CONTRACT B (payment-service → fleet-service direction, CC-A02 /
+ * P1-09, DEC-9 = A): service-keyed read of a fleet's weekly gross, UBI
+ * commission, remittance breakdown, and status — never a driver's net
+ * earnings or a per-trip split.
+ */
+export const FLEET_WEEK_MONEY_PATH = "/v1/finance/fleet/internal/week-money";
+
+export const FLEET_MONEY_EXCLUDES = ["cash_fares", "tips"] as const;
+export type FleetMoneyExclusion = (typeof FLEET_MONEY_EXCLUDES)[number];
+
+export const FleetMoneyExcludesSchema = z.tuple([
+  z.literal("cash_fares"),
+  z.literal("tips"),
+]);
+
+export const FleetRemittanceBreakdownSchema = z
+  .object({
+    due: MoneySchema,
+    collected: MoneySchema,
+    shortfall: MoneySchema,
+    carried: MoneySchema,
+    refunded: MoneySchema,
+  })
+  .strict();
+export type FleetRemittanceBreakdown = z.infer<
+  typeof FleetRemittanceBreakdownSchema
+>;
+
+export const FleetMoneySummarySchema = z
+  .object({
+    weekGross: MoneySchema,
+    ubiCommission: MoneySchema,
+    fleetRemittance: MoneySchema,
+    remittanceStatus: z.string().min(1),
+    remittance: FleetRemittanceBreakdownSchema,
+  })
+  .strict();
+export type FleetMoneySummary = z.infer<typeof FleetMoneySummarySchema>;
+
+export const FleetWeekMoneyAssignmentInputSchema = z
+  .object({
+    assignmentId: z.string().min(1),
+    driverId: z.string().min(1),
+    vehicleId: z.string().min(1),
+    activeFrom: Timestamp,
+    activeTo: Timestamp.nullable(),
+  })
+  .strict();
+export type FleetWeekMoneyAssignmentInput = z.infer<
+  typeof FleetWeekMoneyAssignmentInputSchema
+>;
+
+export const FleetWeekMoneyRequestSchema = z
+  .object({
+    fleetId: z.string().min(1),
+    cityId: z.string().min(1),
+    weekStart: FleetLocalDateSchema,
+    vehicleIds: z.array(z.string().min(1)).optional(),
+    assignments: z.array(FleetWeekMoneyAssignmentInputSchema).optional(),
+  })
+  .strict();
+export type FleetWeekMoneyRequest = z.infer<typeof FleetWeekMoneyRequestSchema>;
+
+export const FleetWeekMoneyResponseSchema = z
+  .object({
+    fleetId: z.string().min(1),
+    cityId: z.string().min(1),
+    weekStart: FleetLocalDateSchema,
+    weekEnd: FleetLocalDateSchema,
+    asOf: Timestamp,
+    excludes: FleetMoneyExcludesSchema,
+    fleet: FleetMoneySummarySchema,
+    vehicles: z.record(z.string(), FleetMoneySummarySchema),
+    assignments: z.record(z.string(), FleetMoneySummarySchema),
+  })
+  .strict();
+export type FleetWeekMoneyResponse = z.infer<
+  typeof FleetWeekMoneyResponseSchema
+>;
+
 // ── Public request bodies ──────────────────────────────────────────────────
 
 export const CreateFleetSchema = z
@@ -1029,11 +1110,37 @@ export const UbiStatusSchema = z.object({
 });
 
 /** Money the fleet portal shows comes from payment-service, never from here. */
-const MoneyUnavailableSchema = z.object({
+export const MoneyUnavailableSchema = z.object({
   available: z.literal(false),
   reason: z.string(),
   source: z.string(),
 });
+
+/**
+ * Decision Q7 + DEC-9 (option A): fleets see the four Q7 money lines
+ * (`weekGross`, `ubiCommission`, `fleetRemittance`, `remittanceStatus`) plus
+ * `asOf`, `excludes: ["cash_fares", "tips"]`, and the remittance breakdown —
+ * never a driver's net earnings or a per-trip split.
+ */
+export const MoneyAvailableSchema = z
+  .object({
+    available: z.literal(true),
+    asOf: Timestamp,
+    excludes: FleetMoneyExcludesSchema,
+    weekStart: FleetLocalDateSchema.optional(),
+    weekEnd: FleetLocalDateSchema.optional(),
+    weekGross: MoneySchema,
+    ubiCommission: MoneySchema,
+    fleetRemittance: MoneySchema,
+    remittanceStatus: z.string().min(1),
+    remittance: FleetRemittanceBreakdownSchema.optional(),
+  })
+  .strict();
+
+export const FleetMoneySchema = z.discriminatedUnion("available", [
+  MoneyUnavailableSchema,
+  MoneyAvailableSchema,
+]);
 
 export const FleetVehicleViewSchema = z.object({
   vehicleId: z.string(),
@@ -1054,7 +1161,7 @@ export const FleetVehicleViewSchema = z.object({
     }),
   ),
   documents: z.array(DocumentStatusSchema),
-  money: MoneyUnavailableSchema,
+  money: FleetMoneySchema,
   addedAt: Timestamp,
 });
 export const FleetVehicleListSchema = z.object({
@@ -1317,7 +1424,7 @@ export const FleetOverviewSchema = z.object({
     medium: z.number().int().nonnegative(),
     status: z.number().int().nonnegative(),
   }),
-  money: MoneyUnavailableSchema,
+  money: FleetMoneySchema,
 });
 
 export const VehicleSwapRequestViewSchema = z.object({
@@ -1631,6 +1738,8 @@ export type FleetStaffList = z.infer<typeof FleetStaffListSchema>;
 export type DocumentStatus = z.infer<typeof DocumentStatusSchema>;
 export type UbiStatus = z.infer<typeof UbiStatusSchema>;
 export type MoneyUnavailable = z.infer<typeof MoneyUnavailableSchema>;
+export type MoneyAvailable = z.infer<typeof MoneyAvailableSchema>;
+export type FleetMoney = z.infer<typeof FleetMoneySchema>;
 export type FleetVehicleView = z.infer<typeof FleetVehicleViewSchema>;
 export type FleetVehicleList = z.infer<typeof FleetVehicleListSchema>;
 export type ArrangementView = z.infer<typeof ArrangementViewSchema>;
@@ -1679,7 +1788,7 @@ export type DriverTerminationView = z.infer<typeof DriverTerminationViewSchema>;
 /**
  * Field names no fleet-service response may carry at any depth: rider
  * identity or contact, location, route, fare, safety evidence, booking
- * internals and a driver's net earnings.
+ * internals, per-trip splits and a driver's net earnings.
  */
 export const FLEET_FORBIDDEN_FIELD_PATTERNS: readonly RegExp[] = [
   /rider/i,
@@ -1705,6 +1814,7 @@ export const FLEET_FORBIDDEN_FIELD_PATTERNS: readonly RegExp[] = [
   /^net/i,
   /driverNet/i,
   /earningsNet/i,
+  /perTrip/i,
   /^requestId$/,
   /^awardId$/,
   /^bidId$/,
@@ -1748,4 +1858,5 @@ export const FLEET_RESPONSE_SCHEMAS = {
   FleetInternalVehicle: FleetInternalVehicleSchema,
   FleetOnlineVehicleResponse: FleetOnlineVehicleResponseSchema,
   SettlementInputsResponse: SettlementInputsResponseSchema,
+  FleetWeekMoneyResponse: FleetWeekMoneyResponseSchema,
 } as const;

@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
+import {
+  ZodArray,
+  ZodDefault,
+  ZodDiscriminatedUnion,
+  ZodEffects,
+  ZodNullable,
+  ZodObject,
+  ZodOptional,
+  ZodRecord,
+  ZodUnion,
+  type ZodTypeAny,
+} from "zod";
 
 import { EVENT_NAMES, SUBJECT_TYPES, isKnownEventName } from "../src/events";
+import {
+  FLEET_FORBIDDEN_FIELD_PATTERNS,
+  FLEET_RESPONSE_SCHEMAS,
+  FleetMoneySchema,
+  MoneyAvailableSchema,
+} from "../src/fleet";
 import { DENY_ALL, FLAG_KEYS, isEnabled } from "../src/flags";
 import {
   FLEET_INTERNAL_ERROR_CODES,
@@ -309,5 +327,117 @@ describe("fleet calendar: catalog, flags and machines", () => {
     expect(canTransition("mpVehicleOccupancy", "released", "active")).toBe(
       false,
     );
+  });
+});
+
+function keysOf(schema: ZodTypeAny, path: string, out: string[]): void {
+  if (schema instanceof ZodObject) {
+    for (const [key, child] of Object.entries(
+      schema.shape as Record<string, ZodTypeAny>,
+    )) {
+      out.push(`${path}.${key}`);
+      keysOf(child, `${path}.${key}`, out);
+    }
+  } else if (schema instanceof ZodArray) {
+    keysOf(schema.element as ZodTypeAny, `${path}[]`, out);
+  } else if (
+    schema instanceof ZodNullable ||
+    schema instanceof ZodOptional ||
+    schema instanceof ZodDefault
+  ) {
+    keysOf(schema._def.innerType as ZodTypeAny, path, out);
+  } else if (
+    schema instanceof ZodUnion ||
+    schema instanceof ZodDiscriminatedUnion
+  ) {
+    for (const option of schema.options as ZodTypeAny[]) {
+      keysOf(option, path, out);
+    }
+  } else if (schema instanceof ZodEffects) {
+    keysOf(schema._def.schema as ZodTypeAny, path, out);
+  } else if (schema instanceof ZodRecord) {
+    keysOf(schema._def.valueType as ZodTypeAny, `${path}{}`, out);
+  }
+}
+
+describe("fleet money & privacy walk (Q7, DEC-9 = A)", () => {
+  it("accepts available:false and available:true with the four Q7 fields + asOf + excludes, and rejects driverNet", () => {
+    expect(
+      FleetMoneySchema.safeParse({
+        available: false,
+        reason: "payment-service unavailable",
+        source: "payment-service remittance settlement (internal contract B)",
+      }).success,
+    ).toBe(true);
+
+    const available = {
+      available: true as const,
+      asOf: "2026-10-05T08:00:00.000Z",
+      excludes: ["cash_fares", "tips"] as const,
+      weekStart: "2026-09-28",
+      weekEnd: "2026-10-04",
+      weekGross: { amountMinor: 18_450_000, currency: "NGN" },
+      ubiCommission: { amountMinor: 1_845_000, currency: "NGN" },
+      fleetRemittance: { amountMinor: 4_500_000, currency: "NGN" },
+      remittanceStatus: "Settled",
+      remittance: {
+        due: { amountMinor: 4_500_000, currency: "NGN" },
+        collected: { amountMinor: 4_500_000, currency: "NGN" },
+        shortfall: { amountMinor: 0, currency: "NGN" },
+        carried: { amountMinor: 0, currency: "NGN" },
+        refunded: { amountMinor: 0, currency: "NGN" },
+      },
+    };
+    expect(FleetMoneySchema.safeParse(available).success).toBe(true);
+    expect(
+      FleetMoneySchema.safeParse({
+        ...available,
+        driverNet: { amountMinor: 12_105_000, currency: "NGN" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("walks every FLEET_RESPONSE_SCHEMAS entry and rejects any driverNet or perTrip field (negative control)", () => {
+    const violations: string[] = [];
+    for (const [name, schema] of Object.entries(FLEET_RESPONSE_SCHEMAS)) {
+      const keys: string[] = [];
+      keysOf(schema as ZodTypeAny, name, keys);
+      expect(keys.length, name).toBeGreaterThan(0);
+      for (const key of keys) {
+        const leaf =
+          key
+            .split(".")
+            .pop()
+            ?.replace(/[[\]{}]/g, "") ?? "";
+        if (
+          FLEET_FORBIDDEN_FIELD_PATTERNS.some((pattern) => pattern.test(leaf))
+        ) {
+          violations.push(key);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+
+    // Negative control: adding driverNet or perTripSplit to MoneyAvailableSchema fails the walk.
+    const probeSchema = MoneyAvailableSchema.extend({
+      driverNet: MoneyAvailableSchema.shape.weekGross,
+      perTripSplit: MoneyAvailableSchema.shape.weekGross,
+    });
+    const probeKeys: string[] = [];
+    keysOf(probeSchema, "MoneyAvailableProbe", probeKeys);
+    const probeViolations = probeKeys.filter((key) => {
+      const leaf =
+        key
+          .split(".")
+          .pop()
+          ?.replace(/[[\]{}]/g, "") ?? "";
+      return FLEET_FORBIDDEN_FIELD_PATTERNS.some((pattern) =>
+        pattern.test(leaf),
+      );
+    });
+    expect(probeViolations).toEqual([
+      "MoneyAvailableProbe.driverNet",
+      "MoneyAvailableProbe.perTripSplit",
+    ]);
   });
 });

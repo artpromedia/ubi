@@ -146,3 +146,58 @@ export async function driverNetMinor(
   });
   return fromNullableDbMinor(result._sum.amountMinor);
 }
+
+/**
+ * Decision Q7 + DEC-9 (option A): derives `grossMinor` (NET_EARNING_KINDS) and
+ * `ubiCommissionMinor` (NET_COMMISSION_KINDS) for a driver's wallet inside
+ * `window` — never returning driver net or per-trip lines. Cash fares and
+ * tips are excluded by the ledger kinds (`excludes: ["cash_fares", "tips"]`).
+ */
+export async function driverGrossAndCommissionMinor(
+  tx: LedgerTx,
+  walletId: string,
+  currency: string,
+  window: { readonly start: Date; readonly end: Date },
+): Promise<{
+  readonly grossMinor: number;
+  readonly ubiCommissionMinor: number;
+}> {
+  if (window.end.getTime() <= window.start.getTime()) {
+    return { grossMinor: 0, ubiCommissionMinor: 0 };
+  }
+  const [earnings, commissions] = await Promise.all([
+    tx.journalLine.aggregate({
+      _sum: { amountMinor: true },
+      where: {
+        walletId,
+        currency,
+        account: "wallet",
+        entry: {
+          kind: { in: [...NET_EARNING_KINDS] },
+          occurredAt: { gte: window.start, lt: window.end },
+        },
+      },
+    }),
+    tx.journalLine.aggregate({
+      _sum: { amountMinor: true },
+      where: {
+        walletId,
+        currency,
+        account: "wallet",
+        entry: {
+          kind: { in: [...NET_COMMISSION_KINDS] },
+          occurredAt: { gte: window.start, lt: window.end },
+        },
+      },
+    }),
+  ]);
+  const grossMinor = Math.max(
+    0,
+    fromNullableDbMinor(earnings._sum.amountMinor),
+  );
+  const ubiCommissionMinor = Math.max(
+    0,
+    -fromNullableDbMinor(commissions._sum.amountMinor),
+  );
+  return { grossMinor, ubiCommissionMinor };
+}

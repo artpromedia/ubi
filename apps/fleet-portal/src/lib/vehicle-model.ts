@@ -201,9 +201,13 @@ export function maintenanceLines(
   };
 }
 
-/** A week split, if payment-service ever publishes one to fleets. Not served today. */
+/** A week split from payment-service (Q7, DEC-9 = A). */
 export interface WeekMoneyAvailable {
   readonly available: true;
+  readonly asOf?: string;
+  readonly excludes?: readonly ("cash_fares" | "tips")[];
+  readonly weekStart?: string;
+  readonly weekEnd?: string;
   readonly weekGross?: Money;
   readonly ubiCommission?: Money;
   readonly fleetRemittance?: Money;
@@ -245,6 +249,6 @@ export function weekMoneyLines(money: MoneyUnavailable | WeekMoneyAvailable): {
       { label: "Fleet remittance", value: formatMoney(money.fleetRemittance) },
       { label: "Remittance status", value: money.remittanceStatus ?? "—" },
     ],
-    note: "All amounts are computed by UBI in integer minor units.",
+    note: "All amounts are computed by UBI in integer minor units. Excludes cash fares and tips.",
   };
 }

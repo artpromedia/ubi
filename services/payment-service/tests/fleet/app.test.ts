@@ -7,7 +7,11 @@
 /* eslint-disable turbo/no-undeclared-env-vars */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { money } from "@ubi/contracts";
+import {
+  FLEET_FORBIDDEN_FIELD_PATTERNS,
+  FleetWeekMoneyResponseSchema,
+  money,
+} from "@ubi/contracts";
 
 import { startApp, type AppHarness } from "./app-harness";
 import {
@@ -17,6 +21,7 @@ import {
   fleetCity,
   FleetServiceDouble,
   item,
+  jobAt,
   testDb,
   uid,
   weekOf,
@@ -72,6 +77,28 @@ async function run(
     body,
   );
   return reply;
+}
+
+function assertNoForbiddenFleetFields(value: unknown, path = "$"): void {
+  if (Array.isArray(value)) {
+    value.forEach((itemValue, idx) =>
+      assertNoForbiddenFleetFields(itemValue, `${path}[${idx}]`),
+    );
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      for (const pattern of FLEET_FORBIDDEN_FIELD_PATTERNS) {
+        expect(
+          pattern.test(key),
+          `forbidden key ${path}.${key} matched ${pattern}`,
+        ).toBe(false);
+      }
+      assertNoForbiddenFleetFields(child, `${path}.${key}`);
+    }
+  }
 }
 
 describe("fleet settlement through the real app", () => {
@@ -281,5 +308,179 @@ describe("fleet settlement through the real app", () => {
     });
     expect(settled.status).toBe(201);
     expect(settled.body.totals).toMatchObject({ settled: 1 });
+  });
+
+  it("serves internal fleet week-money only to FLEET_PAYMENT_SERVICE_KEY, excludes tips/cash fares, and never exposes driver net (CC-A02, DEC-9 = A)", async () => {
+    const q7City = await fleetCity(db);
+    const fleetId = uid("flt_q7");
+    const vehicleA = uid("veh_q7_a");
+    const vehicleB = uid("veh_q7_b");
+    const asgA = item({
+      fleetId,
+      vehicleId: vehicleA,
+      amountMinor: 500_000,
+      shift: 40,
+      planned: 0,
+    });
+    const asgB = item({
+      fleetId,
+      vehicleId: vehicleB,
+      type: "percent_of_net",
+      percent: 20,
+    });
+    const walletA = await driverWallet(db, q7City, asgA.driverId, 2_000_000);
+    const walletB = await driverWallet(db, q7City, asgB.driverId, 2_000_000);
+
+    // Post real jobs inside the week window (Wednesday 12:00 UTC of WEEK) with tips.
+    const wedNoon = new Date(`${addDays(WEEK, 2)}T12:00:00.000Z`);
+    // Driver A: ₦8,000 fare + ₦1,500 tip -> gross 800_000, commission 80_000 (tip excluded)
+    await jobAt(
+      db,
+      q7City,
+      asgA.driverId,
+      walletA.id,
+      800_000,
+      wedNoon,
+      150_000,
+    );
+    // Driver B: ₦6,000 fare + ₦500 tip -> gross 600_000, commission 60_000 (tip excluded)
+    await jobAt(
+      db,
+      q7City,
+      asgB.driverId,
+      walletB.id,
+      600_000,
+      wedNoon,
+      50_000,
+    );
+
+    double.setWeek(q7City.cityId, weekOf(WEEK, [asgA, asgB]));
+
+    // 1. Auth checks on /v1/finance/fleet/internal/week-money:
+    // Missing key, wrong key, general INTERNAL_SERVICE_KEY, and signed ops identity all get 401.
+    const query = `/v1/finance/fleet/internal/week-money?fleetId=${fleetId}&cityId=${q7City.cityId}&weekStart=${WEEK}`;
+    const noKey = await harness.send("GET", query, {});
+    expect(noKey.status).toBe(401);
+    const generalKey = await harness.send("GET", query, {
+      "x-service-key": "fleet-app-test-internal-service-key",
+    });
+    expect(generalKey.status).toBe(401);
+    const opsSigned = await harness.send("GET", query, await admin());
+    expect(opsSigned.status).toBe(401);
+
+    // 2. Before settlement runs: weekGross and ubiCommission come from ledger jobs (with tips excluded),
+    // and remittanceStatus is "Pending".
+    const preSettle = await harness.send(
+      "POST",
+      "/v1/finance/fleet/internal/week-money",
+      { "x-service-key": FLEET_KEY },
+      {
+        fleetId,
+        cityId: q7City.cityId,
+        weekStart: WEEK,
+        assignments: [
+          {
+            assignmentId: asgA.assignmentId,
+            driverId: asgA.driverId,
+            vehicleId: asgA.vehicleId,
+            activeFrom: asgA.activeFrom,
+            activeTo: asgA.activeTo,
+          },
+          {
+            assignmentId: asgB.assignmentId,
+            driverId: asgB.driverId,
+            vehicleId: asgB.vehicleId,
+            activeFrom: asgB.activeFrom,
+            activeTo: asgB.activeTo,
+          },
+        ],
+      },
+    );
+    expect(preSettle.status).toBe(200);
+    expect(() =>
+      FleetWeekMoneyResponseSchema.parse(preSettle.body),
+    ).not.toThrow();
+    expect(preSettle.body).toMatchObject({
+      fleetId,
+      cityId: q7City.cityId,
+      weekStart: WEEK,
+      weekEnd: addDays(WEEK, 6),
+      excludes: ["cash_fares", "tips"],
+      fleet: {
+        weekGross: money(1_400_000, "NGN"),
+        ubiCommission: money(140_000, "NGN"),
+        fleetRemittance: money(0, "NGN"),
+        remittanceStatus: "Pending settlement",
+      },
+    });
+    assertNoForbiddenFleetFields(preSettle.body, "week-money.preSettle");
+
+    // 3. Run weekly settlement:
+    // Driver A fixed due = 500_000; Driver B 20% of net (600_000 - 60_000 = 540_000) = 108_000.
+    // Total fleet remittance collected = 608_000.
+    const settled = await run(await admin({ "idempotency-key": uid("q7") }), {
+      cityId: q7City.cityId,
+      weekStart: WEEK,
+    });
+    expect(settled.status).toBe(201);
+
+    // 4. After settlement runs: both GET (from settlement records) and POST (with assignments)
+    // return Settled remittance breakdown with zero driverNet fields.
+    const postSettle = await harness.send(
+      "POST",
+      "/v1/finance/fleet/internal/week-money",
+      { "x-service-key": FLEET_KEY },
+      {
+        fleetId,
+        cityId: q7City.cityId,
+        weekStart: WEEK,
+        assignments: [
+          {
+            assignmentId: asgA.assignmentId,
+            driverId: asgA.driverId,
+            vehicleId: asgA.vehicleId,
+            activeFrom: asgA.activeFrom,
+            activeTo: asgA.activeTo,
+          },
+          {
+            assignmentId: asgB.assignmentId,
+            driverId: asgB.driverId,
+            vehicleId: asgB.vehicleId,
+            activeFrom: asgB.activeFrom,
+            activeTo: asgB.activeTo,
+          },
+        ],
+      },
+    );
+    expect(postSettle.status).toBe(200);
+    expect(() =>
+      FleetWeekMoneyResponseSchema.parse(postSettle.body),
+    ).not.toThrow();
+    expect(postSettle.body.fleet).toMatchObject({
+      weekGross: money(1_400_000, "NGN"),
+      ubiCommission: money(140_000, "NGN"),
+      fleetRemittance: money(608_000, "NGN"),
+      remittanceStatus: "Settled",
+      remittance: {
+        due: money(608_000, "NGN"),
+        collected: money(608_000, "NGN"),
+        shortfall: money(0, "NGN"),
+        carried: money(0, "NGN"),
+        refunded: money(0, "NGN"),
+      },
+    });
+    expect(postSettle.body.vehicles[vehicleA]).toMatchObject({
+      weekGross: money(800_000, "NGN"),
+      ubiCommission: money(80_000, "NGN"),
+      fleetRemittance: money(500_000, "NGN"),
+      remittanceStatus: "Settled",
+    });
+    expect(postSettle.body.vehicles[vehicleB]).toMatchObject({
+      weekGross: money(600_000, "NGN"),
+      ubiCommission: money(60_000, "NGN"),
+      fleetRemittance: money(108_000, "NGN"),
+      remittanceStatus: "Settled",
+    });
+    assertNoForbiddenFleetFields(postSettle.body, "week-money.postSettle");
   });
 });

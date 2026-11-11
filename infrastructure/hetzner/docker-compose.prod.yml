@@ -753,6 +753,7 @@ services:
       FLEET_RIDE_SERVICE_KEY: ${FLEET_RIDE_SERVICE_KEY:?FLEET_RIDE_SERVICE_KEY is required}
       RIDE_SERVICE_URL: http://ride-service:3002
       USER_SERVICE_URL: http://user-service:3001
+      PAYMENT_SERVICE_URL: http://payment-service:3005
     depends_on:
       postgres:
         condition: service_healthy

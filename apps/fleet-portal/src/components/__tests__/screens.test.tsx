@@ -864,6 +864,31 @@ describe("Overview and vehicles", () => {
     expect(
       text(html(<OverviewView fleet={owner} state={flagOff()} now={NOW} />)),
     ).toContain(FLAG_OFF_COPY);
+    const withMoney = text(
+      html(
+        <OverviewView
+          fleet={owner}
+          state={ready({
+            ...overview,
+            money: {
+              available: true,
+              asOf: "2026-09-30T08:42:00.000Z",
+              excludes: ["cash_fares", "tips"],
+              weekGross: { amountMinor: 18_450_000, currency: "NGN" },
+              ubiCommission: { amountMinor: 1_845_000, currency: "NGN" },
+              fleetRemittance: { amountMinor: 4_500_000, currency: "NGN" },
+              remittanceStatus: "Settled",
+            },
+          })}
+          now={NOW}
+        />,
+      ),
+    );
+    expect(withMoney).toContain("Week gross ₦184,500.00");
+    expect(withMoney).toContain("UBI commission ₦18,450.00");
+    expect(withMoney).toContain("Fleet remittance ₦45,000.00");
+    expect(withMoney).toContain("Remittance status Settled");
+    expect(withMoney).toContain("Excludes cash fares and tips.");
   });
 
   it("lists vehicles and offers Add a vehicle only to owners and managers", () => {

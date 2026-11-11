@@ -17,13 +17,32 @@ import { ContractError } from "@ubi/contracts";
 import { isUniqueViolation, notFound, exclusionConstraintOf } from "./errors";
 import { withOutbox } from "./outbox";
 import { assertCapability, type FleetAccess } from "./roles";
-import { displayNames, documentStatuses, nameOr, shiftOf } from "./views";
+import {
+  displayNames,
+  documentStatuses,
+  nameOr,
+  shiftOf,
+  validToOf,
+} from "./views";
 import { deterministicId, isUuid } from "../lib/ids";
-import { iso, localDateOf, localDateToDateColumn } from "../lib/time";
+import {
+  addDays,
+  dateColumnToLocalDate,
+  iso,
+  isoWeekday,
+  localDateOf,
+  localDateToDateColumn,
+  startOfLocalDay,
+} from "../lib/time";
+import { summaryToFleetMoney } from "../ports/payment-port";
 
 import type { FleetDeps } from "./context";
 import type { FleetTx } from "./types";
-import type { FleetPolicy } from "../contract";
+import type {
+  FleetPolicy,
+  FleetWeekMoneyAssignmentInput,
+  FleetWeekMoneyResponse,
+} from "../contract";
 import type {
   FleetMaintenanceBlock,
   FleetVehicle,
@@ -272,6 +291,63 @@ export async function vehicleView(
   return view;
 }
 
+/**
+ * Resolves the fleet's current-week money summary from payment-service
+ * (CC-A02, DEC-9 = A, Q7). Queries signed arrangements outside any SQL
+ * transaction (pool-deadlock rule) before making the outbound HTTP call,
+ * and returns `null` when payment-service is unconfigured or unreachable.
+ */
+export async function resolveFleetWeekMoney(
+  deps: FleetDeps,
+  access: FleetAccess,
+  now: Date,
+  vehicleIds?: readonly string[],
+): Promise<FleetWeekMoneyResponse | null> {
+  if (deps.payments === undefined) {
+    return null;
+  }
+  const today = localDateOf(now.getTime(), access.fleet.zone);
+  const weekday = isoWeekday(today);
+  const weekStart = addDays(today, -(weekday - 1));
+  const weekEnd = addDays(weekStart, 7);
+  const rows = await deps.db.fleetAssignment.findMany({
+    where: {
+      fleetId: access.fleet.id,
+      validFrom: { lte: localDateToDateColumn(weekEnd) },
+      OR: [
+        { validTo: null },
+        { validTo: { gte: localDateToDateColumn(addDays(weekStart, -1)) } },
+      ],
+    },
+    orderBy: [{ validFrom: "asc" }, { id: "asc" }],
+  });
+  const assignments: FleetWeekMoneyAssignmentInput[] = [];
+  for (const row of rows) {
+    const validFrom = dateColumnToLocalDate(row.validFrom);
+    const validTo = validToOf(row.validTo);
+    if (validTo !== null && validTo <= validFrom) {
+      continue;
+    }
+    const activeFrom = startOfLocalDay(validFrom, row.zone);
+    const activeTo =
+      validTo === null ? null : startOfLocalDay(validTo, row.zone);
+    assignments.push({
+      assignmentId: row.id,
+      driverId: row.driverId,
+      vehicleId: row.vehicleId,
+      activeFrom: iso(activeFrom),
+      activeTo: activeTo === null ? null : iso(activeTo),
+    });
+  }
+  return deps.payments.weekMoney({
+    fleetId: access.fleet.id,
+    cityId: access.cityId,
+    weekStart,
+    ...(vehicleIds === undefined ? {} : { vehicleIds: [...vehicleIds] }),
+    assignments,
+  });
+}
+
 async function vehicleViews(
   deps: FleetDeps,
   access: FleetAccess,
@@ -280,23 +356,30 @@ async function vehicleViews(
   const now = deps.now();
   const today = localDateOf(now.getTime(), access.fleet.zone);
   const vehicleIds = rows.map((row) => row.vehicleId);
-  const arrangements = await arrangementsOn(
-    deps.db,
-    { fleetId: access.fleet.id, vehicleIds },
-    today,
-  );
-  const blocks = await deps.db.fleetMaintenanceBlock.findMany({
-    where: {
-      vehicleId: { in: vehicleIds },
-      status: { in: ["scheduled", "active"] },
-    },
-  });
+  const [arrangements, blocks, weekMoney] = await Promise.all([
+    arrangementsOn(deps.db, { fleetId: access.fleet.id, vehicleIds }, today),
+    deps.db.fleetMaintenanceBlock.findMany({
+      where: {
+        vehicleId: { in: vehicleIds },
+        status: { in: ["scheduled", "active"] },
+      },
+    }),
+    resolveFleetWeekMoney(deps, access, now, vehicleIds),
+  ]);
   const names = await displayNames(
     deps.db,
     arrangements.map((row) => row.driverId),
   );
   return rows.map((row) => {
     const mine = arrangements.filter((a) => a.vehicleId === row.vehicleId);
+    const money =
+      weekMoney === null
+        ? MONEY_UNAVAILABLE
+        : summaryToFleetMoney(
+            weekMoney.vehicles[row.vehicleId],
+            weekMoney,
+            MONEY_UNAVAILABLE,
+          );
     return {
       vehicleId: row.vehicleId,
       plate: row.vehicle.plateNumber,
@@ -322,7 +405,7 @@ async function vehicleViews(
         termsVersion: a.termsVersion,
       })),
       documents: documentStatuses(row.vehicle, now, access.config.policy),
-      money: MONEY_UNAVAILABLE,
+      money,
       addedAt: iso(row.createdAt.getTime()),
     };
   });

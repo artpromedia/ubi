@@ -33,12 +33,41 @@ export interface Money {
   readonly currency: string;
 }
 
-/** Money fleet-service does not serve (payment-service owns it). */
+/** Money fleet-service does not serve when payment-service is unavailable. */
 export interface MoneyUnavailable {
   readonly available: false;
   readonly reason: string;
   readonly source: string;
 }
+
+export interface FleetRemittanceBreakdown {
+  readonly due: Money;
+  readonly collected: Money;
+  readonly shortfall: Money;
+  readonly carried: Money;
+  readonly refunded: Money;
+}
+
+/**
+ * Q7 (DEC-9 = A) week money from payment-service: week gross, UBI commission,
+ * fleet remittance, and remittance status, with explicit `asOf` and
+ * `excludes: ["cash_fares", "tips"]`. Never includes driver net or per-trip
+ * split.
+ */
+export interface MoneyAvailable {
+  readonly available: true;
+  readonly asOf: string;
+  readonly excludes: readonly ("cash_fares" | "tips")[];
+  readonly weekStart?: string;
+  readonly weekEnd?: string;
+  readonly weekGross: Money;
+  readonly ubiCommission: Money;
+  readonly fleetRemittance: Money;
+  readonly remittanceStatus: string;
+  readonly remittance?: FleetRemittanceBreakdown;
+}
+
+export type FleetMoney = MoneyUnavailable | MoneyAvailable;
 
 export interface FleetView {
   readonly fleetId: string;
@@ -110,7 +139,7 @@ export interface FleetVehicleView {
     readonly termsVersion: number;
   }[];
   readonly documents: readonly DocumentStatusView[];
-  readonly money: MoneyUnavailable;
+  readonly money: FleetMoney;
   readonly addedAt: string;
 }
 
@@ -499,7 +528,7 @@ export interface FleetOverview {
     readonly medium: number;
     readonly status: number;
   };
-  readonly money: MoneyUnavailable;
+  readonly money: FleetMoney;
 }
 
 export interface FleetStaffMember {

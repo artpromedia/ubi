@@ -77,6 +77,7 @@ import { BlockList, isIPv4, isIPv6 } from "node:net";
 import { getConnInfo } from "@hono/node-server/conninfo";
 
 import { isValidServiceKey, SERVICE_KEY_HEADER } from "./auth";
+import { isValidFleetPaymentKey } from "../fleet/routes";
 import { IDENTITY_HEADER, verifyIdentityContext } from "../identity/context";
 import { logger } from "../lib/logger";
 import { rateLimiter, redis } from "../lib/redis";
@@ -316,7 +317,8 @@ function clientAddressOf(c: Context): string | undefined {
 export async function resolveRateLimitSubject(
   c: Context,
 ): Promise<RateLimitSubject> {
-  if (isValidServiceKey(c.req.header(SERVICE_KEY_HEADER))) {
+  const serviceKey = c.req.header(SERVICE_KEY_HEADER);
+  if (isValidServiceKey(serviceKey) || isValidFleetPaymentKey(serviceKey)) {
     return { kind: "service" };
   }
   const signed = c.req.header(IDENTITY_HEADER);

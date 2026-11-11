@@ -6,6 +6,7 @@
  */
 import type { CityConfigProvider } from "./config";
 import type { FleetDb } from "./types";
+import type { PaymentPort } from "../ports/payment-port";
 import type { PinPort } from "../ports/pin-port";
 import type { RidePort } from "../ports/ride-port";
 
@@ -16,5 +17,7 @@ export interface FleetDeps {
   readonly rides: RidePort;
   /** user-service's wallet-PIN check, called with the relayed driver context. */
   readonly pins: PinPort;
+  /** payment-service's weekly money & remittance view (CC-A02, DEC-9 = A, Q7). */
+  readonly payments?: PaymentPort;
   readonly now: () => Date;
 }

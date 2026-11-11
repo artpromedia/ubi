@@ -231,6 +231,18 @@ describe("payment-service route inventory", () => {
     expect([401, 503]).toContain(unsignedWebhook.status);
   });
 
+  it("mounts the internal fleet week-money routes behind the fleet service-key guard (CC-A02, DEC-9 = A)", async () => {
+    const paths = app.routes.map((route) => `${route.method} ${route.path}`);
+    expect(paths).toContain("GET /v1/finance/fleet/internal/week-money");
+    expect(paths).toContain("POST /v1/finance/fleet/internal/week-money");
+    const unsigned = await app.fetch(
+      new Request(
+        "http://payment-service.test/v1/finance/fleet/internal/week-money?fleetId=flt_1&cityId=city_1&weekStart=2026-01-05",
+      ),
+    );
+    expect([401, 503]).toContain(unsigned.status);
+  });
+
   it.each([
     ["GET", "/wallets"],
     ["GET", "/wallets/balance"],

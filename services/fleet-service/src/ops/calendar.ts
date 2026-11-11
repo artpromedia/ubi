@@ -21,7 +21,12 @@ import { ContractError } from "@ubi/contracts";
 
 import { availabilityOccurrences } from "./availability";
 import { shiftIntervals, shiftLabel } from "./shifts";
-import { arrangementsOn, availabilityNow, MONEY_UNAVAILABLE } from "./vehicles";
+import {
+  arrangementsOn,
+  availabilityNow,
+  MONEY_UNAVAILABLE,
+  resolveFleetWeekMoney,
+} from "./vehicles";
 import {
   displayNames,
   documentStatuses,
@@ -30,6 +35,7 @@ import {
   shiftOf,
   validToOf,
 } from "./views";
+import { summaryToFleetMoney } from "../ports/payment-port";
 import {
   DAY_MS,
   addDays,
@@ -865,6 +871,16 @@ export async function overview(deps: FleetDeps, access: FleetAccess) {
         },
       }),
     ]);
+  const weekMoney = await resolveFleetWeekMoney(
+    deps,
+    access,
+    now,
+    vehicles.map((row) => row.vehicleId),
+  );
+  const money =
+    weekMoney === null
+      ? MONEY_UNAVAILABLE
+      : summaryToFleetMoney(weekMoney.fleet, weekMoney, MONEY_UNAVAILABLE);
   const docs = vehicles.map((row) =>
     documentStatuses(row.vehicle, now, access.config.policy),
   );
@@ -902,6 +918,6 @@ export async function overview(deps: FleetDeps, access: FleetAccess) {
       medium: count("medium"),
       status: count("status"),
     },
-    money: MONEY_UNAVAILABLE,
+    money,
   };
 }

@@ -348,6 +348,7 @@ export const CONTRACT = {
     FLEET_RIDE_SERVICE_KEY: "required",
     RIDE_SERVICE_URL: "set",
     USER_SERVICE_URL: "set",
+    PAYMENT_SERVICE_URL: "set",
   },
   "growth-service": {
     ...NODE_COMMON,

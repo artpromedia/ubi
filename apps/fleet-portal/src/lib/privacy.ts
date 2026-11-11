@@ -39,6 +39,7 @@ export const FLEET_FORBIDDEN_FIELD_PATTERNS: readonly RegExp[] = [
   /^net/i,
   /driverNet/i,
   /earningsNet/i,
+  /perTrip/i,
   /^requestId$/,
   /^awardId$/,
   /^bidId$/,

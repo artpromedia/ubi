@@ -4,6 +4,8 @@
  * unplanned, week boundaries, custom shifts, a mid-week terms change and both
  * DST transitions; plus the service-key door.
  */
+import { createServer } from "node:http";
+
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -23,9 +25,14 @@ import {
   type Harness,
 } from "./helpers";
 import {
+  FLEET_WEEK_MONEY_PATH,
+  FleetOverviewSchema,
+  FleetVehicleViewSchema,
   SettlementInputsResponseSchema,
   type SettlementInputItem,
 } from "../src/contract";
+import { createApp } from "../src/index";
+import { createHttpPaymentPort } from "../src/ports/payment-port";
 
 let h: Harness;
 
@@ -393,5 +400,161 @@ describe("contract B: hours", () => {
         (item) => item.assignmentId === full.assignmentId,
       )?.shiftHoursInWeek,
     ).toBe(167);
+  });
+});
+
+describe("Q7 week-money read via PaymentPort (CC-A02, DEC-9 = A)", () => {
+  it("hydrates vehicle and overview money from payment-service, rejects forbidden driverNet payloads, and degrades to available: false on outage", async () => {
+    h.clock.now = new Date("2026-09-20T08:00:00.000Z");
+    const world = await seedFleet(h);
+    const vehicleId = await addVehicle(h, world);
+    const driverId = await seedUser(h.db, { driver: true });
+    const { assignmentId } = await signedArrangement(h, world, {
+      vehicleId,
+      driverId,
+      shift: "full",
+      validFrom: "2026-09-21",
+    });
+    h.clock.now = new Date("2026-09-30T10:00:00.000Z");
+
+    let mode: "ok" | "polluted" | "outage" = "ok";
+    let lastRequest: Record<string, unknown> | null = null;
+    const server = createServer((req, res) => {
+      if (
+        req.method !== "POST" ||
+        req.url !== FLEET_WEEK_MONEY_PATH ||
+        req.headers["x-service-key"] !== process.env.FLEET_PAYMENT_SERVICE_KEY
+      ) {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ code: "unauthorized" }));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        lastRequest = JSON.parse(
+          Buffer.concat(chunks).toString("utf8"),
+        ) as Record<string, unknown>;
+        if (mode === "outage") {
+          res.writeHead(503, { "content-type": "application/json" });
+          res.end(JSON.stringify({ code: "service_unavailable" }));
+          return;
+        }
+        const summary = {
+          weekGross: { amountMinor: 1_200_000, currency: "NGN" },
+          ubiCommission: { amountMinor: 120_000, currency: "NGN" },
+          fleetRemittance: { amountMinor: 500_000, currency: "NGN" },
+          remittanceStatus: "Settled",
+          remittance: {
+            due: { amountMinor: 500_000, currency: "NGN" },
+            collected: { amountMinor: 500_000, currency: "NGN" },
+            shortfall: { amountMinor: 0, currency: "NGN" },
+            carried: { amountMinor: 0, currency: "NGN" },
+            refunded: { amountMinor: 0, currency: "NGN" },
+          },
+          ...(mode === "polluted"
+            ? { driverNet: { amountMinor: 580_000, currency: "NGN" } }
+            : {}),
+        };
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            fleetId: world.fleetId,
+            cityId: world.cityId,
+            weekStart: "2026-09-28",
+            weekEnd: "2026-10-04",
+            asOf: "2026-09-30T10:00:00.000Z",
+            excludes: ["cash_fares", "tips"],
+            fleet: summary,
+            vehicles: { [vehicleId]: summary },
+            assignments: { [assignmentId]: summary },
+          }),
+        );
+      });
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    const port =
+      typeof address === "object" && address !== null ? address.port : 0;
+    const appWithPayments = createApp({
+      ...h.deps,
+      payments: createHttpPaymentPort({
+        baseUrl: `http://127.0.0.1:${port}`,
+        serviceKey: process.env.FLEET_PAYMENT_SERVICE_KEY,
+        cacheTtlMs: 0,
+      }),
+    });
+
+    try {
+      // 1. Healthy payment-service -> available: true
+      const vehRes = await api(appWithPayments, {
+        path: `/v1/fleets/${world.fleetId}/vehicles/${vehicleId}`,
+        token: world.ownerToken,
+        city: world.cityId,
+      });
+      expect(vehRes.status).toBe(200);
+      const veh = FleetVehicleViewSchema.parse(vehRes.body);
+      expect(veh.money).toEqual({
+        available: true,
+        asOf: "2026-09-30T10:00:00.000Z",
+        excludes: ["cash_fares", "tips"],
+        weekStart: "2026-09-28",
+        weekEnd: "2026-10-04",
+        weekGross: { amountMinor: 1_200_000, currency: "NGN" },
+        ubiCommission: { amountMinor: 120_000, currency: "NGN" },
+        fleetRemittance: { amountMinor: 500_000, currency: "NGN" },
+        remittanceStatus: "Settled",
+        remittance: {
+          due: { amountMinor: 500_000, currency: "NGN" },
+          collected: { amountMinor: 500_000, currency: "NGN" },
+          shortfall: { amountMinor: 0, currency: "NGN" },
+          carried: { amountMinor: 0, currency: "NGN" },
+          refunded: { amountMinor: 0, currency: "NGN" },
+        },
+      });
+      expect(lastRequest).toMatchObject({
+        fleetId: world.fleetId,
+        cityId: world.cityId,
+        weekStart: "2026-09-28",
+        vehicleIds: [vehicleId],
+      });
+
+      const ovRes = await api(appWithPayments, {
+        path: `/v1/fleets/${world.fleetId}/overview`,
+        token: world.ownerToken,
+        city: world.cityId,
+      });
+      expect(ovRes.status).toBe(200);
+      const ov = FleetOverviewSchema.parse(ovRes.body);
+      expect(ov.money.available).toBe(true);
+
+      // 2. Polluted response containing forbidden `driverNet` -> refused and degraded to available: false
+      mode = "polluted";
+      const pollutedRes = await api(appWithPayments, {
+        path: `/v1/fleets/${world.fleetId}/vehicles/${vehicleId}`,
+        token: world.ownerToken,
+        city: world.cityId,
+      });
+      expect(pollutedRes.status).toBe(200);
+      expect(
+        FleetVehicleViewSchema.parse(pollutedRes.body).money.available,
+      ).toBe(false);
+
+      // 3. Payment-service outage (503) -> degraded to available: false
+      mode = "outage";
+      const outageRes = await api(appWithPayments, {
+        path: `/v1/fleets/${world.fleetId}/overview`,
+        token: world.ownerToken,
+        city: world.cityId,
+      });
+      expect(outageRes.status).toBe(200);
+      expect(FleetOverviewSchema.parse(outageRes.body).money.available).toBe(
+        false,
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

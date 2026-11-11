@@ -20,6 +20,8 @@
  *
  * The `fleet` city flag gates the run (deny-by-default: `feature_disabled`).
  */
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 
@@ -30,12 +32,15 @@ import {
 } from "@ubi/contracts";
 
 import {
+  FLEET_SERVICE_KEY_HEADER,
   httpSettlementInputsClient,
+  MIN_FLEET_KEY_LENGTH,
   type SettlementInputsClient,
 } from "./inputs";
-import { isLinkId, isMonday } from "./model";
+import { isIsoDate, isLinkId, isMonday } from "./model";
 import {
   carryForwardView,
+  fleetWeekMoney,
   runSettlementOnce,
   settlementsOfWeek,
 } from "./settlement";
@@ -60,6 +65,74 @@ const RunBody = z.object({
     .string()
     .refine(isMonday, "a settlement week is named by its Monday, YYYY-MM-DD"),
 });
+
+const WeekMoneyAssignmentSliceSchema = z
+  .object({
+    assignmentId: z.string().min(1).max(128),
+    driverId: z.string().min(1).max(128),
+    vehicleId: z.string().min(1).max(128),
+    activeFrom: z.string().datetime({ offset: true }),
+    activeTo: z.string().datetime({ offset: true }).nullable(),
+  })
+  .strict();
+
+const WeekMoneyBodySchema = z
+  .object({
+    fleetId: z.string().min(1).max(128),
+    cityId: z.string().min(1).max(128),
+    weekStart: z
+      .string()
+      .refine(isIsoDate, "weekStart must be YYYY-MM-DD")
+      .refine(isMonday, "a settlement week is named by its Monday, YYYY-MM-DD"),
+    vehicleIds: z.array(z.string().min(1).max(128)).max(500).optional(),
+    assignments: z.array(WeekMoneyAssignmentSliceSchema).max(1000).optional(),
+  })
+  .strict();
+
+function digest(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
+/**
+ * Constant-time check for `FLEET_PAYMENT_SERVICE_KEY` (≥ 32 characters).
+ * Fails closed when unset or too short.
+ */
+export function isValidFleetPaymentKey(presented: string | undefined): boolean {
+  const configured = process.env.FLEET_PAYMENT_SERVICE_KEY;
+  if (
+    configured === undefined ||
+    configured.length < MIN_FLEET_KEY_LENGTH ||
+    presented === undefined ||
+    presented.length === 0
+  ) {
+    return false;
+  }
+  return timingSafeEqual(digest(presented), digest(configured));
+}
+
+async function requireFleetServiceKey(
+  c: Context,
+  next: Next,
+): Promise<void | Response> {
+  const configured = process.env.FLEET_PAYMENT_SERVICE_KEY;
+  if (configured === undefined || configured.length < MIN_FLEET_KEY_LENGTH) {
+    return fail(
+      c,
+      new ContractError(
+        "service_unavailable",
+        "fleet payment service key is not configured",
+      ),
+    );
+  }
+  const presented = c.req.header(FLEET_SERVICE_KEY_HEADER);
+  if (!isValidFleetPaymentKey(presented)) {
+    return fail(
+      c,
+      new ContractError("unauthorized", "service authentication required"),
+    );
+  }
+  await next();
+}
 
 function fail(c: Context, error: unknown): Response {
   if (error instanceof ContractError) {
@@ -158,7 +231,57 @@ export function createFleetFinanceRoutes(
   inputs: SettlementInputsClient = httpSettlementInputsClient(),
 ): Hono {
   const routes = new Hono();
-  routes.use("*", requireOpsIdentity);
+  routes.use("/internal/*", requireFleetServiceKey);
+  routes.use("/settlements/*", requireOpsIdentity);
+  routes.use("/carry-forward/*", requireOpsIdentity);
+
+  routes.get("/internal/week-money", async (c) => {
+    try {
+      const fleetId = c.req.query("fleetId") ?? "";
+      const cityId = c.req.query("cityId") ?? "";
+      const weekStart = c.req.query("weekStart") ?? "";
+      const vehicleIdsParam = c.req.query("vehicleIds");
+      const vehicleIds =
+        vehicleIdsParam !== undefined && vehicleIdsParam.length > 0
+          ? vehicleIdsParam
+              .split(",")
+              .map((id) => id.trim())
+              .filter(Boolean)
+          : undefined;
+      const parsed = WeekMoneyBodySchema.safeParse({
+        fleetId,
+        cityId,
+        weekStart,
+        ...(vehicleIds === undefined ? {} : { vehicleIds }),
+      });
+      if (!parsed.success) {
+        throw new ContractError(
+          "validation_failed",
+          "fleetId, cityId and a Monday weekStart (YYYY-MM-DD) are required",
+          {
+            issues: parsed.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+            })),
+          },
+        );
+      }
+      c.header("Cache-Control", "no-store");
+      return c.json(await fleetWeekMoney(deps, inputs, parsed.data));
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/internal/week-money", async (c) => {
+    try {
+      const body = await parse(c, WeekMoneyBodySchema);
+      c.header("Cache-Control", "no-store");
+      return c.json(await fleetWeekMoney(deps, inputs, body));
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
 
   routes.post("/settlements/run", async (c) => {
     try {
