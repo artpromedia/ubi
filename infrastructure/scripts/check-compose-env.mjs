@@ -106,7 +106,7 @@ export const CONTRACT = {
     DATABASE_URL: "unread",
     JWT_SECRET: "required",
     JWT_REFRESH_SECRET: "unread",
-    CORS_ORIGINS: "unread",
+    CORS_ORIGINS: "set",
     UBI_IDENTITY_SECRET: "required",
     UBI_IDENTITY_SECRET_PREVIOUS: "optional",
     UBI_IDENTITY_KEY_ID: "optional",
@@ -396,6 +396,10 @@ export const CONTRACT = {
     ADMIN_GATEWAY_URL: "set",
     NEXT_PUBLIC_API_URL: "set",
     NEXT_PUBLIC_ADMIN_API_BASE: "optional",
+  },
+  "fleet-portal": {
+    NODE_ENV: "required",
+    NEXT_PUBLIC_API_URL: "set",
   },
 };
 

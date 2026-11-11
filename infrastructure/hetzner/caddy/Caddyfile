@@ -261,6 +261,40 @@
     }
 }
 
+# Fleet Portal
+{$FLEET_DOMAIN:fleet.ubi.africa} {
+    encode gzip zstd
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    # Proxy to fleet-portal
+    reverse_proxy fleet-portal:3004 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        health_uri /dashboard
+        health_interval 30s
+        health_timeout 10s
+    }
+
+    log {
+        output file /var/log/caddy/fleet.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+    }
+}
+
 # Grafana Monitoring (Protected)
 grafana.{$DOMAIN:ubi.africa} {
     encode gzip zstd

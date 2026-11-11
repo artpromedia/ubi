@@ -245,11 +245,24 @@ const GROWTH_OPS_SCOPES: readonly Scope[] = [
   "growth:admin",
 ];
 
+const FLEET_MANAGER_SCOPES: readonly Scope[] = [
+  "profile:read",
+  "profile:write",
+  "device:enroll",
+  "auth:step_up",
+  "security:pin:change",
+  "security:phone:change",
+  "fleet:read",
+  "fleet:manage",
+  "support:write",
+];
+
 export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   rider: RIDER_SCOPES,
   driver: DRIVER_SCOPES,
   merchant: MERCHANT_SCOPES,
   restaurant: MERCHANT_SCOPES,
+  fleet_manager: FLEET_MANAGER_SCOPES,
   ops_admin: OPS_ADMIN_SCOPES,
   finance_ops: FINANCE_OPS_SCOPES,
   ops: [...OPS_SCOPES, "mp:admin:write"],

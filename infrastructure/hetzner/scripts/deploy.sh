@@ -62,6 +62,7 @@ BUILD_SERVICES=(
     realtime-gateway
     web-app
     admin-dashboard
+    fleet-portal
 )
 
 # Services that hold database connections (stopped around a restore).

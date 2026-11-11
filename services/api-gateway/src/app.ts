@@ -62,10 +62,71 @@ import { proxyRoutes } from "./routes/proxy";
 import { pushDeviceRoutes } from "./routes/push-devices";
 import { tripAccessRoutes } from "./routes/trip-access";
 
+const DEFAULT_CORS_ORIGINS = [
+  "https://app.ubi.africa",
+  "https://admin.ubi.africa",
+  "https://fleet.ubi.africa",
+  "https://ubi.africa",
+] as const;
+
+const DEV_CORS_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3002",
+  "http://localhost:3004",
+] as const;
+
+export function parseCorsOrigins(
+  rawCorsOrigins: string | undefined = process.env.CORS_ORIGINS,
+  nodeEnv: string = process.env.NODE_ENV || "development",
+): string[] {
+  const configured = rawCorsOrigins
+    ? rawCorsOrigins
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+    : [...DEFAULT_CORS_ORIGINS];
+
+  const validated: string[] = [];
+  for (const entry of configured) {
+    if (entry.includes("*")) {
+      throw new Error(
+        `Invalid CORS_ORIGINS entry "${entry}": wildcards are not permitted`,
+      );
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(entry);
+    } catch {
+      throw new Error(
+        `Invalid CORS_ORIGINS entry "${entry}": must be a valid http(s) origin`,
+      );
+    }
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.origin !== entry ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    ) {
+      throw new Error(
+        `Invalid CORS_ORIGINS entry "${entry}": must be an exact http(s)://host[:port] origin`,
+      );
+    }
+    validated.push(parsed.origin);
+  }
+
+  const base = validated.length > 0 ? validated : [...DEFAULT_CORS_ORIGINS];
+  const combined =
+    nodeEnv === "development" ? [...base, ...DEV_CORS_ORIGINS] : base;
+  return [...new Set(combined)];
+}
+
 export function createApp(
   nodeEnv: string = process.env.NODE_ENV || "development",
+  rawCorsOrigins: string | undefined = process.env.CORS_ORIGINS,
 ): Hono {
   const app = new Hono();
+  const allowedOrigins = parseCorsOrigins(rawCorsOrigins, nodeEnv);
 
   // ===========================================
   // Global Middleware
@@ -93,19 +154,7 @@ export function createApp(
   app.use(
     "*",
     cors({
-      origin: [
-        "https://app.ubi.africa",
-        "https://admin.ubi.africa",
-        "https://ubi.africa",
-        // Development origins
-        ...(nodeEnv === "development"
-          ? [
-              "http://localhost:3000",
-              "http://localhost:3001",
-              "http://localhost:3002",
-            ]
-          : []),
-      ],
+      origin: allowedOrigins,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowHeaders: [
         "Content-Type",

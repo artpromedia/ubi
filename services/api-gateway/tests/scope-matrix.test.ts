@@ -2,7 +2,7 @@ import "./env";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { createApp } from "../src/app";
+import { createApp, parseCorsOrigins } from "../src/app";
 import { setIdentityStateStore } from "../src/lib/redis";
 import {
   brokenRiskStore,
@@ -1289,5 +1289,94 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       expect((await call("limited", method, path, "rider")).status).toBe(200);
       expect((await call("full", method, path, "driver")).status).toBe(200);
     }
+  });
+
+  it("maps FLEET_MANAGER / fleet_manager to fleet:read, fleet:manage, and step-up scopes (CC-A16 / P3-12)", async () => {
+    for (const [method, path] of [
+      ["GET", "/v1/fleets/mine"],
+      ["POST", "/v1/fleets/flt_1/vehicles"],
+      ["POST", "/v1/fleets/flt_1/assignments"],
+      ["GET", "/v1/fleets/flt_1/week-money"],
+    ] as const) {
+      expect((await call("full", method, path, "FLEET_MANAGER")).status).toBe(
+        200,
+      );
+    }
+    // Limited mode allows profile:read and auth:step_up, while gating fleet:read and fleet:manage until step-up
+    expect(
+      (await call("limited", "GET", "/v1/users/me", "FLEET_MANAGER")).status,
+    ).toBe(200);
+    const limRead = await call(
+      "limited",
+      "GET",
+      "/v1/fleets/mine",
+      "FLEET_MANAGER",
+    );
+    expect(limRead.status).toBe(403);
+    expect(limRead.code).toBe("limited_mode");
+    const limWrite = await call(
+      "limited",
+      "POST",
+      "/v1/fleets/flt_1/vehicles",
+      "FLEET_MANAGER",
+    );
+    expect(limWrite.status).toBe(403);
+    expect(limWrite.code).toBe("limited_mode");
+  });
+
+  describe("CORS_ORIGINS configuration (CC-A16 / P1-03)", () => {
+    it("allows fleet.ubi.africa by default and localhost:3004 in development", async () => {
+      const prodOrigins = parseCorsOrigins(undefined, "production");
+      expect(prodOrigins).toContain("https://fleet.ubi.africa");
+      expect(prodOrigins).not.toContain("http://localhost:3004");
+
+      const devOrigins = parseCorsOrigins(undefined, "development");
+      expect(devOrigins).toContain("https://fleet.ubi.africa");
+      expect(devOrigins).toContain("http://localhost:3004");
+
+      const customOrigins = parseCorsOrigins(
+        "https://ubi.africa, https://fleet.ubi.africa , https://admin.ubi.africa",
+        "production",
+      );
+      expect(customOrigins).toEqual([
+        "https://ubi.africa",
+        "https://fleet.ubi.africa",
+        "https://admin.ubi.africa",
+      ]);
+
+      const fleetRes = await app.fetch(
+        new Request("http://localhost/health", {
+          method: "OPTIONS",
+          headers: {
+            Origin: "https://fleet.ubi.africa",
+            "Access-Control-Request-Method": "POST",
+          },
+        }),
+      );
+      expect(fleetRes.headers.get("access-control-allow-origin")).toBe(
+        "https://fleet.ubi.africa",
+      );
+
+      const unknownRes = await app.fetch(
+        new Request("http://localhost/health", {
+          method: "OPTIONS",
+          headers: {
+            Origin: "https://evil.example.com",
+            "Access-Control-Request-Method": "POST",
+          },
+        }),
+      );
+      expect(unknownRes.headers.get("access-control-allow-origin")).toBeNull();
+    });
+
+    it("rejects wildcard or non-exact origins in CORS_ORIGINS", () => {
+      expect(() => parseCorsOrigins("*", "production")).toThrow(/wildcards/i);
+      expect(() =>
+        parseCorsOrigins("https://*.ubi.africa", "production"),
+      ).toThrow(/wildcards/i);
+      expect(() =>
+        parseCorsOrigins("https://fleet.ubi.africa/path", "production"),
+      ).toThrow(/exact/i);
+    });
   });
 });

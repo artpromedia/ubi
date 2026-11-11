@@ -55,10 +55,10 @@ function withTempFile(prefix, content, fn) {
   }
 }
 
-test("check-dockerfiles.mjs passes all 17 repository Dockerfiles", () => {
+test("check-dockerfiles.mjs passes all 18 repository Dockerfiles", () => {
   const res = runChecker(CHECK_DOCKERFILES);
   assert.equal(res.status, 0, res.output);
-  assert.match(res.output, /17 passed, 0 failed \(17 Dockerfiles\)/);
+  assert.match(res.output, /18 passed, 0 failed \(18 Dockerfiles\)/);
 });
 
 test("check-dockerfiles.mjs negative control: rejects EOL node:20-alpine", () => {
