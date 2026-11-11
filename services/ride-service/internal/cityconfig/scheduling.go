@@ -56,13 +56,17 @@ type AdvanceReservationPolicy struct {
 	PostBufferSec        int   `json:"postBufferSec"`
 	ReminderOffsetsSec   []int `json:"reminderOffsetsSec"`
 	MaxOpenPerRequester  int   `json:"maxOpenPerRequester"`
-	// RiskResolutionLeadSec (A05 fleet calendar, optional; decisions Q4) is
-	// how long before the PICKUP a booking put at risk must be resolved: its
+	// RiskResolutionLeadSec (A05 fleet calendar, optional; decisions Q4, DEC-2 = A)
+	// is how long before the PICKUP a booking put at risk must be resolved: its
 	// decision deadline is the EARLIER of its reconfirmation deadline (while
 	// it awaits reconfirmation) and the pickup minus this lead — never later
-	// than activation. At most MinLeadSec: a lead equal to it still leaves a
-	// same-fare rematch possible at the deadline. Absent applies the decided
-	// default, DefaultRiskResolutionLeadSec, capped at MinLeadSec.
+	// than activation (ActivationLeadSec <= RiskResolutionLeadSec < BookingHorizonSec).
+	// A rematch republishes a new advance request (requiring MinLeadSec), so a
+	// lapse at pickup − lead offers a same-fare rematch only when
+	// RiskResolutionLeadSec >= MinLeadSec + RiskRematchMarginSec; a lead equal
+	// to or below MinLeadSec is refund-only at the pickup − lead deadline.
+	// Absent applies the decided default, DefaultRiskResolutionLeadSec,
+	// clamped into [ActivationLeadSec, MinLeadSec].
 	RiskResolutionLeadSec *int `json:"riskResolutionLeadSec,omitempty"`
 }
 
@@ -72,15 +76,22 @@ type AdvanceReservationPolicy struct {
 // is a product decision recorded in the contract, not a guessed number.
 const DefaultRiskResolutionLeadSec = 7_200
 
+// RiskRematchMarginSec is the sweep + rider decision margin (DEC-2 = A, 15 min,
+// matching MP_RISK_REMATCH_MARGIN_SEC in @ubi/contracts) required on top of
+// MinLeadSec before a failed advance booking promises a same-fare rematch.
+const RiskRematchMarginSec = 900
+
 // RiskResolutionLead is the market's risk resolution lead in seconds: the
-// configured one, else the decided default capped at the market's minimum
-// advance lead (the bound a configured lead is validated against).
+// configured one, else the decided default clamped into [ActivationLeadSec, MinLeadSec].
 func (p *AdvanceReservationPolicy) RiskResolutionLead() int {
 	if p == nil {
 		return DefaultRiskResolutionLeadSec
 	}
 	if p.RiskResolutionLeadSec != nil {
 		return *p.RiskResolutionLeadSec
+	}
+	if p.ActivationLeadSec > DefaultRiskResolutionLeadSec {
+		return p.ActivationLeadSec
 	}
 	if p.MinLeadSec > 0 && p.MinLeadSec < DefaultRiskResolutionLeadSec {
 		return p.MinLeadSec
@@ -153,7 +164,7 @@ func (p *MarketplaceSchedulingPolicy) validate(cityID string) error {
 		case advance.MaxOpenPerRequester <= 0:
 			return fmt.Errorf("%w: city %s advance reservations have no per-requester cap", ErrUnavailable, cityID)
 		case advance.RiskResolutionLeadSec != nil &&
-			(*advance.RiskResolutionLeadSec <= 0 || *advance.RiskResolutionLeadSec > advance.MinLeadSec):
+			(*advance.RiskResolutionLeadSec < advance.ActivationLeadSec || *advance.RiskResolutionLeadSec >= advance.BookingHorizonSec):
 			return fmt.Errorf("%w: city %s advance reservation risk resolution lead is unusable", ErrUnavailable, cityID)
 		}
 	}

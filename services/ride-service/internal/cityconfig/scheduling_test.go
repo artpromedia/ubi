@@ -24,15 +24,19 @@ func withAdvance(advance *AdvanceReservationPolicy) *MarketplacePolicy {
 	return policy
 }
 
-// TestRiskResolutionLeadDefaultsAndBounds (decisions Q4): a market that
-// configures no lead gets the decided 2 h, capped at its minimum advance
-// lead; a configured lead wins; a configured lead must be positive and at
-// most the minimum lead (equal still leaves a same-fare rematch possible at
-// the deadline) — anything else makes the policy unreadable, never guessed
-// around.
+// TestRiskResolutionLeadDefaultsAndBounds (decisions Q4, DEC-2 = A): a market
+// that configures no lead gets the decided 2 h, clamped into
+// [ActivationLeadSec, MinLeadSec]; a configured lead wins and may exceed
+// MinLeadSec (so lead >= MinLeadSec + RiskRematchMarginSec offers a same-fare
+// rematch at the pickup − lead deadline) as long as it stays in
+// [ActivationLeadSec, BookingHorizonSec) — anything else makes the policy
+// unreadable, never guessed around.
 func TestRiskResolutionLeadDefaultsAndBounds(t *testing.T) {
 	if DefaultRiskResolutionLeadSec != 7_200 {
 		t.Fatalf("the decided default is pickup − 2 h: %d", DefaultRiskResolutionLeadSec)
+	}
+	if RiskRematchMarginSec != 900 {
+		t.Fatalf("the rematch margin is 15 min (900 s): %d", RiskRematchMarginSec)
 	}
 	absent := validAdvance()
 	if err := withAdvance(absent).Validate("c"); err != nil {
@@ -55,7 +59,17 @@ func TestRiskResolutionLeadDefaultsAndBounds(t *testing.T) {
 		t.Fatalf("no block ⇒ the default: %d", got)
 	}
 
-	for lead, ok := range map[int]bool{1_800: true, 7_200: true, 10_800: true, 10_801: false, 0: false, -1: false} {
+	for lead, ok := range map[int]bool{
+		1_800:                         true,
+		7_200:                         true,
+		10_800:                        true,
+		10_800 + RiskRematchMarginSec: true,
+		604_799:                       true,
+		1_799:                         false,
+		604_800:                       false,
+		0:                             false,
+		-1:                            false,
+	} {
 		configured := validAdvance()
 		value := lead
 		configured.RiskResolutionLeadSec = &value

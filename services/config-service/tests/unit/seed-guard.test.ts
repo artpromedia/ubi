@@ -5,6 +5,7 @@
 import {
   CityConfigSchema,
   ContractError,
+  MP_RISK_REMATCH_MARGIN_SEC,
   fareTableFor,
   paymentMethodAvailable,
 } from "@ubi/contracts";
@@ -84,6 +85,14 @@ describe("lagos config", () => {
       expect(paymentMethodAvailable(config, method)).toBe(true);
     }
     expect(paymentMethodAvailable(config, "mpesa")).toBe(false);
+  });
+
+  it("seeds riskResolutionLeadSec with at least minLeadSec + MP_RISK_REMATCH_MARGIN_SEC (DEC-2 = A)", () => {
+    const advance = config.marketplace?.scheduling?.advanceReservations;
+    expect(advance).toBeDefined();
+    expect(advance?.riskResolutionLeadSec).toBeGreaterThanOrEqual(
+      (advance?.minLeadSec ?? 0) + MP_RISK_REMATCH_MARGIN_SEC,
+    );
   });
 
   it("stamps the version it was asked for", () => {

@@ -148,17 +148,39 @@ func TestRiskDeadlineFailsTheBookingThroughTheFailurePath(t *testing.T) {
 		http.StatusConflict, domain.CodeConflict)
 }
 
-// TestRiskDeadlineOffersRematchOnlyWhenTimeRemains (correction 2): with a
-// market lead long enough that the deadline still leaves the minimum
-// advance lead, the lapsed booking offers the rider a rematch at the same
-// fare; the rider may instead "cancel and release", which closes the offer
-// for good — idempotently, with an event and an audit row.
+// TestRiskDeadlineOffersRematchOnlyWhenTimeRemains (correction 2, DEC-2 = A):
+// with a market lead equal to minLeadSec (3 h), a lapse at the pickup − lead
+// deadline leaves zero sweep/decision margin and is refund-only; with a lead
+// of at least minLeadSec + RiskRematchMarginSec (3 h 15 min), the lapsed
+// booking offers the rider a rematch at the same fare; the rider may instead
+// "cancel and release", which closes the offer for good — idempotently, with
+// an event and an audit row.
 func TestRiskDeadlineOffersRematchOnlyWhenTimeRemains(t *testing.T) {
 	double := newFleetDouble(t)
 	h := fleetHarness(t, double)
-	// A market lead equal to the minimum advance lead (3 h): the deadline
-	// still leaves time for a same-fare rematch.
+
+	// 1. Negative control: lead == minLeadSec (10_800 s) has no sweep margin,
+	// so a lapse at the pickup − lead deadline is refund-only.
 	setRiskLead(t, h, 10_800)
+	vNoMargin := fleetVehicle(h, double, "nomargin")
+	noMargin := bookOnVehicle(t, h, double, vNoMargin, 4*time.Hour, "wallet")
+	reportOffRoad(t, h, "off-nomargin", vNoMargin)
+	nmb := noMargin.reload(t)
+	if !nmb.RiskDeadline.Equal(nmb.WindowStart.Add(-10_800 * time.Second)) {
+		t.Fatalf("the deadline is pickup minus the 3 h lead: %v", nmb.RiskDeadline)
+	}
+	h.Clock.Set(*nmb.RiskDeadline)
+	sweepOnce(t, h)
+	if nmb = noMargin.reload(t); nmb.State != machine.MpBookingFailed || nmb.Failure.RematchAvailable {
+		t.Fatalf("with lead == minLeadSec (no sweep margin), a lapse at the deadline is refund-only: %+v", nmb.Failure)
+	}
+	noMarginOffer := outboxPayload(t, h, "mp.advance_booking.choice_offered", nmb.ID.String())
+	requireChoiceOffer(t, noMarginOffer, noMargin, marketplace.BookingFailRiskUnresolved, []any{"refund"})
+
+	// 2. Positive case: lead == minLeadSec + RiskRematchMarginSec (10_800 + 900 = 11_700 s):
+	// the deadline still leaves the 15 min sweep/decision margin for a same-fare rematch.
+	leadWithMargin := 10_800 + 900
+	setRiskLead(t, h, leadWithMargin)
 	vehicle := fleetVehicle(h, double, "a")
 	other := fleetVehicle(h, double, "b")
 	f := bookOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
@@ -166,17 +188,17 @@ func TestRiskDeadlineOffersRematchOnlyWhenTimeRemains(t *testing.T) {
 	reportOffRoad(t, h, "off-a", vehicle)
 	reportOffRoad(t, h, "off-b", other)
 	fb, gb := f.reload(t), g.reload(t)
-	if !fb.RiskDeadline.Equal(fb.WindowStart.Add(-10_800 * time.Second)) {
+	if !fb.RiskDeadline.Equal(fb.WindowStart.Add(-time.Duration(leadWithMargin) * time.Second)) {
 		t.Fatalf("the deadline is the pickup minus the market's lead: %v", fb.RiskDeadline)
 	}
 
-	// Each lapses at its own deadline (the minimum advance lead still ahead).
+	// Each lapses at its own deadline (minLead + margin still ahead).
 	h.Clock.Set(*fb.RiskDeadline)
 	requestsBefore := riderRequests(t, h, f.rider)
 	sweepOnce(t, h)
 	sweepOnce(t, h)
 	if fb = f.reload(t); fb.State != machine.MpBookingFailed || !fb.Failure.RematchAvailable {
-		t.Fatalf("with the minimum lead left, a rematch is offered: %+v", fb.Failure)
+		t.Fatalf("with minLead + margin left, a rematch is offered: %+v", fb.Failure)
 	}
 	// The rider is OFFERED the same-fare rematch or the refund, proactively,
 	// once — and nothing is republished until they choose.
@@ -206,7 +228,7 @@ func TestRiskDeadlineOffersRematchOnlyWhenTimeRemains(t *testing.T) {
 	h.Clock.Set(*gb.RiskDeadline)
 	sweepOnce(t, h)
 	if gb = g.reload(t); gb.State != machine.MpBookingFailed || !gb.Failure.RematchAvailable {
-		t.Fatalf("with the minimum lead left, a rematch is offered: %+v", gb.Failure)
+		t.Fatalf("with minLead + margin left, a rematch is offered: %+v", gb.Failure)
 	}
 
 	// Booking g: the rider cancels and releases instead.

@@ -764,7 +764,8 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 	if _, policy, err := s.policy(ctx, b.CityID); err == nil {
 		if advance, err := policy.AdvanceReservationPolicyFor(b.CityID); err == nil {
 			minLead := time.Duration(advance.MinLeadSec) * time.Second
-			rematch = end.to == machine.MpBookingFailed && b.WindowStart.Sub(now) >= minLead
+			rematchMargin := time.Duration(cityconfig.RiskRematchMarginSec) * time.Second
+			rematch = end.to == machine.MpBookingFailed && b.WindowStart.Sub(now) >= minLead+rematchMargin
 			if rematch {
 				// A rematch is a NEW advance request, which needs the
 				// market's minimum lead: the offer lasts until then.

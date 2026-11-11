@@ -1739,49 +1739,72 @@ export const MpScheduledRequestPolicySchema = z.object({
   maxPendingPerRequester: z.number().int().positive(),
 });
 
-export const MpAdvanceReservationPolicySchema = z.object({
-  /** Bounded booking horizon: no hold is ever longer-lived than this. */
-  bookingHorizonSec: z.number().int().positive(),
-  minLeadSec: z.number().int().positive(),
-  /** How long an advance request takes offers (capped before reconfirmation). */
-  offerWindowSec: z.number().int().positive(),
-  bidExpirySec: z.number().int().positive(),
-  defaultWindowSec: z.number().int().positive(),
-  minWindowSec: z.number().int().positive(),
-  maxWindowSec: z.number().int().positive(),
-  /**
-   * Rider funding is secured with the wallet funding authorization at the
-   * advance award only when the pickup is within this horizon; otherwise the
-   * booking is payment_pending and funding is secured when it enters it.
-   */
-  fundingHorizonSec: z.number().int().positive(),
-  /** Funding still unsecured this long before pickup fails the booking. */
-  fundingDeadlineSec: z.number().int().positive(),
-  reconfirmOpensSec: z.number().int().positive(),
-  reconfirmDeadlineSec: z.number().int().positive(),
-  /** Activation into the live current/next slots this long before pickup. */
-  activationLeadSec: z.number().int().positive(),
-  /** Uncertainty buffers around each booking's calendar interval. */
-  preBufferSec: z.number().int().nonnegative(),
-  postBufferSec: z.number().int().nonnegative(),
-  reminderOffsetsSec: z.array(z.number().int().positive()).max(4),
-  maxOpenPerRequester: z.number().int().positive(),
-  /**
-   * Fleet calendar (A05; decisions Q4): a booking put at risk (off-road,
-   * document expiry, an assignment ending) must be resolved by the EARLIER
-   * of its reconfirmation deadline (while it still awaits reconfirmation)
-   * and the PICKUP minus this lead — never later than activation. Otherwise
-   * it fails through the ordinary failure path (commission returned with a
-   * linked reversal, funding released) and the rider is proactively offered
-   * a same-fare rematch (only when the server's rematchAvailable allows it)
-   * or the refund (mp.advance_booking.choice_offered) — never republished
-   * without the rider's choice. At most `minLeadSec` (a lead equal to it
-   * still leaves a same-fare rematch possible at the deadline). Optional:
-   * absent applies MP_DEFAULT_RISK_RESOLUTION_LEAD_SEC (2 h), capped at the
-   * market's `minLeadSec`.
-   */
-  riskResolutionLeadSec: z.number().int().positive().optional(),
-});
+export const MpAdvanceReservationPolicySchema = z
+  .object({
+    /** Bounded booking horizon: no hold is ever longer-lived than this. */
+    bookingHorizonSec: z.number().int().positive(),
+    minLeadSec: z.number().int().positive(),
+    /** How long an advance request takes offers (capped before reconfirmation). */
+    offerWindowSec: z.number().int().positive(),
+    bidExpirySec: z.number().int().positive(),
+    defaultWindowSec: z.number().int().positive(),
+    minWindowSec: z.number().int().positive(),
+    maxWindowSec: z.number().int().positive(),
+    /**
+     * Rider funding is secured with the wallet funding authorization at the
+     * advance award only when the pickup is within this horizon; otherwise the
+     * booking is payment_pending and funding is secured when it enters it.
+     */
+    fundingHorizonSec: z.number().int().positive(),
+    /** Funding still unsecured this long before pickup fails the booking. */
+    fundingDeadlineSec: z.number().int().positive(),
+    reconfirmOpensSec: z.number().int().positive(),
+    reconfirmDeadlineSec: z.number().int().positive(),
+    /** Activation into the live current/next slots this long before pickup. */
+    activationLeadSec: z.number().int().positive(),
+    /** Uncertainty buffers around each booking's calendar interval. */
+    preBufferSec: z.number().int().nonnegative(),
+    postBufferSec: z.number().int().nonnegative(),
+    reminderOffsetsSec: z.array(z.number().int().positive()).max(4),
+    maxOpenPerRequester: z.number().int().positive(),
+    /**
+     * Fleet calendar (A05; decisions Q4, DEC-2 = A): a booking put at risk
+     * (off-road, document expiry, an assignment ending) must be resolved by
+     * the EARLIER of its reconfirmation deadline (while it still awaits
+     * reconfirmation) and the PICKUP minus this lead — never later than
+     * activation (`activationLeadSec <= riskResolutionLeadSec < bookingHorizonSec`).
+     * Otherwise it fails through the ordinary failure path (commission
+     * returned with a linked reversal, funding released) and the rider is
+     * proactively offered a same-fare rematch (only when `windowStart - now`
+     * is at least `minLeadSec + MP_RISK_REMATCH_MARGIN_SEC`, so a lapse at the
+     * `pickup - riskResolutionLeadSec` deadline offers a rematch only when
+     * `riskResolutionLeadSec >= minLeadSec + MP_RISK_REMATCH_MARGIN_SEC`) or
+     * the refund (`mp.advance_booking.choice_offered`) — never republished
+     * without the rider's choice. Optional: absent applies
+     * `MP_DEFAULT_RISK_RESOLUTION_LEAD_SEC` (2 h), clamped into
+     * `[activationLeadSec, minLeadSec]`.
+     */
+    riskResolutionLeadSec: z.number().int().positive().optional(),
+  })
+  .superRefine((policy, ctx) => {
+    if (policy.riskResolutionLeadSec !== undefined) {
+      if (policy.riskResolutionLeadSec < policy.activationLeadSec) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["riskResolutionLeadSec"],
+          message:
+            "riskResolutionLeadSec cannot be shorter than activationLeadSec",
+        });
+      }
+      if (policy.riskResolutionLeadSec >= policy.bookingHorizonSec) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["riskResolutionLeadSec"],
+          message: "riskResolutionLeadSec must be less than bookingHorizonSec",
+        });
+      }
+    }
+  });
 
 /**
  * The decided default risk resolution lead (decisions Q4: pickup − 2 h),
@@ -1789,6 +1812,16 @@ export const MpAdvanceReservationPolicySchema = z.object({
  * `riskResolutionLeadSec`.
  */
 export const MP_DEFAULT_RISK_RESOLUTION_LEAD_SEC = 7_200;
+
+/**
+ * Sweep + rider decision margin (`DEC-2 = A`, 15 min) required on top of
+ * `minLeadSec` before a failed advance booking promises a same-fare rematch:
+ * a rematch republishes a new advance request (`windowStart - now >= minLeadSec`),
+ * so `riskResolutionLeadSec >= minLeadSec + MP_RISK_REMATCH_MARGIN_SEC` is
+ * required for a pickup-minus-lead lapse to offer a rematch rather than a
+ * refund alone.
+ */
+export const MP_RISK_REMATCH_MARGIN_SEC = 900;
 
 export const MpRecurringPolicySchema = z.object({
   /** Occurrences are generated this many local days ahead. */

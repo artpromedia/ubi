@@ -212,6 +212,29 @@ describe("resolveAudience", () => {
     );
     expect(audience).toEqual([]);
   });
+
+  it("routes mp.advance_booking.choice_offered only to the requester (CC-A05)", () => {
+    const audience = resolveAudience(
+      makeEnvelope({
+        name: "mp.advance_booking.choice_offered",
+        subject: { type: "mp_booking", id: "bkg_1" },
+        payload: {
+          bookingId: "bkg_1",
+          awardId: "awd_1",
+          requestId: "req_1",
+          requesterId: "usr_requester",
+          reason: "risk_unresolved",
+          options: ["rematch", "refund"],
+          rematchAvailable: true,
+          sameFareMinor: { amountMinor: 250000, currency: "NGN" },
+          rematchBy: "2026-09-20T12:00:00Z",
+          refund: { riderCharged: false, riderFundingReleased: true },
+          audience: ["rider"],
+        },
+      }),
+    );
+    expect(audience).toEqual(["usr_requester"]);
+  });
 });
 
 describe("handleMarketplaceEnvelope", () => {

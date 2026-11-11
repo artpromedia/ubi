@@ -186,7 +186,7 @@ describe("fleet calendar: what the booking's parties see", () => {
     ).toBe(true);
   });
 
-  it("keeps the risk resolution lead an optional, positive policy value", () => {
+  it("allows riskResolutionLeadSec above minLeadSec within [activationLeadSec, bookingHorizonSec)", () => {
     const policy = {
       bookingHorizonSec: 604_800,
       minLeadSec: 10_800,
@@ -214,6 +214,24 @@ describe("fleet calendar: what the booking's parties see", () => {
         riskResolutionLeadSec: 1_800,
       }).success,
     ).toBe(true);
+    expect(
+      MpAdvanceReservationPolicySchema.safeParse({
+        ...policy,
+        riskResolutionLeadSec: 10_800 + 900,
+      }).success,
+    ).toBe(true);
+    expect(
+      MpAdvanceReservationPolicySchema.safeParse({
+        ...policy,
+        riskResolutionLeadSec: 1_799,
+      }).success,
+    ).toBe(false);
+    expect(
+      MpAdvanceReservationPolicySchema.safeParse({
+        ...policy,
+        riskResolutionLeadSec: 604_800,
+      }).success,
+    ).toBe(false);
     expect(
       MpAdvanceReservationPolicySchema.safeParse({
         ...policy,

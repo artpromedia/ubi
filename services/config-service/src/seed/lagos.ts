@@ -21,6 +21,7 @@ import {
   type CityConfig,
   CityConfigSchema,
   ContractError,
+  MP_RISK_REMATCH_MARGIN_SEC,
 } from "@ubi/contracts";
 
 import { LAGOS_CITY } from "./cities";
@@ -149,6 +150,119 @@ export function lagosConfig(version: number): CityConfig {
       },
     },
     taxes: { vat: 7.5 },
+    // PROVISIONAL dev/test marketplace policy (CC-A05, DEC-2 = A). All
+    // marketplace flags stay OFF in LAGOS_ENABLED_FLAGS, and assertSeedAllowed
+    // forbids running this seed in production.
+    marketplace: {
+      policyVersion: 1,
+      commissionBps: 1_000,
+      commissionRounding: "half_up",
+      fareBounds: {
+        "ride:go": {
+          absoluteFloorMinor: 80_000,
+          costFloorMinor: 90_000,
+          floorBpsOfSuggested: 7_000,
+          ceilingBpsOfSuggested: 20_000,
+        },
+        "ride:comfort": {
+          absoluteFloorMinor: 120_000,
+          costFloorMinor: 135_000,
+          floorBpsOfSuggested: 7_000,
+          ceilingBpsOfSuggested: 20_000,
+        },
+        "ride:xl": {
+          absoluteFloorMinor: 180_000,
+          costFloorMinor: 200_000,
+          floorBpsOfSuggested: 7_000,
+          ceilingBpsOfSuggested: 20_000,
+        },
+      },
+      searchEnvelope: {
+        initialRadiusMeters: 3_000,
+        maxRadiusMeters: 9_000,
+        initialPickupEtaSec: 600,
+        maxPickupEtaSec: 1_500,
+        expandAfterSec: 30,
+        minOffersBeforeExpand: 2,
+        expansionSteps: 3,
+      },
+      stationary: {
+        minDwellSec: 60,
+        maxSpeedMps: 1.5,
+        maxLocationAgeSec: 120,
+        maxAccuracyMeters: 50,
+        motionCloseSec: 20,
+      },
+      finishingTrip: {
+        maxRemainingSec: 600,
+        completionBufferSec: 120,
+        uncertaintyBufferSec: 60,
+        corridorMaxBearingDeltaDeg: 90,
+      },
+      bids: {
+        bidExpirySec: 120,
+        requestExpirySec: 600,
+        revisionCooldownSec: 15,
+        maxLiveBidsPerDriver: 3,
+        maxOpenRequestsPerRequester: 2,
+      },
+      queue: {
+        pickupWindowToleranceSec: 300,
+      },
+      rateProfileBounds: {
+        "ride:go": {
+          maxPerKmMinor: 50_000,
+          maxMinimumTripFareMinor: 500_000,
+        },
+        "ride:comfort": {
+          maxPerKmMinor: 70_000,
+          maxMinimumTripFareMinor: 700_000,
+        },
+        "ride:xl": {
+          maxPerKmMinor: 100_000,
+          maxMinimumTripFareMinor: 1_000_000,
+        },
+      },
+      scheduling: {
+        scheduledRequests: {
+          publishLeadSec: 1_800,
+          minLeadSec: 3_600,
+          maxHorizonSec: 1_209_600,
+          defaultWindowSec: 600,
+          minWindowSec: 300,
+          maxWindowSec: 1_800,
+          reminderOffsetsSec: [43_200, 3_600],
+          maxPendingPerRequester: 10,
+        },
+        advanceReservations: {
+          bookingHorizonSec: 604_800,
+          minLeadSec: 10_800,
+          offerWindowSec: 3_600,
+          bidExpirySec: 3_600,
+          defaultWindowSec: 600,
+          minWindowSec: 300,
+          maxWindowSec: 1_800,
+          fundingHorizonSec: 172_800,
+          fundingDeadlineSec: 7_200,
+          reconfirmOpensSec: 7_200,
+          reconfirmDeadlineSec: 2_700,
+          activationLeadSec: 1_800,
+          preBufferSec: 600,
+          postBufferSec: 600,
+          reminderOffsetsSec: [43_200, 3_600],
+          maxOpenPerRequester: 5,
+          // DEC-2 = A: minLeadSec (3 h) + MP_RISK_REMATCH_MARGIN_SEC (15 min)
+          // = 11,700 s (3 h 15 min), so a lapse at the pickup − lead deadline
+          // leaves the 15-min margin required to offer a same-fare rematch.
+          riskResolutionLeadSec: 10_800 + MP_RISK_REMATCH_MARGIN_SEC,
+        },
+        recurring: {
+          generationHorizonDays: 7,
+          maxActiveTemplatesPerRequester: 5,
+          maxSeriesDays: 366,
+        },
+      },
+    },
     // PROVISIONAL, pending ops/finance sign-off — pilot driver ops credit caps
     // (CC-B03, DEC-6=C), in NGN kobo. Gated by `ops_driver_wallet_credit`, which
     // stays OFF in LAGOS_ENABLED_FLAGS.
