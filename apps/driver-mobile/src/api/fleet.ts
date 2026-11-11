@@ -20,11 +20,15 @@ import type {
   AvailabilitySavedViewSchema,
   DeclineOfferViewSchema,
   DriverArrangementListSchema,
+  DriverAvailabilityViewSchema,
   DriverConflictViewSchema,
   DriverOfferListSchema,
   DriverOfferViewSchema,
   DriverScheduleSchema,
+  ReportVehicleIssueSchema,
   SignOfferViewSchema,
+  VehicleIssueSeveritySchema,
+  VehicleIssueViewSchema,
 } from "@ubi/contracts";
 
 export type FleetSchedule = z.infer<typeof DriverScheduleSchema>;
@@ -38,6 +42,9 @@ export type FleetArrangementList = z.infer<typeof DriverArrangementListSchema>;
 export type FleetArrangement = FleetArrangementList["arrangements"][number];
 export type FleetConflict = z.infer<typeof DriverConflictViewSchema>;
 export type FleetConflictOption = FleetConflict["options"][number];
+export type FleetAvailabilityView = z.infer<
+  typeof DriverAvailabilityViewSchema
+>;
 export type FleetAvailabilityPreview = z.infer<
   typeof AvailabilityPreviewViewSchema
 >;
@@ -53,30 +60,9 @@ export type FleetWindowInput = {
   rrule?: string;
 };
 
-export type VehicleIssueSeverity = "cannot_drive" | "service_soon";
-
-/**
- * `POST /v1/drivers/me/vehicle-issues` answer. Mirrors
- * services/fleet-service/src/vehicle-issue-contract.ts until the lead folds that
- * schema into @ubi/contracts (then this becomes a z.infer like the rest).
- */
-export type VehicleIssueView = {
-  issueId: string;
-  severity: VehicleIssueSeverity;
-  vehicleId: string;
-  reportedAt: string;
-  fleetAlerted: true;
-  block: {
-    blockId: string;
-    kind: "unplanned_off_road";
-    status: "active" | "completed";
-    startsAt: string;
-    endsAt: string | null;
-  } | null;
-  /** The reporting driver's own bookings now at risk, with the server's deadline. */
-  decisions: { conflictId: string; deadlineAt: string | null }[];
-  remittanceEffect: "signed_terms_shortfall_rule" | "none";
-};
+export type VehicleIssueSeverity = z.infer<typeof VehicleIssueSeveritySchema>;
+export type ReportVehicleIssueInput = z.infer<typeof ReportVehicleIssueSchema>;
+export type VehicleIssueView = z.infer<typeof VehicleIssueViewSchema>;
 
 /** The weekly_fixed remittance as a Money object (pairing server fields only). */
 export const remittanceOf = (terms: FleetTerms): Money | null =>
@@ -119,6 +105,9 @@ export const fleetApi = {
   // C3 — the driver's own conflict with its options and server-explained outcomes.
   conflict: (conflictId: string) =>
     api<FleetConflict>("GET", "/v1/drivers/me/conflicts/" + enc(conflictId)),
+  // C4 — read the driver's saved availability set so C4 pre-populates and carries it forward.
+  availability: () =>
+    api<FleetAvailabilityView>("GET", "/v1/drivers/me/availability"),
   // C4 — a read (what the change WOULD do); api() still stamps a key on every POST,
   // which the preview route ignores.
   previewAvailability: (windows: FleetWindowInput[]) =>
@@ -140,10 +129,7 @@ export const fleetApi = {
       idempotencyKey,
     }),
   // C5 — the assigned driver reports a breakdown or a service need.
-  reportVehicleIssue: (
-    body: { vehicleId: string; severity: VehicleIssueSeverity; note?: string },
-    idempotencyKey: string,
-  ) =>
+  reportVehicleIssue: (body: ReportVehicleIssueInput, idempotencyKey: string) =>
     api<VehicleIssueView>("POST", "/v1/drivers/me/vehicle-issues", body, {
       idempotencyKey,
     }),

@@ -358,6 +358,36 @@ describe("FleetConflictScreen (C3)", () => {
     view.unmount();
   });
 
+  it("disables withdraw and vehicle swap with an explicit reason when conflict.bookingId is null", async () => {
+    serve(
+      {},
+      {
+        conflict: conflict({ bookingId: null }),
+        booking: booking(),
+      },
+    );
+    act(() => setMotionForDev("parked_confirmed"));
+    const view = harness();
+    expect(
+      await screen.findByTestId(
+        dynamicTestId(FLEET_TID.impactOption, "withdraw"),
+      ),
+    ).toHaveTextContent(
+      "Not available: No booking is linked to this conflict.",
+      { exact: false },
+    );
+    expect(
+      screen.getByTestId(
+        dynamicTestId(FLEET_TID.impactOption, "keep_on_swapped_vehicle"),
+      ),
+    ).toHaveTextContent(
+      "Not available: No booking is linked to this conflict.",
+      { exact: false },
+    );
+    expect(screen.queryByTestId(FLEET_TID.impactWithdraw)).toBeNull();
+    view.unmount();
+  });
+
   it("fleet-service's feature_disabled is the honest not-available state", async () => {
     installWire(() => ({
       status: 404,

@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 
 import { useSelectedFleet } from "@/components/fleet/fleet-context";
 import { EmptyState, Pill, ReadGate } from "@/components/states/states";
-import { toReadState, type ReadState } from "@/lib/access";
+import { isWriteReachable, toReadState, type ReadState } from "@/lib/access";
 import {
   conflictRow,
   conflictSummary,
@@ -71,132 +71,135 @@ export const ConflictCentreView = ({
   online,
   onChanged,
   onRetry,
-}: ConflictCentreViewProps) => (
-  <div className="space-y-4">
-    <div className="flex flex-wrap items-center gap-3">
-      <h1 className="text-xl font-bold text-zinc-100">Conflict centre</h1>
-      {state.kind === "ready" ? (
-        <span className="text-xs text-zinc-400">
-          {conflictSummary(state.data.conflicts)}
-        </span>
-      ) : null}
-      {state.kind === "ready" ? (
-        <span className="ml-auto text-xs text-zinc-500">
-          Computed by server · {localTimeOf(state.updatedAt, fleet.zone)}{" "}
-          {zoneShort(fleet.zone, state.updatedAt)}
-        </span>
-      ) : null}
-    </div>
-    <div className="flex gap-1" role="group" aria-label="Conflict status">
-      {FILTERS.map((filter) => (
-        <button
-          key={filter.label}
-          type="button"
-          aria-pressed={status === filter.value}
-          onClick={() => onStatus(filter.value)}
-          className={
-            status === filter.value
-              ? "rounded-full bg-[#1DB954] px-3 py-1 text-xs font-semibold text-black"
-              : "rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300"
-          }
-        >
-          {filter.label}
-        </button>
-      ))}
-    </div>
-    <ReadGate
-      state={state}
-      loadingLabel="Loading conflicts…"
-      context="conflicts"
-      zone={fleet.zone}
-      onRetry={onRetry}
-    >
-      {(data) =>
-        data.conflicts.length === 0 ? (
-          <EmptyState
-            title={
-              status === "open" || status === undefined
-                ? "No open conflicts."
-                : `No ${status} conflicts.`
+}: ConflictCentreViewProps) => {
+  const reachable = isWriteReachable(online, state);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-bold text-zinc-100">Conflict centre</h1>
+        {state.kind === "ready" ? (
+          <span className="text-xs text-zinc-400">
+            {conflictSummary(state.data.conflicts)}
+          </span>
+        ) : null}
+        {state.kind === "ready" ? (
+          <span className="ml-auto text-xs text-zinc-500">
+            Computed by server · {localTimeOf(state.updatedAt, fleet.zone)}{" "}
+            {zoneShort(fleet.zone, state.updatedAt)}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex gap-1" role="group" aria-label="Conflict status">
+        {FILTERS.map((filter) => (
+          <button
+            key={filter.label}
+            type="button"
+            aria-pressed={status === filter.value}
+            onClick={() => onStatus(filter.value)}
+            className={
+              status === filter.value
+                ? "rounded-full bg-[#1DB954] px-3 py-1 text-xs font-semibold text-black"
+                : "rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300"
             }
-            body="The server opens a conflict when maintenance, a breakdown, a document or a notice period meets a booking."
-          />
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-[#222] bg-[#141414]">
-            <table className="w-full min-w-[900px] border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-[#222] text-left text-zinc-500">
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Severity
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Conflict
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Who resolves
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Deadline ({zoneShort(fleet.zone, Date.now())})
-                  </th>
-                  <th scope="col" className="px-3 py-2 font-medium">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.conflicts.map((conflict) => {
-                  const row = conflictRow(conflict, fleet.zone, names);
-                  return (
-                    <tr
-                      key={conflict.conflictId}
-                      data-testid={FLEET_TEST_IDS.conflicts.row}
-                      className="border-b border-[#1F1F1F] align-top"
-                    >
-                      <td className="px-3 py-2">
-                        <Pill tone={SEVERITY_TONE[row.severityKey]}>
-                          {row.severity}
-                        </Pill>
-                      </td>
-                      <td className="px-3 py-2">
-                        <p className="font-semibold text-zinc-100">
-                          {row.title}
-                        </p>
-                        <p className="text-zinc-400">{row.subject}</p>
-                        <p className="text-zinc-500">{row.status}</p>
-                      </td>
-                      <td className="px-3 py-2 text-zinc-300">
-                        {row.resolver}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-zinc-300">
-                        {row.deadline}
-                      </td>
-                      <td className="px-3 py-2">
-                        {row.noActionText !== null ? (
-                          <span className="text-zinc-500">
-                            {row.noActionText}
-                          </span>
-                        ) : (
-                          <ConflictActions
-                            fleetId={fleet.fleetId}
-                            conflict={conflict}
-                            zone={fleet.zone}
-                            online={online}
-                            vehicles={vehicles}
-                            onDone={onChanged}
-                          />
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
-      }
-    </ReadGate>
-  </div>
-);
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+      <ReadGate
+        state={state}
+        loadingLabel="Loading conflicts…"
+        context="conflicts"
+        zone={fleet.zone}
+        onRetry={onRetry}
+      >
+        {(data) =>
+          data.conflicts.length === 0 ? (
+            <EmptyState
+              title={
+                status === "open" || status === undefined
+                  ? "No open conflicts."
+                  : `No ${status} conflicts.`
+              }
+              body="The server opens a conflict when maintenance, a breakdown, a document or a notice period meets a booking."
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-[#222] bg-[#141414]">
+              <table className="w-full min-w-[900px] border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[#222] text-left text-zinc-500">
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Severity
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Conflict
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Who resolves
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Deadline ({zoneShort(fleet.zone, Date.now())})
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.conflicts.map((conflict) => {
+                    const row = conflictRow(conflict, fleet.zone, names);
+                    return (
+                      <tr
+                        key={conflict.conflictId}
+                        data-testid={FLEET_TEST_IDS.conflicts.row}
+                        className="border-b border-[#1F1F1F] align-top"
+                      >
+                        <td className="px-3 py-2">
+                          <Pill tone={SEVERITY_TONE[row.severityKey]}>
+                            {row.severity}
+                          </Pill>
+                        </td>
+                        <td className="px-3 py-2">
+                          <p className="font-semibold text-zinc-100">
+                            {row.title}
+                          </p>
+                          <p className="text-zinc-400">{row.subject}</p>
+                          <p className="text-zinc-500">{row.status}</p>
+                        </td>
+                        <td className="px-3 py-2 text-zinc-300">
+                          {row.resolver}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-zinc-300">
+                          {row.deadline}
+                        </td>
+                        <td className="px-3 py-2">
+                          {row.noActionText !== null ? (
+                            <span className="text-zinc-500">
+                              {row.noActionText}
+                            </span>
+                          ) : (
+                            <ConflictActions
+                              fleetId={fleet.fleetId}
+                              conflict={conflict}
+                              zone={fleet.zone}
+                              online={reachable}
+                              vehicles={vehicles}
+                              onDone={onChanged}
+                            />
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
+      </ReadGate>
+    </div>
+  );
+};
 
 export const ConflictCentreScreen = () => {
   const fleet = useSelectedFleet();
@@ -204,9 +207,11 @@ export const ConflictCentreScreen = () => {
   useNow(60_000);
   const client = useQueryClient();
   const [status, setStatus] = useState<ConflictStatus | undefined>("open");
+  const queryStatus = status === "open" ? "open,resolving" : status;
   const conflicts = useQuery({
-    queryKey: fleetKeys.conflicts(fleet.fleetId, status),
-    queryFn: ({ signal }) => fleetApi.conflicts(fleet.fleetId, status, signal),
+    queryKey: fleetKeys.conflicts(fleet.fleetId, queryStatus),
+    queryFn: ({ signal }) =>
+      fleetApi.conflicts(fleet.fleetId, queryStatus, signal),
     refetchInterval: 60_000,
   });
   const vehicles = useQuery({

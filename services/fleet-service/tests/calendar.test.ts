@@ -36,6 +36,8 @@ import {
 import {
   AvailabilityPreviewViewSchema,
   AvailabilitySavedViewSchema,
+  ConflictListSchema,
+  DriverAvailabilityViewSchema,
   DriverConflictViewSchema,
   DriverScheduleSchema,
   FLEET_FORBIDDEN_FIELD_PATTERNS,
@@ -561,6 +563,89 @@ describe("driver availability and schedule", () => {
         request.path.startsWith(`/internal/fleet/drivers/${driverId}/calendar`),
       ),
     ).toBe(true);
+
+    // GET /v1/drivers/me/availability returns the saved rule set with setVersion.
+    const availRead = await api(h.app, {
+      path: "/v1/drivers/me/availability",
+      token: driverToken,
+      city: world.cityId,
+    });
+    expect(availRead.status).toBe(200);
+    const availView = DriverAvailabilityViewSchema.parse(availRead.body);
+    expect(availView.zone).toBe("Africa/Lagos");
+    expect(availView.setVersion).toBeGreaterThanOrEqual(1);
+    expect(availView.windows).toEqual([
+      expect.objectContaining({
+        kind: "available",
+        startsAt: "2026-09-28T16:00:00.000Z",
+        endsAt: "2026-09-28T20:00:00.000Z",
+        rrule: "FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4",
+      }),
+    ]);
+  });
+
+  it("supports comma-separated conflict status filtering and exposes maintenanceBlockId only on fleet-owned conflicts", async () => {
+    const booking = h.ride.addBooking({
+      driverId,
+      vehicleId,
+      startsAt: "2026-10-01T09:30:00.000Z",
+      endsAt: "2026-10-01T11:00:00.000Z",
+      windowStart: "2026-10-01T09:45:00.000Z",
+      windowEnd: "2026-10-01T09:55:00.000Z",
+    });
+    const mntPreview = await api<{ previewToken: string }>(h.app, {
+      method: "POST",
+      path: `/v1/fleets/${world.fleetId}/maintenance:preview`,
+      token: world.ownerToken,
+      city: world.cityId,
+      body: {
+        vehicleId,
+        kind: "planned_service",
+        startsAt: "2026-10-01T09:00:00.000Z",
+        endsAt: "2026-10-01T12:00:00.000Z",
+      },
+      idem: null,
+    });
+    expect(mntPreview.status).toBe(200);
+    const planned = await api<{
+      details: { block: { blockId: string } };
+    }>(h.app, {
+      method: "POST",
+      path: `/v1/fleets/${world.fleetId}/maintenance`,
+      token: world.ownerToken,
+      city: world.cityId,
+      body: {
+        vehicleId,
+        kind: "planned_service",
+        startsAt: "2026-10-01T09:00:00.000Z",
+        endsAt: "2026-10-01T12:00:00.000Z",
+        note: "Service overlap",
+        previewToken: mntPreview.body.previewToken,
+      },
+    });
+    expect(planned.status).toBe(409);
+
+    const openOrResolving = ConflictListSchema.parse(
+      (
+        await api(h.app, {
+          path: `/v1/fleets/${world.fleetId}/conflicts?status=open,resolving`,
+          token: world.ownerToken,
+          city: world.cityId,
+        })
+      ).body,
+    );
+    expect(openOrResolving.conflicts).toHaveLength(1);
+    expect(openOrResolving.conflicts[0]).toMatchObject({
+      type: "maintenance_overlaps_booking",
+      maintenanceBlockId: planned.body.details.block.blockId,
+    });
+    expect(openOrResolving.conflicts[0]?.subjects).toEqual([
+      {
+        blockId: booking.blockId,
+        driverId,
+        vehicleId,
+      },
+    ]);
   });
 });
 

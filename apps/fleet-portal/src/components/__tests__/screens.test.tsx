@@ -740,6 +740,8 @@ describe("B7 AssignmentsView", () => {
     expect(count(markup, FLEET_TEST_IDS.assignment.termsDiff)).toBe(1);
     expect(count(markup, FLEET_TEST_IDS.assignment.proposeSubmit)).toBe(1);
     expect(count(markup, FLEET_TEST_IDS.assignment.consentStatus)).toBe(2);
+    expect(shown).toContain("Waiting for a signature · 1");
+    expect(shown).toContain("Settled proposals · 1");
     expect(shown).toContain("Propose new remittance terms");
     expect(shown).toContain("Waiting for Kemi L.'s signature");
     expect(shown).toContain(
@@ -1000,52 +1002,66 @@ describe("offline / stale on every screen", () => {
     );
   });
 
-  it("disables every write while offline", () => {
-    const assignmentsMarkup = html(
-      <AssignmentsView
-        fleet={owner}
-        state={offlineStale(assignments)}
-        vehicles={vehicles}
-        online={false}
-        today="2026-09-30"
-      />,
-    );
-    expect(
-      isDisabled(
-        tagOf(assignmentsMarkup, FLEET_TEST_IDS.assignment.proposeSubmit),
-      ),
-    ).toBe(true);
-    const offRoad = html(
-      <OffRoadPanel
-        fleet={owner}
-        vehicles={ready<FleetVehicleList>({ vehicles })}
-        online={false}
-        now={NOW}
-      />,
-    );
-    expect(isDisabled(tagOf(offRoad, FLEET_TEST_IDS.offRoad.report))).toBe(
-      true,
-    );
-    const conflictMarkup = html(
-      <ConflictCentreView
-        fleet={owner}
-        state={offlineStale(conflicts)}
-        status="open"
-        onStatus={() => undefined}
-        names={{}}
-        vehicles={vehicles}
-        online={false}
-      />,
-    );
-    const actionTags =
-      conflictMarkup.match(
-        /<[^>]*data-testid="fleet\.conflicts\.action"[^>]*>/g,
-      ) ?? [];
-    expect(actionTags.length).toBeGreaterThan(0);
-    for (const tag of actionTags.filter((candidate) =>
-      candidate.startsWith("<button"),
-    )) {
-      expect(isDisabled(tag)).toBe(true);
+  it("disables every write while offline or when read state is stale even if navigator.onLine is true", () => {
+    for (const onlineFlag of [false, true]) {
+      const assignmentsMarkup = html(
+        <AssignmentsView
+          fleet={owner}
+          state={offlineStale(assignments)}
+          vehicles={vehicles}
+          online={onlineFlag}
+          today="2026-09-30"
+        />,
+      );
+      expect(
+        isDisabled(
+          tagOf(assignmentsMarkup, FLEET_TEST_IDS.assignment.proposeSubmit),
+        ),
+      ).toBe(true);
+      const offRoad = html(
+        <OffRoadPanel
+          fleet={owner}
+          vehicles={offlineStale<FleetVehicleList>({ vehicles })}
+          online={onlineFlag}
+          now={NOW}
+        />,
+      );
+      expect(isDisabled(tagOf(offRoad, FLEET_TEST_IDS.offRoad.report))).toBe(
+        true,
+      );
+      const conflictMarkup = html(
+        <ConflictCentreView
+          fleet={owner}
+          state={offlineStale(conflicts)}
+          status="open"
+          onStatus={() => undefined}
+          names={{}}
+          vehicles={vehicles}
+          online={onlineFlag}
+        />,
+      );
+      const actionTags =
+        conflictMarkup.match(
+          /<[^>]*data-testid="fleet\.conflicts\.action"[^>]*>/g,
+        ) ?? [];
+      expect(actionTags.length).toBeGreaterThan(0);
+      for (const tag of actionTags.filter((candidate) =>
+        candidate.startsWith("<button"),
+      )) {
+        expect(isDisabled(tag)).toBe(true);
+      }
+      const calendarMarkup = html(
+        <CalendarBoard
+          fleet={owner}
+          state={offlineStale(dayCalendar)}
+          controls={defaultControls("2026-09-30")}
+          onControls={() => undefined}
+          now={NOW}
+          online={onlineFlag}
+          today="2026-09-30"
+        />,
+      );
+      expect(calendarMarkup).not.toContain('href="/maintenance/new"');
     }
   });
 });

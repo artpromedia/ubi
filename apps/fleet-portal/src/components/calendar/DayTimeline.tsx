@@ -80,6 +80,7 @@ export const DayTimeline = ({
   showDocuments,
 }: DayTimelineProps) => {
   const scroller = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [focus, setFocus] = useState<GridFocus>({ row: 0, block: null });
   const [open, setOpen] = useState<{
@@ -189,6 +190,7 @@ export const DayTimeline = ({
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
           <div
+            ref={gridRef}
             role="grid"
             aria-label={`Fleet calendar, ${rowsKind === "drivers" ? "driver" : "vehicle"} rows, ${ruler.date}`}
             aria-rowcount={rows.length}
@@ -287,6 +289,7 @@ export const DayTimeline = ({
                                 onClick={() => {
                                   setFocus({ row: index, block: blockIndex });
                                   setOpen({ row, block });
+                                  gridRef.current?.focus();
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter") {

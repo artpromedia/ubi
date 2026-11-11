@@ -19,7 +19,7 @@ import {
   type CalendarControls,
 } from "@/lib/calendar-controls";
 import { fleetApi, fleetKeys } from "@/lib/fleet-api";
-import { useNow, useOnlineStatus } from "@/lib/hooks";
+import { useDebouncedValue, useNow, useOnlineStatus } from "@/lib/hooks";
 
 import { CalendarBoard } from "./CalendarBoard";
 
@@ -44,13 +44,15 @@ export const CalendarScreen = () => {
     });
   }, []);
 
-  const query = calendarQuery(controls, fleet.zone);
+  const debouncedQ = useDebouncedValue(controls.q, 250);
+  const query = calendarQuery({ ...controls, q: debouncedQ }, fleet.zone);
   const pages = useInfiniteQuery({
     queryKey: fleetKeys.calendar(fleet.fleetId, query),
     queryFn: ({ pageParam, signal }) =>
       fleetApi.calendar(fleet.fleetId, { ...query, cursor: pageParam }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    placeholderData: (previousData) => previousData,
     refetchInterval: 60_000,
   });
   const vehicles = useQuery({

@@ -248,6 +248,12 @@ export function FleetReportIssueScreen() {
             {"Your " +
               vehicles[0].fleetName +
               " vehicle · " +
+              vehicles[0].vehicle.plate +
+              " (" +
+              vehicles[0].vehicle.make +
+              " " +
+              vehicles[0].vehicle.model +
+              ") · " +
               shiftText(vehicles[0].shift)}
           </Text>
         ) : (
@@ -256,7 +262,17 @@ export function FleetReportIssueScreen() {
               <Chip
                 key={a.vehicleId}
                 testID={dynamicTestId(FLEET_TID.reportVehicle, a.vehicleId)}
-                label={a.fleetName + " · " + shiftText(a.shift)}
+                label={
+                  a.vehicle.plate +
+                  " · " +
+                  a.vehicle.make +
+                  " " +
+                  a.vehicle.model +
+                  " · " +
+                  a.fleetName +
+                  " · " +
+                  shiftText(a.shift)
+                }
                 selected={a.vehicleId === vehicleId}
                 onPress={() => setPicked(a.vehicleId)}
               />

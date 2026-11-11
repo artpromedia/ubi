@@ -276,7 +276,7 @@ export function createFleetApi(raw: FleetApiClient = apiClient) {
       post<OffRoadView>(`${base(fleetId)}/off-road`, body, key),
     conflicts: (
       fleetId: string,
-      status: ConflictStatus | undefined,
+      status: ConflictStatus | "open,resolving" | undefined,
       signal?: AbortSignal,
     ) =>
       get<ConflictList>(

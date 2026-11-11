@@ -14,6 +14,7 @@ import { ThemeProvider } from "@ubi/mobile-ui";
 import { IdempotencyKeySchema, dynamicTestId } from "@ubi/contracts";
 import { installWire, type WireCall } from "../../../../jest/wire";
 import {
+  availability,
   emptySchedule,
   preview,
   saved,
@@ -59,10 +60,13 @@ const harness = () => {
 const serve = (
   handlers: Partial<Record<string, (call: WireCall) => unknown>> = {},
   sched = emptySchedule(),
+  serverAvail?: ReturnType<typeof availability>,
 ) =>
   installWire((call) => {
     if (call.method === "GET" && call.path === HORIZON_READ)
       return { status: 200, json: sched };
+    if (call.method === "GET" && call.path === PUT)
+      return serverAvail ? { status: 200, json: serverAvail } : undefined;
     const handler = handlers[call.path];
     return handler
       ? (handler(call) as { status: number; json?: unknown } | "offline")
@@ -255,13 +259,47 @@ describe("FleetAvailabilityScreen (C4)", () => {
     expect(
       await screen.findByText("You saved availability before"),
     ).toBeTruthy();
-    // The editor read the whole range it can have saved into, not one week.
+    // The editor read the whole range it can have saved into, not one week, plus GET /v1/drivers/me/availability.
     expect(
       wire.calls.filter((c) => c.method === "GET").map((c) => c.path),
-    ).toEqual([HORIZON_READ]);
+    ).toEqual([HORIZON_READ, PUT]);
     fireEvent.press(screen.getByTestId(OCT_1));
     expect(screen.getByTestId(FLEET_TID.timeOffCheck)).toBeDisabled();
     expect(wire.writes()).toEqual([]);
+    view.unmount();
+  });
+
+  it("carries forward server-saved availability from GET /v1/drivers/me/availability without requiring the replace toggle", async () => {
+    const existingWindow = {
+      windowId: "dav_1",
+      kind: "time_off" as const,
+      startsAt: "2026-10-05T07:00:00.000Z",
+      endsAt: "2026-10-05T15:00:00.000Z",
+      rrule: null,
+    };
+    const wire = serve(
+      { [PREVIEW]: () => ({ status: 200, json: preview({ affects: [] }) }) },
+      schedule(),
+      availability({ setVersion: 1, windows: [existingWindow] }),
+    );
+    act(() => setMotionForDev("parked_confirmed"));
+    const view = harness();
+    fireEvent.press(await screen.findByTestId(OCT_1));
+    expect(screen.queryByText("You saved availability before")).toBeNull();
+    expect(screen.getByTestId(FLEET_TID.timeOffCheck)).toBeEnabled();
+    fireEvent.press(screen.getByTestId(FLEET_TID.timeOffCheck));
+    await screen.findByTestId(FLEET_TID.timeOffPreview);
+    const [call] = wire.writes();
+    expect(call.body).toEqual({
+      windows: [
+        {
+          kind: "time_off",
+          startsAt: existingWindow.startsAt,
+          endsAt: existingWindow.endsAt,
+        },
+        WINDOW,
+      ],
+    });
     view.unmount();
   });
 

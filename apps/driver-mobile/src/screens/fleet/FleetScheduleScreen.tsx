@@ -158,6 +158,19 @@ export function FleetScheduleScreen() {
         asOf={schedule.asOf}
         zone={zone}
       />
+      {offersQ.isError ? (
+        <Card tone="warn" style={{ gap: 6 }}>
+          <Text variant="bodySmStrong">
+            Proposals couldn’t be loaded — retry
+          </Text>
+          <Button
+            label="Retry proposals"
+            kind="secondary"
+            size="md"
+            onPress={() => void offersQ.refetch()}
+          />
+        </Card>
+      ) : null}
       {waiting > 0 ? (
         gate.motion === "moving" ? (
           <MotionLock

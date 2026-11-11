@@ -21,7 +21,12 @@ import {
   Pill,
   ReadGate,
 } from "@/components/states/states";
-import { commandErrorText, toReadState, type ReadState } from "@/lib/access";
+import {
+  commandErrorText,
+  isWriteReachable,
+  toReadState,
+  type ReadState,
+} from "@/lib/access";
 import {
   checkCopy,
   consentTimeline,
@@ -772,6 +777,7 @@ export const AssignmentsView = ({
   onChanged,
   onRetry,
 }: AssignmentsViewProps) => {
+  const reachable = isWriteReachable(online, state);
   const canPropose =
     can(fleet.myRole, "propose_assignment") && fleet.status === "active";
   const canTerminate =
@@ -811,7 +817,7 @@ export const AssignmentsView = ({
                   fleet={fleet}
                   assignments={data}
                   vehicles={vehicles}
-                  online={online}
+                  online={reachable}
                   today={today}
                   initialVehicleId={initialVehicleId}
                   onSent={onChanged}
@@ -830,46 +836,80 @@ export const AssignmentsView = ({
                   <p className="text-xs text-zinc-500">
                     No proposal is waiting for a driver.
                   </p>
-                ) : null}
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {[...live, ...settled.slice(0, 10)].map((proposal) => (
-                    <div
-                      key={proposal.proposalId}
-                      className="space-y-2 rounded-xl border border-[#222] bg-[#1A1A1A] p-3 text-xs"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-semibold text-zinc-100">
-                          {proposal.driverDisplayName} ·{" "}
-                          {plates.get(proposal.vehicleId) ?? "Vehicle"} ·{" "}
-                          {shiftName(proposal.shift)}
+                ) : (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {live.map((proposal) => (
+                      <div
+                        key={proposal.proposalId}
+                        className="space-y-2 rounded-xl border border-[#222] bg-[#1A1A1A] p-3 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-zinc-100">
+                            {proposal.driverDisplayName} ·{" "}
+                            {plates.get(proposal.vehicleId) ?? "Vehicle"} ·{" "}
+                            {shiftName(proposal.shift)}
+                          </p>
+                          <Pill tone={proposalTone(proposal)}>
+                            {PROPOSAL_STATUS_LABELS[proposal.status]}
+                          </Pill>
+                        </div>
+                        <p className="text-zinc-400">
+                          Terms v{proposal.termsVersion} ·{" "}
+                          {remittanceText(proposal.terms)} ·{" "}
+                          {validityText(proposal.validFrom, proposal.validTo)} ·
+                          proposed by {proposal.proposedByRole}
                         </p>
-                        <Pill tone={proposalTone(proposal)}>
-                          {PROPOSAL_STATUS_LABELS[proposal.status]}
-                        </Pill>
+                        <ConsentStatus proposal={proposal} zone={fleet.zone} />
+                        {canPropose ? (
+                          <WithdrawButton
+                            fleet={fleet}
+                            proposal={proposal}
+                            online={reachable}
+                            onChanged={onChanged}
+                          />
+                        ) : null}
                       </div>
-                      <p className="text-zinc-400">
-                        Terms v{proposal.termsVersion} ·{" "}
-                        {remittanceText(proposal.terms)} ·{" "}
-                        {validityText(proposal.validFrom, proposal.validTo)} ·
-                        proposed by {proposal.proposedByRole}
-                      </p>
-                      <ConsentStatus proposal={proposal} zone={fleet.zone} />
-                      {canPropose && live.includes(proposal) ? (
-                        <WithdrawButton
-                          fleet={fleet}
-                          proposal={proposal}
-                          online={online}
-                          onChanged={onChanged}
-                        />
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
                 <p className="text-[11px] text-zinc-500">
                   The fleet never sees why a driver declined, and declining has
                   no effect on the driver&apos;s standing.
                 </p>
               </section>
+              {settled.length > 0 ? (
+                <section className="space-y-2">
+                  <h2 className="text-sm font-semibold text-zinc-100">
+                    Settled proposals · {settled.length}
+                  </h2>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {settled.slice(0, 10).map((proposal) => (
+                      <div
+                        key={proposal.proposalId}
+                        className="space-y-2 rounded-xl border border-[#222] bg-[#1A1A1A] p-3 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-zinc-100">
+                            {proposal.driverDisplayName} ·{" "}
+                            {plates.get(proposal.vehicleId) ?? "Vehicle"} ·{" "}
+                            {shiftName(proposal.shift)}
+                          </p>
+                          <Pill tone={proposalTone(proposal)}>
+                            {PROPOSAL_STATUS_LABELS[proposal.status]}
+                          </Pill>
+                        </div>
+                        <p className="text-zinc-400">
+                          Terms v{proposal.termsVersion} ·{" "}
+                          {remittanceText(proposal.terms)} ·{" "}
+                          {validityText(proposal.validFrom, proposal.validTo)} ·
+                          proposed by {proposal.proposedByRole}
+                        </p>
+                        <ConsentStatus proposal={proposal} zone={fleet.zone} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               <section className="space-y-2">
                 <h2 className="text-sm font-semibold text-zinc-100">
                   Signed arrangements
@@ -939,7 +979,7 @@ export const AssignmentsView = ({
                                 <NoticeButton
                                   fleet={fleet}
                                   arrangement={arrangement}
-                                  online={online}
+                                  online={reachable}
                                   onChanged={onChanged}
                                 />
                               ) : null}

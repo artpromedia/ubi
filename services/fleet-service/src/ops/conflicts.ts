@@ -229,6 +229,7 @@ export function fleetConflictView(row: FleetConflict, role: FleetStaffRole) {
       | "medium"
       | "blocked"
       | "status",
+    maintenanceBlockId: driverOwned ? null : row.maintenanceBlockId,
     subjects: [
       {
         vehicleId: driverOwned ? null : row.vehicleId,
@@ -254,12 +255,18 @@ export function fleetConflictView(row: FleetConflict, role: FleetStaffRole) {
 export async function listFleetConflicts(
   db: FleetTx,
   access: FleetAccess,
-  status: ConflictStatus | undefined,
+  status: ConflictStatus | readonly ConflictStatus[] | undefined,
 ) {
+  const statuses =
+    status === undefined
+      ? undefined
+      : typeof status === "string"
+        ? [status]
+        : [...status];
   const rows = await db.fleetConflict.findMany({
     where: {
       fleetId: access.fleet.id,
-      ...(status === undefined ? {} : { status }),
+      ...(statuses === undefined ? {} : { status: { in: statuses } }),
     },
     orderBy: [{ deadlineAt: "asc" }, { createdAt: "asc" }],
     take: 500,

@@ -39,6 +39,8 @@ export type ActionPlan =
       readonly label: string;
       readonly kind: "maintenance";
       readonly href: string;
+      readonly maintenanceBlockId: string | null;
+      readonly vehicleId: string | null;
     }
   | {
       readonly action: FleetConflictAction;
@@ -85,22 +87,36 @@ export function planAction(
           };
     case "move_block":
     case "cancel_block":
-    case "complete_block":
-      // The maintenance block is managed from its vehicle's maintenance list
-      // (the editor re-previews a move with the server before it applies).
-      return subject?.vehicleId
-        ? {
-            action,
-            label,
-            kind: "maintenance",
-            href: `/vehicles/${encodeURIComponent(subject.vehicleId)}#maintenance`,
-          }
-        : {
-            action,
-            label,
-            kind: "unavailable",
-            reason: "No vehicle is linked to this conflict.",
-          };
+    case "complete_block": {
+      const blockId = conflict.maintenanceBlockId ?? null;
+      const vehicleId = subject?.vehicleId ?? null;
+      if (blockId === null && vehicleId === null) {
+        return {
+          action,
+          label,
+          kind: "unavailable",
+          reason: "No vehicle is linked to this conflict.",
+        };
+      }
+      const href =
+        action === "move_block" && blockId !== null
+          ? `/maintenance/new?blockId=${encodeURIComponent(blockId)}${
+              vehicleId !== null
+                ? `&vehicleId=${encodeURIComponent(vehicleId)}`
+                : ""
+            }`
+          : vehicleId !== null
+            ? `/vehicles/${encodeURIComponent(vehicleId)}#maintenance`
+            : "/vehicles";
+      return {
+        action,
+        label,
+        kind: "maintenance",
+        href,
+        maintenanceBlockId: blockId,
+        vehicleId,
+      };
+    }
     default:
       return {
         action,

@@ -58,7 +58,7 @@ import { AgendaTable } from "./AgendaTable";
 import { DayTimeline } from "./DayTimeline";
 import { WeekGrid } from "./WeekGrid";
 
-import type { ReadState } from "@/lib/access";
+import { isWriteReachable, type ReadState } from "@/lib/access";
 
 const LAYER_LABELS: Readonly<Record<CalendarLayer, string>> = {
   assignments: "Assignments",
@@ -145,6 +145,7 @@ export const CalendarBoard = ({
 }: CalendarBoardProps) => {
   const search = useRef<HTMLInputElement>(null);
   const zone = fleet.zone;
+  const reachable = isWriteReachable(online, state);
   const canMaintain =
     can(fleet.myRole, "manage_maintenance") && fleet.status === "active";
 
@@ -292,7 +293,7 @@ export const CalendarBoard = ({
           <Clock className="h-3.5 w-3.5" aria-hidden />
           {zoneLabel(zone, now)}
         </span>
-        {canMaintain && online ? (
+        {canMaintain && reachable ? (
           <Link
             href="/maintenance/new"
             className="ml-auto flex items-center gap-1 rounded-lg bg-[#1DB954] px-3 py-1.5 text-xs font-semibold text-black"
@@ -489,7 +490,7 @@ export const CalendarBoard = ({
                   {calendar.nextCursor !== null && onLoadMore !== undefined ? (
                     <button
                       type="button"
-                      disabled={loadingMore || !online}
+                      disabled={loadingMore || !reachable}
                       onClick={onLoadMore}
                       className="ml-2 rounded border border-zinc-700 px-2 py-0.5 text-zinc-300 disabled:opacity-50"
                     >

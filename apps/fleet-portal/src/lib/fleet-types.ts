@@ -331,6 +331,7 @@ export type ConflictSeverity =
 export type ConflictResolverRole = "fleet" | "driver" | "rider" | "ubi";
 
 export type ConflictStatus = "open" | "resolving" | "resolved" | "lapsed";
+export type ConflictStatusFilter = ConflictStatus | "open,resolving";
 
 export type FleetConflictAction =
   | "move_block"
@@ -345,6 +346,7 @@ export interface ConflictView {
   readonly conflictId: string;
   readonly type: FleetConflictType;
   readonly severity: ConflictSeverity;
+  readonly maintenanceBlockId: string | null;
   readonly subjects: readonly {
     readonly vehicleId: string | null;
     readonly driverId: string | null;

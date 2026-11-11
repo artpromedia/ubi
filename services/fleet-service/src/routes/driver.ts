@@ -18,6 +18,7 @@ import {
   AvailabilitySavedViewSchema,
   DeclineOfferViewSchema,
   DriverArrangementListSchema,
+  DriverAvailabilityViewSchema,
   DriverConflictViewSchema,
   DriverOfferListSchema,
   DriverScheduleSchema,
@@ -36,7 +37,11 @@ import {
   signOffer,
   terminateByDriver,
 } from "../ops/assignments";
-import { previewAvailability, putAvailability } from "../ops/availability";
+import {
+  getAvailability,
+  previewAvailability,
+  putAvailability,
+} from "../ops/availability";
 import { driverConflict, driverSchedule } from "../ops/driver";
 import { reportVehicleIssue } from "../ops/vehicle-issues";
 import {
@@ -176,6 +181,17 @@ export function createDriverFleetRoutes(deps: FleetDeps): Hono {
         await driverSchedule(deps, driverOf(c), cityOf(c), query),
       );
     }),
+  );
+
+  routes.get(
+    "/availability",
+    route(async (c) =>
+      respond(
+        c,
+        DriverAvailabilityViewSchema,
+        await getAvailability(deps, driverOf(c), cityOf(c)),
+      ),
+    ),
   );
 
   // A read: what the change WOULD do. No state changes, so no key.

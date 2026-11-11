@@ -22,7 +22,11 @@ import {
   type Harness,
 } from "./helpers";
 import { expireProposals } from "../src/ops/assignments";
-import { ProposalViewSchema, SignOfferViewSchema } from "../src/contract";
+import {
+  DriverArrangementListSchema,
+  ProposalViewSchema,
+  SignOfferViewSchema,
+} from "../src/contract";
 
 let h: Harness;
 let world: FleetWorld;
@@ -773,5 +777,24 @@ describe("termination (2-week notice)", () => {
     expect(notice.body.noticeEndsOn).toBe("2026-10-12");
     expect(notice.body.bookingsAfterNotice).toHaveLength(1);
     expect(notice.body.conflictIds).toHaveLength(1);
+
+    const driverFleet = DriverArrangementListSchema.parse(
+      (
+        await api(h.app, {
+          path: "/v1/drivers/me/fleet",
+          token: await tokenFor(driverId, world.cityId, { kind: "driver" }),
+          city: world.cityId,
+        })
+      ).body,
+    );
+    expect(driverFleet.arrangements).toHaveLength(1);
+    expect(driverFleet.arrangements[0]?.vehicle).toMatchObject({
+      vehicleId,
+      make: "Toyota",
+      model: "Corolla",
+    });
+    expect(driverFleet.arrangements[0]?.vehicle.plate.length).toBeGreaterThan(
+      0,
+    );
   });
 });

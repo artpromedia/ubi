@@ -511,7 +511,28 @@ export function createFleetRoutes(deps: FleetDeps): Hono {
     route(async (c) => {
       const granted = await access(c, "view_calendar");
       const query = z
-        .object({ status: z.enum(CONFLICT_STATUSES).optional() })
+        .object({
+          status: z
+            .string()
+            .optional()
+            .transform((val, ctx) => {
+              if (val === undefined || val === "") {
+                return undefined;
+              }
+              const parts = val.split(",").map((part) => part.trim());
+              const parsed = z
+                .array(z.enum(CONFLICT_STATUSES))
+                .safeParse(parts);
+              if (!parsed.success) {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message: "Invalid conflict status filter",
+                });
+                return z.NEVER;
+              }
+              return parsed.data;
+            }),
+        })
         .strict()
         .parse(c.req.query());
       return respond(

@@ -18,7 +18,12 @@ import {
   Pill,
   ReadGate,
 } from "@/components/states/states";
-import { commandErrorText, toReadState, type ReadState } from "@/lib/access";
+import {
+  commandErrorText,
+  isWriteReachable,
+  toReadState,
+  type ReadState,
+} from "@/lib/access";
 import { remittanceText } from "@/lib/assignment-model";
 import { fleetApi, fleetKeys } from "@/lib/fleet-api";
 import { useCommand, useNow, useOnlineStatus } from "@/lib/hooks";
@@ -246,6 +251,8 @@ export const VehicleDetailView = ({
   onChanged,
   onRetry,
 }: VehicleDetailViewProps) => {
+  const reachable = isWriteReachable(online, vehicle);
+  const maintenanceReachable = isWriteReachable(online, vehicle, maintenance);
   const canManage =
     can(fleet.myRole, "manage_maintenance") && fleet.status === "active";
   return (
@@ -287,7 +294,7 @@ export const VehicleDetailView = ({
                   </Pill>
                 </Link>
               ) : null}
-              {canManage && online ? (
+              {canManage && reachable ? (
                 <Link
                   href={`/maintenance/new?vehicleId=${encodeURIComponent(car.vehicleId)}`}
                   className="ml-auto flex items-center gap-1 rounded-lg bg-[#1DB954] px-3 py-1.5 text-xs font-semibold text-black"
@@ -298,7 +305,7 @@ export const VehicleDetailView = ({
               ) : null}
               {can(fleet.myRole, "report_off_road") &&
               fleet.status === "active" &&
-              online ? (
+              reachable ? (
                 <Link
                   href={`/maintenance/new?mode=off-road&vehicleId=${encodeURIComponent(car.vehicleId)}`}
                   className="rounded-lg border border-red-500/60 px-3 py-1.5 text-xs font-semibold text-red-200"
@@ -466,7 +473,7 @@ export const VehicleDetailView = ({
                                     line={line}
                                     canManage={canManage}
                                     now={now}
-                                    online={online}
+                                    online={maintenanceReachable}
                                     onChanged={onChanged}
                                   />
                                 ))}
@@ -490,7 +497,7 @@ export const VehicleDetailView = ({
                                     line={line}
                                     canManage={false}
                                     now={now}
-                                    online={online}
+                                    online={maintenanceReachable}
                                   />
                                 ))}
                               </ul>
@@ -600,8 +607,9 @@ export const VehicleDetailScreen = ({
     queryFn: ({ signal }) => fleetApi.assignments(fleet.fleetId, signal),
   });
   const conflicts = useQuery({
-    queryKey: fleetKeys.conflicts(fleet.fleetId, "open"),
-    queryFn: ({ signal }) => fleetApi.conflicts(fleet.fleetId, "open", signal),
+    queryKey: fleetKeys.conflicts(fleet.fleetId, "open,resolving"),
+    queryFn: ({ signal }) =>
+      fleetApi.conflicts(fleet.fleetId, "open,resolving", signal),
   });
   if (vehicleId === "") {
     return (

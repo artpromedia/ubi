@@ -301,6 +301,7 @@ export function FleetConflictScreen() {
             <OptionCard
               key={option.id}
               option={option}
+              bookingId={conflict.bookingId}
               booking={booking}
               zone={zone}
               parked={gate.motion === "parked_confirmed"}
@@ -341,6 +342,7 @@ export function FleetConflictScreen() {
 
 function OptionCard({
   option,
+  bookingId,
   booking,
   zone,
   parked,
@@ -354,6 +356,7 @@ function OptionCard({
   onWithdrawConfirm,
 }: {
   option: FleetConflictOption;
+  bookingId: string | null;
   booking: MpAdvanceBooking | undefined;
   zone: string | null;
   parked: boolean;
@@ -367,15 +370,22 @@ function OptionCard({
   onWithdrawConfirm: () => void;
 }) {
   const swap = booking?.vehicleSwap ?? null;
+  const requiresBooking =
+    option.id === "withdraw" || option.id === "keep_on_swapped_vehicle";
+  const missingBooking = requiresBooking && bookingId === null;
+  const enabled = option.enabled && !missingBooking;
+  const disabledReason = missingBooking
+    ? "No booking is linked to this conflict."
+    : (option.reason ?? "not for this booking.");
   return (
     <Card
       testID={dynamicTestId(FLEET_TID.impactOption, option.id)}
-      style={{ gap: 6, opacity: option.enabled ? 1 : 0.7 }}
+      style={{ gap: 6, opacity: enabled ? 1 : 0.7 }}
     >
       <Text variant="bodyStrong">{OPTION_TITLE[option.id]}</Text>
-      {!option.enabled ? (
+      {!enabled ? (
         <Text variant="bodySm" tone="text2">
-          {"Not available: " + (option.reason ?? "not for this booking.")}
+          {"Not available: " + disabledReason}
         </Text>
       ) : option.id === "keep_on_swapped_vehicle" ? (
         swap && SWAP_OPEN.has(swap.state) ? (

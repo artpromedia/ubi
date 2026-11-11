@@ -21,7 +21,12 @@ import {
   Pill,
   ReadGate,
 } from "@/components/states/states";
-import { commandErrorText, toReadState, type ReadState } from "@/lib/access";
+import {
+  commandErrorText,
+  isWriteReachable,
+  toReadState,
+  type ReadState,
+} from "@/lib/access";
 import { fleetApi, fleetKeys } from "@/lib/fleet-api";
 import {
   useCommand,
@@ -200,9 +205,10 @@ export const MaintenanceEditorView = ({
   onBack,
   onChanged,
 }: MaintenanceEditorViewProps) => {
+  const reachable = isWriteReachable(online, vehicles);
   const canManage =
     can(fleet.myRole, "manage_maintenance") && fleet.status === "active";
-  const control = confirmControl(editor, online, canManage);
+  const control = confirmControl(editor, reachable, canManage);
   const zone = fleet.zone;
   return (
     <div className="space-y-4">
@@ -345,7 +351,7 @@ export const MaintenanceEditorView = ({
                     <button
                       type="submit"
                       disabled={
-                        !online ||
+                        !reachable ||
                         editor.phase === "checking" ||
                         editor.phase === "saving"
                       }
@@ -492,7 +498,7 @@ export const MaintenanceEditorView = ({
                                     <button
                                       type="button"
                                       disabled={
-                                        !online || editor.phase === "saving"
+                                        !reachable || editor.phase === "saving"
                                       }
                                       onClick={() =>
                                         onMoveAndConfirm(suggestion.window)
@@ -506,14 +512,14 @@ export const MaintenanceEditorView = ({
                                     <SwapChoice
                                       fleet={fleet}
                                       suggestion={suggestion}
-                                      online={online}
+                                      online={reachable}
                                     />
                                   ) : null}
                                   {suggestion.kind === "ask_driver" ? (
                                     <button
                                       type="button"
                                       disabled={
-                                        !online || editor.phase === "saving"
+                                        !reachable || editor.phase === "saving"
                                       }
                                       onClick={onHold}
                                       className="mt-2 rounded-md border border-zinc-600 px-2 py-0.5 text-[11px] text-zinc-100 disabled:opacity-50"
@@ -620,7 +626,7 @@ export const MaintenanceEditorView = ({
                               fleetId={fleet.fleetId}
                               conflict={conflict}
                               zone={zone}
-                              online={online}
+                              online={reachable}
                               vehicles={list.vehicles}
                               onDone={onChanged}
                             />
@@ -630,7 +636,7 @@ export const MaintenanceEditorView = ({
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={!online}
+                          disabled={!reachable}
                           onClick={onRecheck}
                           className="rounded-md bg-[#1DB954] px-3 py-1.5 text-xs font-semibold text-black disabled:opacity-50"
                         >
@@ -638,7 +644,7 @@ export const MaintenanceEditorView = ({
                         </button>
                         <button
                           type="button"
-                          disabled={!online}
+                          disabled={!reachable}
                           onClick={onCancelBlock}
                           className="rounded-md border border-zinc-600 px-3 py-1.5 text-xs text-zinc-200 disabled:opacity-50"
                         >
@@ -751,8 +757,9 @@ export const MaintenanceEditorScreen = () => {
   const activeBlock = existingBlock ?? heldBlock;
   const heldIds = editor.phase === "held" ? editor.details.conflictIds : [];
   const conflicts = useQuery({
-    queryKey: fleetKeys.conflicts(fleet.fleetId, "open"),
-    queryFn: ({ signal }) => fleetApi.conflicts(fleet.fleetId, "open", signal),
+    queryKey: fleetKeys.conflicts(fleet.fleetId, "open,resolving"),
+    queryFn: ({ signal }) =>
+      fleetApi.conflicts(fleet.fleetId, "open,resolving", signal),
     enabled: heldIds.length > 0,
   });
   const heldConflicts = (conflicts.data?.conflicts ?? []).filter((conflict) =>

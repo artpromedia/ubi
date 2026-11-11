@@ -220,3 +220,19 @@ export function commandErrorText(
   }
   return access.message;
 }
+
+/**
+ * True only when both `navigator.onLine` is true AND none of the screen's
+ * backing reads are showing stale/unreachable gateway data (P2-07).
+ */
+export function isWriteReachable(
+  online: boolean,
+  ...states: readonly ReadState<unknown>[]
+): boolean {
+  if (!online) {
+    return false;
+  }
+  return states.every(
+    (state) => state.kind !== "ready" || state.stale === null,
+  );
+}

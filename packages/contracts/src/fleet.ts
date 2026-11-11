@@ -276,13 +276,6 @@ export const FleetPolicySchema = z
   .object({
     /** A sent proposal lapses unsigned after this long (handoff: 48 h). */
     proposalTtlHours: z.number().int().positive(),
-    /**
-     * Decisions Q4: a booking's resolution deadline is the earlier of its
-     * reconfirmation time and activation minus this lead. ride-service
-     * computes the deadline (it owns both times) and returns it on every
-     * at-risk block; fleet-service only carries it onto conflicts.
-     */
-    resolutionLeadMinutes: z.number().int().positive(),
     /** Decisions Q6: warnings at these days before a document expires. */
     documentWarningDays: z.array(z.number().int().positive()).min(1),
     /** Decisions A5: utilisation is shown only after this many days of data. */
@@ -309,7 +302,6 @@ export type FleetPolicy = z.infer<typeof FleetPolicySchema>;
  */
 export const FLEET_POLICY_DEFAULTS: FleetPolicy = {
   proposalTtlHours: 48,
-  resolutionLeadMinutes: 30,
   documentWarningDays: [30, 14, 7, 1],
   utilisationMinDays: 7,
   terminationNoticeDays: 14,
@@ -1187,6 +1179,7 @@ export const ConflictViewSchema = z.object({
   conflictId: z.string(),
   type: z.enum(FLEET_VISIBLE_CONFLICT_TYPES),
   severity: z.enum(CONFLICT_SEVERITIES),
+  maintenanceBlockId: z.string().nullable(),
   subjects: z.array(
     z.object({
       vehicleId: z.string().nullable(),
@@ -1416,11 +1409,21 @@ export const DeclineOfferViewSchema = z.object({
   status: z.literal("declined"),
 });
 
+export const DriverArrangementVehicleSummarySchema = z
+  .object({
+    vehicleId: z.string(),
+    plate: z.string(),
+    make: z.string(),
+    model: z.string(),
+  })
+  .strict();
+
 export const DriverArrangementListSchema = z.object({
   arrangements: z.array(
     ArrangementViewSchema.extend({
       fleetName: z.string(),
       noticeEndsOn: FleetLocalDateSchema.nullable(),
+      vehicle: DriverArrangementVehicleSummarySchema,
     }),
   ),
   /** This week's split lives in payment-service's ledger. */
@@ -1497,18 +1500,26 @@ export const AvailabilityPreviewViewSchema = z.object({
   ),
 });
 
+export const AvailabilitySavedWindowSchema = z.object({
+  windowId: z.string(),
+  kind: z.enum(AVAILABILITY_KINDS),
+  startsAt: Timestamp,
+  endsAt: Timestamp,
+  rrule: z.string().nullable(),
+});
+
+export const DriverAvailabilityViewSchema = z
+  .object({
+    zone: z.string(),
+    setVersion: z.number().int().nonnegative(),
+    windows: z.array(AvailabilitySavedWindowSchema),
+  })
+  .strict();
+
 export const AvailabilitySavedViewSchema = z.object({
   status: z.enum(["saved", "saved_with_withdrawals"]),
   setVersion: z.number().int().positive(),
-  windows: z.array(
-    z.object({
-      windowId: z.string(),
-      kind: z.enum(AVAILABILITY_KINDS),
-      startsAt: Timestamp,
-      endsAt: Timestamp,
-      rrule: z.string().nullable(),
-    }),
-  ),
+  windows: z.array(AvailabilitySavedWindowSchema),
   withdrawals: z.array(
     z.object({
       bookingId: z.string(),
@@ -1553,6 +1564,115 @@ export const DriverTerminationViewSchema = z.object({
     z.object({ bookingId: z.string(), startsAt: Timestamp }),
   ),
 });
+
+/**
+ * C5 (ReportVehicleIssue, decisions Q5 + Q8) — `POST /v1/drivers/me/vehicle-issues`.
+ */
+export const VEHICLE_ISSUE_SEVERITIES = [
+  "cannot_drive",
+  "service_soon",
+] as const;
+export const VehicleIssueSeveritySchema = z.enum(VEHICLE_ISSUE_SEVERITIES);
+export type VehicleIssueSeverity = (typeof VEHICLE_ISSUE_SEVERITIES)[number];
+
+export const VEHICLE_ISSUE_REMITTANCE_EFFECTS = [
+  /**
+   * Decisions Q8: a breakdown is NOT pro-rated. Lost hours count as unplanned
+   * off-road hours under the signed terms' shortfall rule.
+   */
+  "signed_terms_shortfall_rule",
+  /** `service_soon` leaves the vehicle on the road until the fleet books a service. */
+  "none",
+] as const;
+
+export const ReportVehicleIssueSchema = z
+  .object({
+    vehicleId: z.string().min(1),
+    severity: z.enum(VEHICLE_ISSUE_SEVERITIES),
+    note: z.string().trim().max(280).optional(),
+  })
+  .strict();
+export type ReportVehicleIssue = z.infer<typeof ReportVehicleIssueSchema>;
+export type ReportVehicleIssueInput = ReportVehicleIssue;
+
+export const VehicleIssueViewSchema = z
+  .object({
+    issueId: z.string().min(1),
+    severity: z.enum(VEHICLE_ISSUE_SEVERITIES),
+    vehicleId: z.string().min(1),
+    reportedAt: Timestamp,
+    fleetAlerted: z.literal(true),
+    block: z
+      .object({
+        blockId: z.string().min(1),
+        kind: z.literal("unplanned_off_road"),
+        status: z.enum(["active", "completed"]),
+        startsAt: Timestamp,
+        endsAt: Timestamp.nullable(),
+      })
+      .strict()
+      .nullable(),
+    decisions: z.array(
+      z
+        .object({
+          conflictId: z.string().min(1),
+          deadlineAt: Timestamp.nullable(),
+        })
+        .strict(),
+    ),
+    remittanceEffect: z.enum(VEHICLE_ISSUE_REMITTANCE_EFFECTS),
+  })
+  .strict();
+export type VehicleIssueView = z.infer<typeof VehicleIssueViewSchema>;
+
+export type FleetView = z.infer<typeof FleetViewSchema>;
+export type FleetList = z.infer<typeof FleetListSchema>;
+export type FleetStaffList = z.infer<typeof FleetStaffListSchema>;
+export type DocumentStatus = z.infer<typeof DocumentStatusSchema>;
+export type UbiStatus = z.infer<typeof UbiStatusSchema>;
+export type MoneyUnavailable = z.infer<typeof MoneyUnavailableSchema>;
+export type FleetVehicleView = z.infer<typeof FleetVehicleViewSchema>;
+export type FleetVehicleList = z.infer<typeof FleetVehicleListSchema>;
+export type ArrangementView = z.infer<typeof ArrangementViewSchema>;
+export type ProposalView = z.infer<typeof ProposalViewSchema>;
+export type FleetAssignments = z.infer<typeof FleetAssignmentsSchema>;
+export type MaintenanceBlockView = z.infer<typeof MaintenanceBlockViewSchema>;
+export type MaintenanceList = z.infer<typeof MaintenanceListSchema>;
+export type MaintenanceSuggestion = z.infer<typeof MaintenanceSuggestionSchema>;
+export type MaintenancePreviewView = z.infer<
+  typeof MaintenancePreviewViewSchema
+>;
+export type NeedsResolutionDetails = z.infer<
+  typeof NeedsResolutionDetailsSchema
+>;
+export type OffRoadView = z.infer<typeof OffRoadViewSchema>;
+export type ConflictView = z.infer<typeof ConflictViewSchema>;
+export type ConflictList = z.infer<typeof ConflictListSchema>;
+export type CalendarRow = z.infer<typeof CalendarRowSchema>;
+export type FleetCalendar = z.infer<typeof FleetCalendarSchema>;
+export type Utilisation = z.infer<typeof UtilisationSchema>;
+export type FleetOverview = z.infer<typeof FleetOverviewSchema>;
+export type VehicleSwapRequestView = z.infer<
+  typeof VehicleSwapRequestViewSchema
+>;
+export type TerminationView = z.infer<typeof TerminationViewSchema>;
+export type ReminderView = z.infer<typeof ReminderViewSchema>;
+export type DriverOfferView = z.infer<typeof DriverOfferViewSchema>;
+export type DriverOfferList = z.infer<typeof DriverOfferListSchema>;
+export type SignatureEvidence = z.infer<typeof SignatureEvidenceSchema>;
+export type SignOfferView = z.infer<typeof SignOfferViewSchema>;
+export type DeclineOfferView = z.infer<typeof DeclineOfferViewSchema>;
+export type DriverArrangementList = z.infer<typeof DriverArrangementListSchema>;
+export type DriverSchedule = z.infer<typeof DriverScheduleSchema>;
+export type AvailabilityPreviewView = z.infer<
+  typeof AvailabilityPreviewViewSchema
+>;
+export type DriverAvailabilityView = z.infer<
+  typeof DriverAvailabilityViewSchema
+>;
+export type AvailabilitySavedView = z.infer<typeof AvailabilitySavedViewSchema>;
+export type DriverConflictView = z.infer<typeof DriverConflictViewSchema>;
+export type DriverTerminationView = z.infer<typeof DriverTerminationViewSchema>;
 
 // ── Privacy ────────────────────────────────────────────────────────────────
 
@@ -1619,9 +1739,11 @@ export const FLEET_RESPONSE_SCHEMAS = {
   DriverArrangementList: DriverArrangementListSchema,
   DriverSchedule: DriverScheduleSchema,
   AvailabilityPreviewView: AvailabilityPreviewViewSchema,
+  DriverAvailabilityView: DriverAvailabilityViewSchema,
   AvailabilitySavedView: AvailabilitySavedViewSchema,
   DriverConflictView: DriverConflictViewSchema,
   DriverTerminationView: DriverTerminationViewSchema,
+  VehicleIssueView: VehicleIssueViewSchema,
   FleetVehicleAtResponse: FleetVehicleAtResponseSchema,
   FleetInternalVehicle: FleetInternalVehicleSchema,
   FleetOnlineVehicleResponse: FleetOnlineVehicleResponseSchema,

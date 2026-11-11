@@ -262,6 +262,31 @@ describe("FleetScheduleScreen (C1)", () => {
     expect(screen.getByTestId(FLEET_TID.scheduleView)).toBeTruthy();
     view.unmount();
   });
+
+  it("surfaces a proposals error card with a retry button when fleet-offers fails while schedule succeeds", async () => {
+    let offersDown = true;
+    installWire((call) =>
+      call.path === SCHEDULE
+        ? { status: 200, json: schedule() }
+        : call.path === OFFERS
+          ? offersDown
+            ? {
+                status: 503,
+                json: { code: "service_unavailable", message: "down" },
+              }
+            : { status: 200, json: offers([offer()]) }
+          : undefined,
+    );
+    act(() => setMotionForDev("parked_confirmed"));
+    const view = harness();
+    expect(
+      await screen.findByText("Proposals couldn’t be loaded — retry"),
+    ).toBeTruthy();
+    offersDown = false;
+    fireEvent.press(screen.getByText("Retry proposals"));
+    expect(await screen.findByTestId(FLEET_TID.proposalEntry)).toBeTruthy();
+    view.unmount();
+  });
 });
 
 describe("FleetGate (deny-by-default `fleet` flag)", () => {

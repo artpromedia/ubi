@@ -84,9 +84,21 @@ describe("conflict centre model — actions only from allowedActions", () => {
       bookingBlockId: "blk_ab_1",
       fromVehicleId: VEH.ab,
     });
-    expect(planAction(maint, "move_block")).toMatchObject({
+    expect(planAction(maint, "move_block")).toEqual({
+      action: "move_block",
+      label: "Move the block",
+      kind: "maintenance",
+      href: `/maintenance/new?blockId=mnt_ab_service&vehicleId=${VEH.ab}`,
+      maintenanceBlockId: "mnt_ab_service",
+      vehicleId: VEH.ab,
+    });
+    expect(planAction(maint, "cancel_block")).toEqual({
+      action: "cancel_block",
+      label: "Cancel the block",
       kind: "maintenance",
       href: `/vehicles/${VEH.ab}#maintenance`,
+      maintenanceBlockId: "mnt_ab_service",
+      vehicleId: VEH.ab,
     });
     expect(planAction(doc, "renew_document")).toMatchObject({
       kind: "unavailable",

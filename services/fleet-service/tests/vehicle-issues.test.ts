@@ -548,6 +548,77 @@ describe("service_soon: the vehicle stays on the road", () => {
       }),
     ).toBe(1);
   });
+
+  it("deduplicates a second service_soon report with a new Idempotency-Key until a maintenance block is created", async () => {
+    const first = await report(
+      { vehicleId, severity: "service_soon", note: "First squeal" },
+      { idem: idemKey("vis-1") },
+    );
+    expect(first.status).toBe(201);
+    const firstView = VehicleIssueViewSchema.parse(first.body);
+
+    h.clock.now = new Date("2026-09-28T08:10:00.000Z");
+    const second = await report(
+      { vehicleId, severity: "service_soon", note: "Still squealing" },
+      { idem: idemKey("vis-2") },
+    );
+    expect(second.status).toBe(201);
+    const secondView = VehicleIssueViewSchema.parse(second.body);
+    expect(secondView.issueId).toBe(firstView.issueId);
+    expect(secondView.reportedAt).toBe(firstView.reportedAt);
+    expect(
+      await h.db.outboxEvent.count({
+        where: { name: "fleet.alert", aggregateId: vehicleId },
+      }),
+    ).toBe(1);
+
+    // Once the fleet schedules a maintenance block on the vehicle after the report,
+    // a subsequent service_soon report opens a fresh issue and alert.
+    h.clock.now = new Date("2026-09-28T08:20:00.000Z");
+    const mntPreview = await api<{ previewToken: string }>(h.app, {
+      method: "POST",
+      path: `/v1/fleets/${world.fleetId}/maintenance:preview`,
+      token: world.ownerToken,
+      city: world.cityId,
+      body: {
+        vehicleId,
+        kind: "planned_service",
+        startsAt: "2026-10-02T09:00:00.000Z",
+        endsAt: "2026-10-02T12:00:00.000Z",
+      },
+      idem: null,
+    });
+    expect(mntPreview.status).toBe(200);
+    const planned = await api(h.app, {
+      method: "POST",
+      path: `/v1/fleets/${world.fleetId}/maintenance`,
+      token: world.ownerToken,
+      city: world.cityId,
+      body: {
+        vehicleId,
+        kind: "planned_service",
+        startsAt: "2026-10-02T09:00:00.000Z",
+        endsAt: "2026-10-02T12:00:00.000Z",
+        note: "Brake pad service",
+        previewToken: mntPreview.body.previewToken,
+      },
+    });
+    expect(planned.status).toBe(201);
+
+    h.clock.now = new Date("2026-09-28T08:30:00.000Z");
+    const third = await report(
+      { vehicleId, severity: "service_soon", note: "New rattle" },
+      { idem: idemKey("vis-3") },
+    );
+    expect(third.status).toBe(201);
+    const thirdView = VehicleIssueViewSchema.parse(third.body);
+    expect(thirdView.issueId).not.toBe(firstView.issueId);
+    expect(
+      await h.db.outboxEvent.count({
+        where: { name: "fleet.alert", aggregateId: vehicleId },
+      }),
+    ).toBe(2);
+  });
 });
 
 describe("who may report", () => {

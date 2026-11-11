@@ -13,7 +13,12 @@ import { useState } from "react";
 
 import { useSelectedFleet } from "@/components/fleet/fleet-context";
 import { PermissionNote, ReadGate } from "@/components/states/states";
-import { commandErrorText, toReadState, type ReadState } from "@/lib/access";
+import {
+  commandErrorText,
+  isWriteReachable,
+  toReadState,
+  type ReadState,
+} from "@/lib/access";
 import { fleetApi, fleetKeys } from "@/lib/fleet-api";
 import { useCommand, useOnlineStatus } from "@/lib/hooks";
 import { can, permissionCopy, ROLE_LABELS, ROLE_MATRIX } from "@/lib/roles";
@@ -223,6 +228,7 @@ export const StaffRolesView = ({
   readonly onSaved?: () => void;
   readonly onRetry?: () => void;
 }) => {
+  const reachable = isWriteReachable(online, state);
   const canManage =
     can(fleet.myRole, "manage_staff") && fleet.status === "active";
   return (
@@ -250,7 +256,7 @@ export const StaffRolesView = ({
                 <StaffEditor
                   fleet={fleet}
                   staff={staff}
-                  online={online}
+                  online={reachable}
                   onSaved={onSaved}
                 />
               ) : (

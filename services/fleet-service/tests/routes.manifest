@@ -9,6 +9,7 @@ GET /internal/fleet/drivers/:driverId/online-vehicle
 GET /internal/fleet/drivers/:driverId/vehicle-at
 GET /internal/fleet/settlement-inputs
 GET /internal/fleet/vehicles/:vehicleId
+GET /v1/drivers/me/availability
 GET /v1/drivers/me/conflicts/:conflictId
 GET /v1/drivers/me/fleet
 GET /v1/drivers/me/fleet-offers

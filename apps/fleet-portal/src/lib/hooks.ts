@@ -34,6 +34,16 @@ export function useNow(everyMs = 30_000): number {
   return now;
 }
 
+/** Debounce rapidly changing input (e.g. calendar plate search, P2-07). */
+export function useDebouncedValue<T>(value: T, delayMs = 250): T {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 /**
  * One idempotency key per user intent: `settle` after each answer keeps the
  * key after an ambiguous failure (so "Try again" is safe) and renews it after

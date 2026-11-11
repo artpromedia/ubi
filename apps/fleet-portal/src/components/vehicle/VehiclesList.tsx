@@ -16,7 +16,12 @@ import {
   Pill,
   ReadGate,
 } from "@/components/states/states";
-import { commandErrorText, toReadState, type ReadState } from "@/lib/access";
+import {
+  commandErrorText,
+  isWriteReachable,
+  toReadState,
+  type ReadState,
+} from "@/lib/access";
 import { fleetApi, fleetKeys } from "@/lib/fleet-api";
 import {
   FLEET_VEHICLE_CLASSES,
@@ -205,6 +210,7 @@ export const VehiclesListView = ({
   readonly onAdded?: () => void;
   readonly onRetry?: () => void;
 }) => {
+  const reachable = isWriteReachable(online, state);
   const canAdd =
     can(fleet.myRole, "manage_vehicles") && fleet.status === "active";
   return (
@@ -290,7 +296,7 @@ export const VehiclesListView = ({
         }
       </ReadGate>
       {state.kind === "ready" && canAdd ? (
-        <AddVehicleForm fleet={fleet} online={online} onAdded={onAdded} />
+        <AddVehicleForm fleet={fleet} online={reachable} onAdded={onAdded} />
       ) : null}
       {state.kind === "ready" && !canAdd && fleet.status === "active" ? (
         <PermissionNote>{permissionCopy("manage_vehicles")}</PermissionNote>

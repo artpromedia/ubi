@@ -586,3 +586,35 @@ export async function availabilityOccurrences(
       }));
   });
 }
+
+/**
+ * The driver's own saved availability windows (`GET /v1/drivers/me/availability`)
+ * so the C4 editor can pre-populate and carry forward existing windows rather
+ * than replacing them blindly.
+ */
+export async function getAvailability(
+  deps: FleetDeps,
+  actor: Actor,
+  cityId: string,
+) {
+  const config = await requireFleetEnabled(deps.config, cityId);
+  const rows = await deps.db.driverAvailability.findMany({
+    where: { driverId: actor.id, status: { not: "removed" } },
+    orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
+  });
+  const setVersion = rows.reduce(
+    (max, row) => Math.max(max, row.setVersion),
+    0,
+  );
+  return {
+    zone: config.city.timezone,
+    setVersion,
+    windows: rows.map((row) => ({
+      windowId: row.id,
+      kind: row.kind as AvailabilityKind,
+      startsAt: iso(row.startsAt.getTime()),
+      endsAt: iso(row.endsAt.getTime()),
+      rrule: row.rrule,
+    })),
+  };
+}

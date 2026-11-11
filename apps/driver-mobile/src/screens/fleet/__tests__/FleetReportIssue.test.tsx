@@ -103,7 +103,9 @@ describe("FleetReportIssueScreen (C5)", () => {
     act(() => setMotionForDev("parked_confirmed"));
     const view = harness();
     expect(
-      await screen.findByText("Your Example Fleet vehicle · Day · 06:00–18:00"),
+      await screen.findByText(
+        "Your Example Fleet vehicle · LAG-118-AB (Toyota Camry) · Day · 06:00–18:00",
+      ),
     ).toBeTruthy();
     expect(screen.getByTestId(FLEET_TID.reportIssue)).toBeDisabled();
     fireEvent.press(screen.getByTestId(FLEET_TID.reportCannotDrive));
@@ -191,7 +193,7 @@ describe("FleetReportIssueScreen (C5)", () => {
     view.unmount();
   });
 
-  it("with two fleet vehicles the driver picks which one", async () => {
+  it("with two fleet vehicles the driver picks which one by plate and make/model", async () => {
     const wire = serve(
       () => ({ status: 201, json: issue() }),
       arrangements([
@@ -203,14 +205,19 @@ describe("FleetReportIssueScreen (C5)", () => {
     const view = harness();
     fireEvent.press(await screen.findByTestId(FLEET_TID.reportCannotDrive));
     expect(screen.getByTestId(FLEET_TID.reportIssue)).toBeDisabled();
-    fireEvent.press(
-      screen.getByTestId(
-        dynamicTestId(
-          FLEET_TID.reportVehicle,
-          "11111111-1111-4111-8111-111111111112",
-        ),
+    expect(
+      screen.getByTestId(dynamicTestId(FLEET_TID.reportVehicle, VEHICLE)),
+    ).toHaveTextContent("LAG-118-AB · Toyota Camry", { exact: false });
+    const secondVehicle = screen.getByTestId(
+      dynamicTestId(
+        FLEET_TID.reportVehicle,
+        "11111111-1111-4111-8111-111111111112",
       ),
     );
+    expect(secondVehicle).toHaveTextContent("LAG-744-MM · Toyota Corolla", {
+      exact: false,
+    });
+    fireEvent.press(secondVehicle);
     fireEvent.press(screen.getByTestId(FLEET_TID.reportIssue));
     await screen.findByTestId(FLEET_TID.reportOutcome);
     expect((wire.writes()[0].body as { vehicleId: string }).vehicleId).toBe(

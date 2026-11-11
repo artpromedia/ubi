@@ -74,8 +74,9 @@ type BookingAffect = Extract<
   { kind: "booking" }
 >;
 
-/** Windows saved from this screen this session — the only set known exactly. */
+/** Windows saved from this screen this session — or loaded from GET /v1/drivers/me/availability. */
 export const SAVED_WINDOWS_KEY = ["fleet", "availability", "saved"] as const;
+export const AVAILABILITY_KEY = ["fleet", "availability", "server"] as const;
 
 const STEP = 30;
 const MAX_END = 48 * 60;
@@ -101,8 +102,12 @@ export function FleetAvailabilityScreen() {
     queryFn: () => fleetApi.scheduleBetween(horizon.from, horizon.to),
     retry: false,
   });
-  // Filled only by a successful save (never fetched: there is no read of the set);
-  // kept for the app's lifetime so a later edit sends those windows again.
+  const availabilityQ = useQuery({
+    queryKey: AVAILABILITY_KEY,
+    queryFn: fleetApi.availability,
+    retry: false,
+  });
+  // Session-saved windows take precedence; otherwise we carry forward GET /v1/drivers/me/availability.
   const knownQ = useQuery<FleetWindowInput[]>({
     queryKey: SAVED_WINDOWS_KEY,
     queryFn: () => Promise.reject(new Error("never fetched")),
@@ -110,7 +115,19 @@ export function FleetAvailabilityScreen() {
     staleTime: Infinity,
     gcTime: Infinity,
   });
-  const known = knownQ.data;
+  const serverKnown = useMemo<FleetWindowInput[] | undefined>(
+    () =>
+      availabilityQ.data
+        ? availabilityQ.data.windows.map((w) => ({
+            kind: w.kind,
+            startsAt: w.startsAt,
+            endsAt: w.endsAt,
+            ...(w.rrule ? { rrule: w.rrule } : {}),
+          }))
+        : undefined,
+    [availabilityQ.data],
+  );
+  const known = knownQ.data ?? serverKnown;
   const zone = scheduleQ.data?.zone ?? null;
   const days = useMemo(
     () => (zone ? nextLocalDays(Date.now(), zone, DAYS_OFFERED) : []),
@@ -135,17 +152,24 @@ export function FleetAvailabilityScreen() {
       (i) => i.kind === "availability" || i.kind === "time_off",
     );
 
-  const draftWindows = (from = start, to = end): FleetWindowInput[] | null =>
-    zone && selectedDay && to > from
-      ? [
-          ...(known ?? []),
-          {
-            kind: "time_off",
-            startsAt: zonedIso(selectedDay, from, zone),
-            endsAt: zonedIso(selectedDay, to, zone),
-          },
-        ]
-      : null;
+  const draftWindows = (from = start, to = end): FleetWindowInput[] | null => {
+    if (!zone || !selectedDay || to <= from) return null;
+    const nextWindow: FleetWindowInput = {
+      kind: "time_off",
+      startsAt: zonedIso(selectedDay, from, zone),
+      endsAt: zonedIso(selectedDay, to, zone),
+    };
+    const prior = (known ?? []).filter(
+      (w) =>
+        !(
+          w.kind === nextWindow.kind &&
+          w.startsAt === nextWindow.startsAt &&
+          w.endsAt === nextWindow.endsAt &&
+          !w.rrule
+        ),
+    );
+    return [...prior, nextWindow];
+  };
 
   const preview = useMutation({
     mutationFn: (windows: FleetWindowInput[]) =>
@@ -189,6 +213,7 @@ export function FleetAvailabilityScreen() {
           ...(w.rrule ? { rrule: w.rrule } : {}),
         })),
       );
+      void queryClient.invalidateQueries({ queryKey: AVAILABILITY_KEY });
       void queryClient.invalidateQueries({ queryKey: SCHEDULE_KEY });
       setSaved(result);
       setBanner(null);

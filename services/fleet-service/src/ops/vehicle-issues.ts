@@ -360,8 +360,11 @@ async function requestService(
   },
 ): Promise<VehicleIssueView> {
   const now = deps.now();
-  const view = (reportedAt: Date): VehicleIssueView => ({
-    issueId: input.issueId,
+  const view = (
+    reportedAt: Date,
+    issueId = input.issueId,
+  ): VehicleIssueView => ({
+    issueId,
     severity: "service_soon",
     vehicleId: input.vehicleId,
     reportedAt: iso(reportedAt.getTime()),
@@ -384,8 +387,12 @@ async function requestService(
   });
   try {
     // No row of its own: the alert and its audit are the whole unit of
-    // work, written only while the vehicle is still the fleet's.
-    await withOutbox(deps.db, async (tx) => {
+    // work, written only while the vehicle is still the fleet's. If an open
+    // `service_soon` report already exists on this vehicle for this fleet
+    // (no non-cancelled maintenance block has been created or completed since
+    // that report), return the open report rather than emitting a duplicate
+    // alert and audit row (P2-08).
+    const existing = await withOutbox(deps.db, async (tx) => {
       const stillThere = await tx.fleetVehicle.count({
         where: {
           fleetId: input.fleet.id,
@@ -395,6 +402,47 @@ async function requestService(
       });
       if (stillThere === 0) {
         throw notAssigned();
+      }
+      const latestReport = await tx.auditLog.findFirst({
+        where: {
+          action: "fleet.vehicle_issue.reported",
+          subjectType: "vehicle",
+          subjectId: input.vehicleId,
+          reason: "driver_requested_service",
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      if (
+        latestReport !== null &&
+        typeof latestReport.after === "object" &&
+        latestReport.after !== null
+      ) {
+        const after = latestReport.after as Record<string, unknown>;
+        if (
+          after.fleetId === input.fleet.id &&
+          after.severity === "service_soon" &&
+          typeof after.issueId === "string"
+        ) {
+          const servicedSince = await tx.fleetMaintenanceBlock.count({
+            where: {
+              fleetId: input.fleet.id,
+              vehicleId: input.vehicleId,
+              status: { not: "cancelled" },
+              createdAt: { gte: latestReport.createdAt },
+            },
+          });
+          if (servicedSince === 0) {
+            return {
+              result: {
+                issueId: after.issueId,
+                reportedAt:
+                  typeof after.reportedAt === "string"
+                    ? new Date(after.reportedAt)
+                    : latestReport.createdAt,
+              },
+            };
+          }
+        }
       }
       return {
         result: null,
@@ -409,6 +457,7 @@ async function requestService(
               issueId: input.issueId,
               severity: "service_soon",
               fleetId: input.fleet.id,
+              reportedAt: iso(now.getTime()),
               note: input.note,
             },
             reason: "driver_requested_service",
@@ -416,6 +465,9 @@ async function requestService(
         ],
       };
     });
+    if (existing !== null) {
+      return view(existing.reportedAt, existing.issueId);
+    }
   } catch (error) {
     // A retry after a crash between the alert and the idempotency record
     // lands on the alert's unique event key: answer what was recorded.

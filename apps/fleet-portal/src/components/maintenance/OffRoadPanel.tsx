@@ -14,7 +14,11 @@
 import { useState, type FormEvent } from "react";
 
 import { PermissionNote, ReadGate } from "@/components/states/states";
-import { commandErrorText, type ReadState } from "@/lib/access";
+import {
+  commandErrorText,
+  isWriteReachable,
+  type ReadState,
+} from "@/lib/access";
 import { fleetApi } from "@/lib/fleet-api";
 import { useCommand } from "@/lib/hooks";
 import { offRoadOutcome } from "@/lib/maintenance-model";
@@ -52,6 +56,7 @@ export const OffRoadPanel = ({
   const [expectedTime, setExpectedTime] = useState("");
   const [note, setNote] = useState("");
   const command = useCommand<OffRoadView>();
+  const reachable = isWriteReachable(online, vehicles);
   const canReport =
     can(fleet.myRole, "report_off_road") && fleet.status === "active";
   const zone = fleet.zone;
@@ -70,7 +75,7 @@ export const OffRoadPanel = ({
       ...(note.trim() === "" ? {} : { note: note.trim() }),
     };
     void command
-      .run((key) => fleetApi.reportOffRoad(fleet.fleetId, body, key), online)
+      .run((key) => fleetApi.reportOffRoad(fleet.fleetId, body, key), reachable)
       .then((result) => {
         if (result !== undefined) {
           onReported?.();
@@ -152,7 +157,7 @@ export const OffRoadPanel = ({
             type="submit"
             data-testid={FLEET_TEST_IDS.offRoad.report}
             disabled={
-              !online ||
+              !reachable ||
               vehicleId === "" ||
               command.state.status === "pending" ||
               command.state.status === "done"
@@ -174,7 +179,7 @@ export const OffRoadPanel = ({
           ) : null}
           {command.state.status === "failed" ? (
             <p role="alert" className="text-xs text-red-300">
-              {commandErrorText(command.state.error, online)}
+              {commandErrorText(command.state.error, reachable)}
             </p>
           ) : null}
         </form>

@@ -1623,18 +1623,37 @@ export async function driverArrangements(
         { validTo: { gte: localDateToDateColumn(addDays(today, -1)) } },
       ],
     },
-    include: { fleet: { select: { name: true, cityId: true } } },
+    include: {
+      fleet: { select: { name: true, cityId: true } },
+    },
     orderBy: { validFrom: "asc" },
   });
-  const names = await displayNames(deps.db, [actor.id]);
+  const cityRows = rows.filter((row) => row.fleet.cityId === cityId);
+  const [names, vehicles] = await Promise.all([
+    displayNames(deps.db, [actor.id]),
+    cityRows.length === 0
+      ? Promise.resolve([])
+      : deps.db.vehicle.findMany({
+          where: { id: { in: cityRows.map((row) => row.vehicleId) } },
+          select: { id: true, plateNumber: true, make: true, model: true },
+        }),
+  ]);
+  const vehicleById = new Map(vehicles.map((v) => [v.id, v]));
   return {
-    arrangements: rows
-      .filter((row) => row.fleet.cityId === cityId)
-      .map((row) => ({
+    arrangements: cityRows.map((row) => {
+      const vehicle = vehicleById.get(row.vehicleId);
+      return {
         ...arrangementView(row, nameOr(names, actor.id)),
         fleetName: row.fleet.name,
         noticeEndsOn: row.status === "notice" ? validToOf(row.validTo) : null,
-      })),
+        vehicle: {
+          vehicleId: row.vehicleId,
+          plate: vehicle?.plateNumber ?? "",
+          make: vehicle?.make ?? "",
+          model: vehicle?.model ?? "",
+        },
+      };
+    }),
     weekSplit: {
       available: false as const,
       reason:

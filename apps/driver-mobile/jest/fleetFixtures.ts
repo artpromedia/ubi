@@ -8,12 +8,14 @@ import {
   AvailabilityPreviewViewSchema,
   AvailabilitySavedViewSchema,
   DriverArrangementListSchema,
+  DriverAvailabilityViewSchema,
   DriverConflictViewSchema,
   DriverOfferListSchema,
   DriverOfferViewSchema,
   DriverScheduleSchema,
   MpAdvanceBookingSchema,
   SignOfferViewSchema,
+  VehicleIssueViewSchema,
   type MpAdvanceBooking,
 } from "@ubi/contracts";
 import type { z } from "zod";
@@ -23,6 +25,7 @@ import { NGN } from "./wire";
 type Schedule = z.infer<typeof DriverScheduleSchema>;
 type Offer = z.infer<typeof DriverOfferViewSchema>;
 type Conflict = z.infer<typeof DriverConflictViewSchema>;
+type AvailabilityView = z.infer<typeof DriverAvailabilityViewSchema>;
 type Preview = z.infer<typeof AvailabilityPreviewViewSchema>;
 type Saved = z.infer<typeof AvailabilitySavedViewSchema>;
 type Arrangements = z.infer<typeof DriverArrangementListSchema>;
@@ -308,6 +311,16 @@ export const withdrawn = (rematchAvailable: boolean) =>
     },
   });
 
+export const availability = (
+  over: Partial<AvailabilityView> = {},
+): AvailabilityView =>
+  DriverAvailabilityViewSchema.parse({
+    zone: ZONE,
+    setVersion: 0,
+    windows: [],
+    ...over,
+  });
+
 export const preview = (over: Partial<Preview> = {}): Preview =>
   AvailabilityPreviewViewSchema.parse({
     previewToken: "apv_1",
@@ -375,23 +388,35 @@ export const arrangements = (
   list: Partial<Arrangements["arrangements"][number]>[] = [{}],
 ): Arrangements =>
   DriverArrangementListSchema.parse({
-    arrangements: list.map((over, i) => ({
-      assignmentId: "asg_" + (i + 1),
-      fleetId: "flt_1",
-      vehicleId: "11111111-1111-4111-8111-11111111111" + (i + 1),
-      driverId: "drv_1",
-      driverDisplayName: "Kemi B.",
-      shift: { kind: "day", start: "06:00", end: "18:00" },
-      validFrom: "2026-09-28",
-      validTo: null,
-      termsVersion: 1,
-      terms: offer().current?.terms,
-      signedAt: "2026-09-27T10:00:00.000Z",
-      status: "active",
-      fleetName: "Example Fleet",
-      noticeEndsOn: null,
-      ...over,
-    })),
+    arrangements: list.map((over, i) => {
+      const vehicleId =
+        over.vehicleId ?? "11111111-1111-4111-8111-11111111111" + (i + 1);
+      const defaultPlate = i === 0 ? "LAG-118-AB" : "LAG-744-MM";
+      const defaultModel = i === 0 ? "Camry" : "Corolla";
+      return {
+        assignmentId: "asg_" + (i + 1),
+        fleetId: "flt_1",
+        vehicleId,
+        driverId: "drv_1",
+        driverDisplayName: "Kemi B.",
+        shift: { kind: "day", start: "06:00", end: "18:00" },
+        validFrom: "2026-09-28",
+        validTo: null,
+        termsVersion: 1,
+        terms: offer().current?.terms,
+        signedAt: "2026-09-27T10:00:00.000Z",
+        status: "active",
+        fleetName: "Example Fleet",
+        noticeEndsOn: null,
+        vehicle: {
+          vehicleId,
+          plate: defaultPlate,
+          make: "Toyota",
+          model: defaultModel,
+        },
+        ...over,
+      };
+    }),
     weekSplit: {
       available: false,
       reason: "This week's split is settled by payment-service.",
@@ -399,25 +424,26 @@ export const arrangements = (
     },
   });
 
-export const issue = (
-  over: Partial<VehicleIssueView> = {},
-): VehicleIssueView => ({
-  issueId: "vis_1",
-  severity: "cannot_drive",
-  vehicleId: "11111111-1111-4111-8111-111111111111",
-  reportedAt: "2026-09-30T07:40:00.000Z",
-  fleetAlerted: true,
-  block: {
-    blockId: "mnt_9",
-    kind: "unplanned_off_road",
-    status: "active",
-    startsAt: "2026-09-30T07:40:00.000Z",
-    endsAt: null,
-  },
-  decisions: [{ conflictId: "fcf_7", deadlineAt: "2026-09-30T08:20:00.000Z" }],
-  remittanceEffect: "signed_terms_shortfall_rule",
-  ...over,
-});
+export const issue = (over: Partial<VehicleIssueView> = {}): VehicleIssueView =>
+  VehicleIssueViewSchema.parse({
+    issueId: "vis_1",
+    severity: "cannot_drive",
+    vehicleId: "11111111-1111-4111-8111-111111111111",
+    reportedAt: "2026-09-30T07:40:00.000Z",
+    fleetAlerted: true,
+    block: {
+      blockId: "mnt_9",
+      kind: "unplanned_off_road",
+      status: "active",
+      startsAt: "2026-09-30T07:40:00.000Z",
+      endsAt: null,
+    },
+    decisions: [
+      { conflictId: "fcf_7", deadlineAt: "2026-09-30T08:20:00.000Z" },
+    ],
+    remittanceEffect: "signed_terms_shortfall_rule",
+    ...over,
+  });
 
 export const PARKED_ACK = {
   state: "parked_confirmed",

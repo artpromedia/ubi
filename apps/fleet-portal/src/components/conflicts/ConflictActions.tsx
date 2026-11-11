@@ -22,6 +22,7 @@ import type { ApiError } from "@/lib/api-client";
 import type {
   ConflictView,
   FleetVehicleView,
+  MaintenanceBlockView,
   ReminderView,
   VehicleSwapRequestView,
 } from "@/lib/fleet-types";
@@ -69,6 +70,71 @@ const RemindButton = ({
       {command.state.status === "done" ? (
         <span className="text-[11px] text-[#86EFAC]">
           Reminder sent {dateTimeIn(command.state.result.remindedAt, zone)}
+        </span>
+      ) : null}
+      {command.state.status === "failed" ? (
+        <span role="alert" className="text-[11px] text-red-300">
+          {commandErrorText(command.state.error, online)}
+        </span>
+      ) : null}
+    </span>
+  );
+};
+
+const MaintenanceBlockButton = ({
+  fleetId,
+  plan,
+  maintenanceBlockId,
+  online,
+  onDone,
+}: {
+  readonly fleetId: string;
+  readonly plan: Extract<ActionPlan, { kind: "maintenance" }>;
+  readonly maintenanceBlockId: string;
+  readonly online: boolean;
+  readonly onDone?: () => void;
+}) => {
+  const command = useCommand<MaintenanceBlockView>();
+  const isCancel = plan.action === "cancel_block";
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <button
+        type="button"
+        data-testid={FLEET_TEST_IDS.conflicts.action}
+        data-action={plan.action}
+        disabled={!online || command.state.status === "pending"}
+        onClick={() =>
+          void command
+            .run(
+              (key) =>
+                isCancel
+                  ? fleetApi.cancelMaintenance(fleetId, maintenanceBlockId, key)
+                  : fleetApi.completeMaintenance(
+                      fleetId,
+                      maintenanceBlockId,
+                      key,
+                    ),
+              online,
+            )
+            .then((result) => {
+              if (result !== undefined) {
+                onDone?.();
+              }
+            })
+        }
+        className={`${buttonClass} border border-zinc-600 text-zinc-100`}
+      >
+        {command.state.status === "pending"
+          ? isCancel
+            ? "Cancelling…"
+            : "Completing…"
+          : plan.label}
+      </button>
+      {command.state.status === "done" ? (
+        <span className="text-[11px] text-[#86EFAC]">
+          {isCancel
+            ? "Maintenance block cancelled."
+            : "Maintenance marked complete."}
         </span>
       ) : null}
       {command.state.status === "failed" ? (
@@ -243,13 +309,30 @@ export const ConflictActions = ({
               />
             );
           case "maintenance":
+            if (
+              (plan.action === "cancel_block" ||
+                plan.action === "complete_block") &&
+              plan.maintenanceBlockId !== null
+            ) {
+              return (
+                <MaintenanceBlockButton
+                  key={plan.action}
+                  fleetId={fleetId}
+                  plan={plan}
+                  maintenanceBlockId={plan.maintenanceBlockId}
+                  online={online}
+                  onDone={onDone}
+                />
+              );
+            }
             return (
               <Link
                 key={plan.action}
                 href={plan.href}
                 data-testid={FLEET_TEST_IDS.conflicts.action}
                 data-action={plan.action}
-                className={`${buttonClass} border border-zinc-600 text-zinc-100`}
+                aria-disabled={!online}
+                className={`${buttonClass} border border-zinc-600 text-zinc-100 ${!online ? "pointer-events-none opacity-50" : ""}`}
               >
                 {plan.label}
               </Link>

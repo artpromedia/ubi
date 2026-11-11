@@ -536,6 +536,13 @@ const REACHABLE: readonly ReachableCase[] = [
   },
   {
     rule: "/drivers/me/availability",
+    method: "GET",
+    path: "/v1/drivers/me/availability",
+    downstream: "/v1/drivers/me/availability",
+    source: `${DRIVER} src/api/fleet.ts (C4 AvailabilityEditor)`,
+  },
+  {
+    rule: "/drivers/me/availability",
     method: "PUT",
     path: "/v1/drivers/me/availability",
     downstream: "/v1/drivers/me/availability",
