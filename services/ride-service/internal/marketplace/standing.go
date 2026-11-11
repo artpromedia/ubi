@@ -3,11 +3,13 @@ package marketplace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
@@ -510,7 +512,7 @@ func (s *Service) AdminDriverStanding(ctx context.Context, actor Actor, driverID
 	if windowDays <= 0 {
 		windowDays = defaultStandingWindowDays
 	}
-	agg, err := s.deps.Store.DriverStandingAggregate(ctx, s.deps.Store.Pool(), driverID, windowDays)
+	agg, err := s.deps.Store.DriverStandingAggregateAt(ctx, s.deps.Store.Pool(), driverID, windowDays, s.now())
 	if err != nil {
 		return nil, asDomainError(err)
 	}
@@ -581,7 +583,7 @@ func (s *Service) AdminDriverStandingList(ctx context.Context, actor Actor, city
 	if offset < 0 {
 		offset = 0
 	}
-	rows, total, err := s.deps.Store.ListDriverStanding(ctx, s.deps.Store.Pool(), cityID, windowDays, minRides, limit, offset)
+	rows, total, err := s.deps.Store.ListDriverStandingAt(ctx, s.deps.Store.Pool(), cityID, windowDays, minRides, limit, offset, s.now())
 	if err != nil {
 		return nil, asDomainError(err)
 	}
@@ -609,6 +611,95 @@ func (s *Service) driverBlocked(ctx context.Context, driverID uuid.UUID) (bool, 
 		return false, err
 	}
 	return row.ActionType == StandingActionSuspension, nil
+}
+
+// evaluateRepeatedCancellationPattern checks whether a driver whose execution
+// ride just ended in a driver cancellation or no-show now exceeds the city's
+// trailing-window cancellation/no-show threshold (A06). When exceeded and no
+// pending proposal or active suspension is already open for the driver, it
+// inserts a `pending_approval` standing action (`reasonCode =
+// "repeated_cancellation"`, `proposedBy = uuid.Nil`) for maker-checker human
+// review — never applying an automatic penalty (`driverBlocked` ignores
+// `pending_approval`).
+func (s *Service) evaluateRepeatedCancellationPattern(ctx context.Context, driverID uuid.UUID, cityID string, now time.Time) error {
+	if driverID == uuid.Nil {
+		return nil
+	}
+	if cityID == "" {
+		_ = s.deps.Store.Pool().QueryRow(ctx, `
+			SELECT COALESCE(MAX(city_id), '')
+			FROM ride.rides
+			WHERE marketplace_award_id IS NOT NULL AND driver_id = $1`, driverID).Scan(&cityID)
+		if cityID == "" {
+			return nil
+		}
+	}
+	var standingPolicy cityconfig.MarketplaceStandingPolicy
+	if _, policy, err := s.policy(ctx, cityID); err == nil && policy != nil {
+		standingPolicy = policy.StandingPolicy()
+	} else {
+		standingPolicy = (*cityconfig.MarketplacePolicy)(nil).StandingPolicy()
+	}
+
+	return s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('mp_standing:' || $1::text))`, driverID.String()); err != nil {
+			return err
+		}
+		hasPending, err := s.deps.Store.HasPendingStandingAction(ctx, tx, driverID)
+		if err != nil || hasPending {
+			return err
+		}
+		if effective, err := s.deps.Store.LatestEffectiveStanding(ctx, tx, driverID); err == nil && effective.ActionType == StandingActionSuspension {
+			return nil
+		} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return err
+		}
+		agg, err := s.deps.Store.DriverStandingAggregateAt(ctx, tx, driverID, standingPolicy.WindowDays, now)
+		if err != nil {
+			return err
+		}
+		badCount := agg.DriverCancellations + agg.NoShows
+		if agg.Total < standingPolicy.MinRides || badCount*10_000 < agg.Total*standingPolicy.MaxCancellationRateBps {
+			return nil
+		}
+		rateBps := badCount * 10_000 / agg.Total
+		action := &StandingAction{
+			ID:         uuid.New(),
+			DriverID:   driverID,
+			CityID:     cityID,
+			ActionType: StandingActionSuspension,
+			ReasonCode: "repeated_cancellation",
+			ReasonNote: fmt.Sprintf("auto-flagged repeated cancellation/no-show pattern: %d of %d rides in %dd window (%d bps >= %d bps threshold)",
+				badCount, agg.Total, standingPolicy.WindowDays, rateBps, standingPolicy.MaxCancellationRateBps),
+			Status:     StandingStatusPendingApproval,
+			ProposedBy: uuid.Nil,
+		}
+		if err := s.deps.Store.InsertStandingAction(ctx, tx, action); err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, AuditRecord{
+			ActorID:     "system",
+			ActorRole:   "system",
+			Action:      "mp.standing.auto_flag",
+			SubjectType: "mp_driver_standing",
+			SubjectID:   action.ID.String(),
+			Before:      map[string]any{},
+			After: map[string]any{
+				"driverId":               driverID.String(),
+				"cityId":                 cityID,
+				"actionType":             action.ActionType,
+				"reasonCode":             action.ReasonCode,
+				"status":                 action.Status,
+				"windowDays":             standingPolicy.WindowDays,
+				"totalRides":             agg.Total,
+				"driverCancellations":    agg.DriverCancellations,
+				"noShows":                agg.NoShows,
+				"cancellationRateBps":    rateBps,
+				"maxCancellationRateBps": standingPolicy.MaxCancellationRateBps,
+			},
+			Reason: action.ReasonNote,
+		})
+	})
 }
 
 // ---------------------------------------------------------------------------

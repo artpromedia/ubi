@@ -66,6 +66,8 @@ export interface TripBreakdown {
   readonly taxesMinor?: number;
   /** The contracted commission the pricing engine posted. Never changed here. */
   readonly baseCommissionMinor?: number;
+  /** The live contracted commission rate in basis points (e.g. 1000 for 10%). */
+  readonly liveCommissionBps?: number;
   readonly currency: string;
   readonly paymentMethod: string;
   /** Present only to PROVE it does not change the rebate (fleet split is after). */
@@ -110,8 +112,38 @@ export function computeRebate(
   const base = commissionBase(rule, trip);
   const baseBps = rule.baseBps ?? 0;
   const reductionBps = rule.reductionBps ?? 0;
-  const baseCommission =
-    trip.baseCommissionMinor ?? roundKobo((base * baseBps) / 10_000);
+
+  if (
+    rule.kind !== "window" &&
+    trip.liveCommissionBps !== undefined &&
+    baseBps !== trip.liveCommissionBps
+  ) {
+    throw new ContractError(
+      "base_commission_rate_mismatch",
+      `rule baseBps disagrees with the live commission rate (${baseBps} vs ${trip.liveCommissionBps})`,
+      { ruleBaseBps: baseBps, liveCommissionBps: trip.liveCommissionBps },
+    );
+  }
+
+  const ruleBaseCommission = roundKobo((base * baseBps) / 10_000);
+  if (
+    rule.kind !== "window" &&
+    trip.baseCommissionMinor !== undefined &&
+    base > 0 &&
+    Math.abs(trip.baseCommissionMinor - ruleBaseCommission) > 1
+  ) {
+    throw new ContractError(
+      "base_commission_rate_mismatch",
+      "rule baseBps disagrees with the live commission rate",
+      {
+        ruleBaseBps: baseBps,
+        expectedBaseCommissionMinor: ruleBaseCommission,
+        liveBaseCommissionMinor: trip.baseCommissionMinor,
+      },
+    );
+  }
+
+  const baseCommission = trip.baseCommissionMinor ?? ruleBaseCommission;
 
   if (rule.kind === "percent_of_commission") {
     const amount = roundKobo((baseCommission * reductionBps) / 10_000);
@@ -134,6 +166,14 @@ export function computeRebate(
       commissionBaseMinor: base,
       baseCommissionMinor: baseCommission,
     };
+  }
+
+  if (reductionBps > baseBps) {
+    throw new ContractError(
+      "invalid_rebate_rule",
+      "percentage_points reductionBps cannot exceed baseBps",
+      { baseBps, reductionBps },
+    );
   }
 
   // percentage_points: reduce the rate by reductionBps.
@@ -206,6 +246,7 @@ async function postIncentiveLine(
   kind: "rebate" | "window_waiver",
 ): Promise<PostingResult> {
   const rule = await loadRule(deps, input.ruleId);
+  const computed = computeRebate(rule, input.trip);
 
   // Idempotent on (trip, kind): a replay returns the original posting.
   const existing = await deps.db.driverIncentivePosting.findUnique({
@@ -219,7 +260,7 @@ async function postIncentiveLine(
         kind: existing.kind,
         amount: money(Number(existing.amountMinor), existing.currency),
         ledgerLineId: existing.ledgerLineId,
-        effectiveBps: rule.baseBps ?? 0,
+        effectiveBps: computed.effectiveBps,
       },
       replayed: true,
     };
@@ -236,7 +277,6 @@ async function postIncentiveLine(
     }
   }
 
-  const computed = computeRebate(rule, input.trip);
   if (computed.amountMinor <= 0) {
     return { posted: false, reasonCode: "no_reduction" };
   }

@@ -143,6 +143,13 @@ export const RateProfileBoundsSchema = z.object({
   maxMinimumTripFareMinor: z.number().int().positive(),
 });
 
+export const MpStandingPolicySchema = z.object({
+  windowDays: z.number().int().positive(),
+  minRides: z.number().int().positive(),
+  maxCancellationRateBps: z.number().int().min(1).max(10_000),
+});
+export type MpStandingPolicy = z.infer<typeof MpStandingPolicySchema>;
+
 export const MarketplacePolicySchema = z.object({
   policyVersion: z.number().int().positive(),
   /**
@@ -173,6 +180,8 @@ export const MarketplacePolicySchema = z.object({
   scheduling: MpSchedulingPolicySchema.optional(),
   // Preferred-driver exclusive window (A04 item 3); absent = pilot window.
   preferredDriver: MpPreferredDriverPolicySchema.optional(),
+  // Repeated-cancellation standing pattern thresholds (A06); absent = pilot defaults.
+  standing: MpStandingPolicySchema.optional(),
 });
 export type MarketplacePolicy = z.infer<typeof MarketplacePolicySchema>;
 

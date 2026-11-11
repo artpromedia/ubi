@@ -221,9 +221,24 @@ export async function settleMarketplaceCompletion(
           reservationConsumed: consumption.consumed,
         },
       });
-      // No dedicated settlement event exists in the closed catalog yet, so
-      // the closest existing names carry it: a wallet settlement IS a posted
-      // wallet movement, and a cash settlement acknowledges the cash fare.
+      const eventPayload = {
+        awardId: input.awardId,
+        executionService: input.executionRef.service,
+        executionId: input.executionRef.id,
+        requesterId: input.requesterId,
+        driverId: input.driverId,
+        method: input.method,
+        fareMinor: input.fareMinor.amountMinor,
+        tipMinor,
+        currency,
+        journalEntryId,
+        driverWalletId: driverWallet.id,
+        riderWalletId: riderWallet?.id ?? null,
+      };
+      // Publish both the legacy ledger event (subject `mp_settlement`, keyed by
+      // `eventKey` for replay lookup and backward-compatible ledger consumers)
+      // and the dedicated `mp.settlement.posted` event (subject `mp_award`,
+      // consumed by notification-service and realtime-gateway).
       await publishEvent(tx, {
         name:
           input.method === "wallet"
@@ -234,22 +249,29 @@ export async function settleMarketplaceCompletion(
         fromVersion: null,
         toVersion: 1,
         actor: MP_SERVICE_ACTOR,
-        actorType: "service",
+        actorType: "system",
         cityId: input.cityId,
         idempotencyKey: eventKey,
         occurredAt: now,
-        payload: {
-          awardId: input.awardId,
-          executionService: input.executionRef.service,
-          executionId: input.executionRef.id,
-          method: input.method,
-          fareMinor: input.fareMinor.amountMinor,
-          tipMinor,
-          currency,
-          journalEntryId,
-          driverWalletId: driverWallet.id,
-          riderWalletId: riderWallet?.id ?? null,
-        },
+        payload: eventPayload,
+      });
+
+      await publishEvent(tx, {
+        name: "mp.settlement.posted",
+        aggregateType: "mp_award",
+        aggregateId: input.awardId,
+        fromVersion: null,
+        toVersion: 1,
+        actor: MP_SERVICE_ACTOR,
+        actorType: "system",
+        cityId: input.cityId,
+        idempotencyKey: scopedIdempotencyKey(
+          "wallet.mp_settlement.posted",
+          MP_SERVICE_ACTOR.id,
+          `award:${input.awardId}`,
+        ),
+        occurredAt: now,
+        payload: eventPayload,
       });
 
       return {

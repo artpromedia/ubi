@@ -10,6 +10,7 @@
  * fresh checkout without a separate setup step.
  */
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import path from "node:path";
 
 const DATABASE_URL =
@@ -64,6 +65,39 @@ function psql(url: string, sql: string): string {
     .trim();
 }
 
+function hasPendingMigrations(): boolean {
+  const migrationsDir = path.join(DATABASE_PACKAGE, "prisma", "migrations");
+  const expected = readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const tableExists = execFileSync(
+    "psql",
+    [DATABASE_URL, "-tAc", "SELECT to_regclass('public._prisma_migrations')"],
+    { env: process.env },
+  )
+    .toString()
+    .trim();
+  if (tableExists === "") {
+    return true;
+  }
+  const applied = new Set(
+    execFileSync(
+      "psql",
+      [
+        DATABASE_URL,
+        "-tAc",
+        "SELECT migration_name FROM public._prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL",
+      ],
+      { env: process.env },
+    )
+      .toString()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+  return expected.some((name) => !applied.has(name));
+}
+
 function ensureDatabase(): void {
   const name = new URL(DATABASE_URL).pathname.replace(/^\//, "");
   const exists = psql(
@@ -88,15 +122,7 @@ function ensureDatabase(): void {
     }
   }
 
-  const migrated = execFileSync(
-    "psql",
-    [DATABASE_URL, "-tAc", "SELECT to_regclass('public.step_up_challenges')"],
-    { env: process.env },
-  )
-    .toString()
-    .trim();
-
-  if (migrated === "") {
+  if (hasPendingMigrations()) {
     execFileSync("npx", ["prisma", "migrate", "deploy"], {
       cwd: DATABASE_PACKAGE,
       env: { ...process.env, DATABASE_URL },

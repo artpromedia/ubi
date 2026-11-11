@@ -176,40 +176,60 @@ func (s *Service) AdminRetryBusinessOp(ctx context.Context, actor Actor, awardID
 		}
 		return &response, replay.StatusCode, nil
 	}
-	if booking.OwedOp == "" {
-		response := &BusinessRetryResult{Row: businessBookingAdminView(booking, now), Outcome: OwedRetryNothingOwed,
-			Detail: "this booking owes payment-service nothing; nothing was sent"}
-		if err := s.deps.Store.SaveIdempotent(ctx, s.deps.Store.Pool(), scopeAdminBusinessRetry, actor.UserID, idempotencyKey,
-			owedRetryBody(awardID, req), 200, response); err != nil {
-			return nil, 0, asDomainError(err)
+	var nothingOwed *BusinessRetryResult
+	if err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		locked, err := s.deps.Store.BusinessBookingForUpdate(ctx, tx, awardID)
+		if err != nil {
+			return err
 		}
-		return response, 200, nil
+		booking = locked
+		if locked.OwedOp == "" {
+			nothingOwed = &BusinessRetryResult{
+				Row:     businessBookingAdminView(locked, now),
+				Outcome: OwedRetryNothingOwed,
+				Detail:  "this booking owes payment-service nothing; nothing was sent",
+			}
+			return s.deps.Store.SaveIdempotent(ctx, tx, scopeAdminBusinessRetry, actor.UserID, idempotencyKey,
+				owedRetryBody(awardID, req), 200, nothingOwed)
+		}
+		if req.ExpectedAttempts == nil {
+			return domain.Errorf(domain.CodeValidationFailed, "expectedAttempts is required to apply a retry")
+		}
+		if locked.Attempts != *req.ExpectedAttempts {
+			return domain.Errorf(domain.CodeVersionConflict,
+				"this booking changed since you last read it (attempts now %d) — reload and retry", locked.Attempts)
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE mp.business_bookings
+			SET next_attempt_at = $2
+			WHERE award_id = $1 AND owed_op IS NOT NULL`,
+			awardID, now.Add(attemptRetryDelay))
+		return err
+	}); err != nil {
+		return nil, 0, asDomainError(err)
 	}
-	if req.ExpectedAttempts == nil {
-		return nil, 0, domain.Errorf(domain.CodeValidationFailed, "expectedAttempts is required to apply a retry")
-	}
-	if booking.Attempts != *req.ExpectedAttempts {
-		return nil, 0, domain.Errorf(domain.CodeVersionConflict,
-			"this booking changed since you last read it (attempts now %d) — reload and retry", booking.Attempts)
+	if nothingOwed != nil {
+		return nothingOwed, 200, nil
 	}
 
 	owedOp := booking.OwedOp
 	opErr := s.runBusinessOp(ctx, awardID)
-	reloaded, err := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), awardID)
-	if err != nil {
-		return nil, 0, asDomainError(err)
-	}
-	outcome, detail := OwedRetryDeferred, ""
-	switch {
-	case reloaded.OwedOp == "":
-		outcome = OwedRetryResolved
-	case opErr != nil:
-		detail = truncateError(opErr)
-	default:
-		detail = "payment-service has not confirmed the " + owedOp + " yet; the sweep keeps driving it"
-	}
-	response := &BusinessRetryResult{Row: businessBookingAdminView(reloaded, s.now()), Outcome: outcome, Detail: detail}
+	var response *BusinessRetryResult
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		reloaded, err := s.deps.Store.BusinessBookingForUpdate(ctx, tx, awardID)
+		if err != nil {
+			return err
+		}
+		outcome, detail := OwedRetryDeferred, ""
+		switch {
+		case reloaded.OwedOp == "":
+			outcome = OwedRetryResolved
+		case opErr != nil:
+			detail = truncateError(opErr)
+		default:
+			detail = "payment-service has not confirmed the " + owedOp + " yet; the sweep keeps driving it"
+		}
+		response = &BusinessRetryResult{Row: businessBookingAdminView(reloaded, s.now()), Outcome: outcome, Detail: detail}
 		if err := writeAudit(ctx, tx, AuditRecord{
 			ActorID: actor.UserID.String(), ActorRole: actor.Role,
 			Action: "mp.admin.business_op_retry", SubjectType: subjectBusinessBooking, SubjectID: awardID.String(),
@@ -386,38 +406,58 @@ func (s *Service) AdminRetryDeliveryCancel(ctx context.Context, actor Actor, awa
 		}
 		return &response, replay.StatusCode, nil
 	}
-	if row.State != DeliveryCancelPending {
-		response := &DeliveryCancelRetryResult{Row: deliveryCancelAdminView(row, now), Outcome: OwedRetryNothingOwed,
-			Detail: "this cancellation already has a definite answer; nothing was sent"}
-		if err := s.deps.Store.SaveIdempotent(ctx, s.deps.Store.Pool(), scopeAdminDeliveryRetry, actor.UserID, idempotencyKey,
-			owedRetryBody(awardID, req), 200, response); err != nil {
-			return nil, 0, asDomainError(err)
+	var nothingOwed *DeliveryCancelRetryResult
+	if err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		locked, err := s.deps.Store.DeliveryCancelForUpdate(ctx, tx, awardID)
+		if err != nil {
+			return err
 		}
-		return response, 200, nil
+		row = locked
+		if locked.State != DeliveryCancelPending {
+			nothingOwed = &DeliveryCancelRetryResult{
+				Row:     deliveryCancelAdminView(locked, now),
+				Outcome: OwedRetryNothingOwed,
+				Detail:  "this cancellation already has a definite answer; nothing was sent",
+			}
+			return s.deps.Store.SaveIdempotent(ctx, tx, scopeAdminDeliveryRetry, actor.UserID, idempotencyKey,
+				owedRetryBody(awardID, req), 200, nothingOwed)
+		}
+		if req.ExpectedAttempts == nil {
+			return domain.Errorf(domain.CodeValidationFailed, "expectedAttempts is required to apply a retry")
+		}
+		if locked.Attempts != *req.ExpectedAttempts {
+			return domain.Errorf(domain.CodeVersionConflict,
+				"this cancellation changed since you last read it (attempts now %d) — reload and retry", locked.Attempts)
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE mp.delivery_cancellations
+			SET next_attempt_at = $2
+			WHERE award_id = $1 AND state = $3`,
+			awardID, now.Add(attemptRetryDelay), DeliveryCancelPending)
+		return err
+	}); err != nil {
+		return nil, 0, asDomainError(err)
 	}
-	if req.ExpectedAttempts == nil {
-		return nil, 0, domain.Errorf(domain.CodeValidationFailed, "expectedAttempts is required to apply a retry")
-	}
-	if row.Attempts != *req.ExpectedAttempts {
-		return nil, 0, domain.Errorf(domain.CodeVersionConflict,
-			"this cancellation changed since you last read it (attempts now %d) — reload and retry", row.Attempts)
+	if nothingOwed != nil {
+		return nothingOwed, 200, nil
 	}
 
 	opErr := s.runDeliveryCancel(ctx, awardID)
-	reloaded, err := s.deps.Store.DeliveryCancelByAward(ctx, s.deps.Store.Pool(), awardID)
-	if err != nil {
-		return nil, 0, asDomainError(err)
-	}
-	outcome, detail := OwedRetryDeferred, ""
-	switch {
-	case reloaded.State != DeliveryCancelPending:
-		outcome = OwedRetryResolved
-		detail = "delivery-service answered definitely: " + reloaded.State
-	case opErr != nil:
-		detail = truncateError(opErr)
-	}
-	response := &DeliveryCancelRetryResult{Row: deliveryCancelAdminView(reloaded, s.now()), Outcome: outcome, Detail: detail}
+	var response *DeliveryCancelRetryResult
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		reloaded, err := s.deps.Store.DeliveryCancelForUpdate(ctx, tx, awardID)
+		if err != nil {
+			return err
+		}
+		outcome, detail := OwedRetryDeferred, ""
+		switch {
+		case reloaded.State != DeliveryCancelPending:
+			outcome = OwedRetryResolved
+			detail = "delivery-service answered definitely: " + reloaded.State
+		case opErr != nil:
+			detail = truncateError(opErr)
+		}
+		response = &DeliveryCancelRetryResult{Row: deliveryCancelAdminView(reloaded, s.now()), Outcome: outcome, Detail: detail}
 		if err := writeAudit(ctx, tx, AuditRecord{
 			ActorID: actor.UserID.String(), ActorRole: actor.Role,
 			Action: "mp.admin.delivery_cancel_retry", SubjectType: subjectAward, SubjectID: awardID.String(),

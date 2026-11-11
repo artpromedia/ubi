@@ -591,25 +591,12 @@ async function rewardReferral(
   }
   const now = deps.now();
 
-  // Monthly cap on referral rewards (from the programme value).
+  // Monthly cap on referral rewards (from the programme value), evaluated
+  // atomically inside reserve() under the budget + advisory lock.
   const cap = monthlyCapOf(program);
-  if (cap !== null) {
-    const monthStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-    );
-    const rewardedThisMonth = await deps.db.promotionReservation.count({
-      where: {
-        userId: input.referrerId,
-        adjustmentType: "referral_reward",
-        subjectKind: "referral",
-        state: "consumed",
-        createdAt: { gte: monthStart },
-      },
-    });
-    if (rewardedThisMonth >= cap) {
-      return { outcome: "reward_pending", reasonCode: "monthly_cap_reached" };
-    }
-  }
+  const monthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
 
   const reserved = await reserve(deps, {
     actor: input.actor,
@@ -627,6 +614,7 @@ async function rewardReferral(
       input.referralId,
     ),
     correlationId: input.correlationId,
+    ...(cap !== null ? { monthlyCap: { cap, monthStart } } : {}),
   });
   if (!reserved.reserved) {
     return { outcome: "reward_pending", reasonCode: reserved.reasonCode };

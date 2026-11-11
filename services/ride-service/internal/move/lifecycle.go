@@ -546,7 +546,7 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 			WithDetails(map[string]any{"reasonCodes": sortedReasonCodes()})
 	}
 
-	_, config, err := s.prepare(ctx, actor, rideID)
+	preparedRide, config, err := s.prepare(ctx, actor, rideID)
 	if err != nil {
 		return nil, asDomainError(err)
 	}
@@ -556,11 +556,14 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	if err != nil {
 		return nil, asDomainError(err)
 	}
-	if actor.IsRider() && marketplaceAwardID != nil && s.cancelGuard != nil {
+	if actor.IsRider() && marketplaceAwardID != nil && s.cancelGuard != nil &&
+		machine.Can(machine.Rider, preparedRide.State, machine.RiderCancelledByRider) {
 		// The marketplace may refuse the rider's cancel before anything moves
 		// (a business trip's booker who left the organization). Only the
 		// ride's own rider reaches here: prepare's authorise refused anyone
-		// else.
+		// else. Rides that cannot transition to RiderCancelledByRider (already
+		// in progress or terminal) skip the external policy check and let the
+		// state machine refuse or return idempotently inside InTx.
 		if err := s.cancelGuard.AuthorizeRiderCancel(ctx, *marketplaceAwardID, actor.UserID); err != nil {
 			return nil, asDomainError(err)
 		}

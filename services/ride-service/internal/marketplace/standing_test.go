@@ -559,3 +559,87 @@ func TestAdminListsPaginate(t *testing.T) {
 		t.Fatalf("third page: %d rows, want 1 (5 total)", len(third))
 	}
 }
+
+func TestRepeatedCancellationAutoFlagsPendingStandingActionAndTimelineRedactsLocalPhones(t *testing.T) {
+	h := newHarness(t)
+	admin := adminActor(h)
+	driver := h.Driver()
+	h.Wallet.SetSpendable(driver.UserID, 10_000_000)
+	parkDriver(t, h, driver, testutil.PickupFixture())
+
+	for i := 0; i < 3; i++ {
+		rider := h.Rider()
+		view, _ := publishAt(t, h, rider, 0)
+		reqID := view["requestId"].(string)
+		amount := moneyMinor(t, view, "minimumFareMinor")
+
+		eligibility := evaluate(t, h, driver, reqID)
+		created := h.Do(http.MethodPost, "/mp/bids", driver, map[string]any{
+			"requestId":         reqID,
+			"requestRevision":   1,
+			"amountMinor":       moneyBody(amount),
+			"slot":              "current",
+			"availabilityEpoch": eligibility.AvailabilityEpoch,
+		}, move.IdempotencyHeader, idemKey())
+		requireStatus(t, created, http.StatusCreated)
+		bidView := decode(t, created)
+		selected := doSelect(t, h, rider, reqID, map[string]any{
+			"bidId": bidView["bidId"], "requestVersion": 1, "bidVersion": 1,
+		}, "")
+		requireStatus(t, selected, http.StatusAccepted)
+
+		award := awardRow(t, h, reqID)
+		if award.ExecutionID == nil {
+			t.Fatalf("ride %d missing execution ID", i)
+		}
+		cancelled := h.Do(http.MethodPost, "/rides/"+award.ExecutionID.String()+"/cancel", driver,
+			map[string]any{"reasonCode": "vehicle_issue"}, move.IdempotencyHeader, idemKey())
+		requireStatus(t, cancelled, http.StatusOK)
+	}
+
+	// After 3 marketplace rides ending in driver cancellations (default 30d
+	// window, minRides=3, maxCancellationRateBps=5000), a pending_approval
+	// suspension action is automatically created without blocking the driver.
+	standing := h.Do(http.MethodGet, "/admin/mp/drivers/"+driver.UserID.String()+"/standing", admin, nil)
+	requireStatus(t, standing, http.StatusOK)
+	var view marketplace.DriverStandingView
+	h.DecodeBody(standing, &view)
+	if view.Blocked {
+		t.Fatalf("auto-flagged driver must NOT be automatically penalized/blocked before operator review: %+v", view)
+	}
+
+	queue := h.Do(http.MethodGet, "/admin/mp/standing-actions?status="+marketplace.StandingStatusPendingApproval, admin, nil)
+	requireStatus(t, queue, http.StatusOK)
+	var qpage marketplace.StandingActionsPage
+	h.DecodeBody(queue, &qpage)
+	var forDriver []*marketplace.StandingActionView
+	for _, row := range qpage.Rows {
+		if row.DriverID == driver.UserID.String() {
+			forDriver = append(forDriver, row)
+		}
+	}
+	if len(forDriver) != 1 {
+		t.Fatalf("expected 1 auto-flagged pending standing action for driver %s, got %d: %+v", driver.UserID, len(forDriver), forDriver)
+	}
+	autoAction := forDriver[0]
+	if autoAction.ActionType != marketplace.StandingActionSuspension ||
+		autoAction.ReasonCode != "repeated_cancellation" ||
+		autoAction.ProposedBy != uuid.Nil.String() ||
+		!autoAction.RequiresApproval {
+		t.Fatalf("unexpected auto-flagged action: %+v", autoAction)
+	}
+
+	// An operator can review and approve the system-proposed action.
+	decide := h.Do(http.MethodPost, "/admin/mp/standing-actions/"+autoAction.ID+"/decide", admin,
+		map[string]any{"approve": true, "reason": "confirmed 3 consecutive driver cancellations"},
+		move.IdempotencyHeader, idemKey())
+	requireStatus(t, decide, http.StatusOK)
+
+	standingAfter := h.Do(http.MethodGet, "/admin/mp/drivers/"+driver.UserID.String()+"/standing", admin, nil)
+	requireStatus(t, standingAfter, http.StatusOK)
+	var viewAfter marketplace.DriverStandingView
+	h.DecodeBody(standingAfter, &viewAfter)
+	if !viewAfter.Blocked {
+		t.Fatalf("driver should be blocked after operator approves the auto-flagged suspension: %+v", viewAfter)
+	}
+}

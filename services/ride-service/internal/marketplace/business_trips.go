@@ -1049,6 +1049,9 @@ func (s *Service) AuthorizeRiderCancel(ctx context.Context, awardID, riderID uui
 	if err != nil {
 		return asDomainError(err)
 	}
+	if booking.State != machine.MpBusinessReserved && booking.State != machine.MpBusinessReserving {
+		return nil
+	}
 	if riderID != booking.BookerID || booking.BookerID == booking.TravellerID {
 		return nil
 	}

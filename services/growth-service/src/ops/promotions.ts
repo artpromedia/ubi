@@ -54,6 +54,7 @@ export type AdjustmentType = (typeof ADJUSTMENT_TYPES)[number];
 export type ReserveDenyReason =
   | "budget_exhausted"
   | "cap_reached"
+  | "monthly_cap_reached"
   | "scope"
   | "expired"
   | "min_spend_not_met";
@@ -196,6 +197,10 @@ export interface ReserveInput {
   readonly expiresAt: Date | null;
   readonly idempotencyKey: string;
   readonly correlationId: string | null;
+  readonly monthlyCap?: {
+    readonly cap: number;
+    readonly monthStart: Date;
+  };
 }
 
 export async function reserve(
@@ -277,6 +282,25 @@ export async function reserve(
         });
         if (held >= perUserCap) {
           return denyOutcome(input, "cap_reached");
+        }
+      }
+
+      // Monthly cap (P3-02): serialised behind the budget lock + per-user
+      // advisory lock and counting both reserved and consumed promises so
+      // concurrent referral qualifications cannot race past the monthly cap.
+      if (input.monthlyCap !== undefined) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`referral_cap:${input.userId}`}))`;
+        const heldThisMonth = await tx.promotionReservation.count({
+          where: {
+            userId: input.userId,
+            adjustmentType: input.adjustmentType,
+            subjectKind: input.subjectKind,
+            state: { in: ["reserved", "consumed"] },
+            createdAt: { gte: input.monthlyCap.monthStart },
+          },
+        });
+        if (heldThisMonth >= input.monthlyCap.cap) {
+          return denyOutcome(input, "monthly_cap_reached");
         }
       }
 

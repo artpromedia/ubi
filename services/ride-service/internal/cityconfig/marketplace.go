@@ -173,6 +173,46 @@ func (s *MarketplaceStopsPolicy) validate(cityID string) error {
 	return nil
 }
 
+// MarketplaceStandingPolicy mirrors MpStandingPolicySchema in
+// packages/contracts/src/city-config.ts: trailing-window repeated-cancellation
+// pattern thresholds (A06).
+type MarketplaceStandingPolicy struct {
+	WindowDays             int `json:"windowDays"`
+	MinRides               int `json:"minRides"`
+	MaxCancellationRateBps int `json:"maxCancellationRateBps"`
+}
+
+const (
+	PilotStandingWindowDays             = 30
+	PilotStandingMinRides               = 3
+	PilotStandingMaxCancellationRateBps = 5000
+)
+
+// StandingPolicy answers the market's repeated-cancellation standing pattern
+// thresholds: the configured block, or the pilot defaults when absent.
+func (p *MarketplacePolicy) StandingPolicy() MarketplaceStandingPolicy {
+	if p == nil || p.Standing == nil {
+		return MarketplaceStandingPolicy{
+			WindowDays:             PilotStandingWindowDays,
+			MinRides:               PilotStandingMinRides,
+			MaxCancellationRateBps: PilotStandingMaxCancellationRateBps,
+		}
+	}
+	return *p.Standing
+}
+
+func (s *MarketplaceStandingPolicy) validate(cityID string) error {
+	switch {
+	case s.WindowDays <= 0:
+		return fmt.Errorf("%w: city %s marketplace standing windowDays must be positive", ErrUnavailable, cityID)
+	case s.MinRides <= 0:
+		return fmt.Errorf("%w: city %s marketplace standing minRides must be positive", ErrUnavailable, cityID)
+	case s.MaxCancellationRateBps <= 0 || s.MaxCancellationRateBps > 10_000:
+		return fmt.Errorf("%w: city %s marketplace standing maxCancellationRateBps must be in 1..10000", ErrUnavailable, cityID)
+	}
+	return nil
+}
+
 // MarketplacePolicy mirrors MarketplacePolicySchema in
 // packages/contracts/src/city-config.ts. Every number the marketplace engine
 // needs lives here, versioned per city; there is no code default for any of
@@ -199,6 +239,9 @@ type MarketplacePolicy struct {
 	// PreferredDriver is the optional preferred-driver request block (A04
 	// item 3); absent means the pilot window (see PreferredDriverPolicy).
 	PreferredDriver *MarketplacePreferredDriverPolicy `json:"preferredDriver,omitempty"`
+	// Standing is the optional repeated-cancellation pattern threshold block
+	// (A06); absent means the pilot defaults (see StandingPolicy).
+	Standing *MarketplaceStandingPolicy `json:"standing,omitempty"`
 }
 
 // Validate refuses a marketplace policy that would make the engine invent a
@@ -245,6 +288,11 @@ func (p *MarketplacePolicy) Validate(cityID string) error {
 	}
 	if p.PreferredDriver != nil {
 		if err := p.PreferredDriver.validate(cityID, p.Bids.RequestExpirySec); err != nil {
+			return err
+		}
+	}
+	if p.Standing != nil {
+		if err := p.Standing.validate(cityID); err != nil {
 			return err
 		}
 	}

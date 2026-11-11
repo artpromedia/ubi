@@ -292,11 +292,33 @@ describe("POST /v1/wallet/mp/settlements semantics (settleMarketplaceCompletion)
       false,
     );
 
-    // The settlement decision is audited and published in the same tx.
+    // The settlement decision is audited and published in the same tx (both
+    // the legacy mp_settlement row and the dedicated mp.settlement.posted row).
     const event = await db.outboxEvent.findFirst({
       where: { aggregateType: "mp_settlement", aggregateId: awardId },
     });
     expect(event?.name).toBe("transfer.posted");
+    expect(event?.actorType).toBe("system");
+
+    const dedicatedEvent = await db.outboxEvent.findFirst({
+      where: {
+        aggregateType: "mp_award",
+        aggregateId: awardId,
+        name: "mp.settlement.posted",
+      },
+    });
+    expect(dedicatedEvent).not.toBeNull();
+    expect(dedicatedEvent?.actorType).toBe("system");
+    expect(dedicatedEvent?.payload).toMatchObject({
+      awardId,
+      requesterId: rider.userId,
+      driverId: driver.userId,
+      method: "wallet",
+      fareMinor: 5_000_00,
+      tipMinor: 300_00,
+      currency: city.currency,
+      journalEntryId: first.journalEntryId,
+    });
 
     // Replay — any number of retries — answers the original outcome and the
     // fare moves exactly once.
@@ -352,6 +374,19 @@ describe("POST /v1/wallet/mp/settlements semantics (settleMarketplaceCompletion)
     });
     expect(event?.name).toBe("payment.cash_acknowledged");
 
+    const dedicatedEvent = await db.outboxEvent.findFirst({
+      where: {
+        aggregateType: "mp_award",
+        aggregateId: awardId,
+        name: "mp.settlement.posted",
+      },
+    });
+    expect(dedicatedEvent?.payload).toMatchObject({
+      awardId,
+      method: "cash",
+      journalEntryId: null,
+    });
+
     // Idempotent even with no journal entry: the outbox row is the durable
     // record of the outcome.
     const replay = await settleMarketplaceCompletion(deps, input);
@@ -364,6 +399,15 @@ describe("POST /v1/wallet/mp/settlements semantics (settleMarketplaceCompletion)
     expect(
       await db.outboxEvent.count({
         where: { aggregateType: "mp_settlement", aggregateId: awardId },
+      }),
+    ).toBe(1);
+    expect(
+      await db.outboxEvent.count({
+        where: {
+          aggregateType: "mp_award",
+          aggregateId: awardId,
+          name: "mp.settlement.posted",
+        },
       }),
     ).toBe(1);
   });

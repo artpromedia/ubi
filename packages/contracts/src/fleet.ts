@@ -449,6 +449,7 @@ export const FLEET_EVENT_NAMES = [
   "vehicle.document.expired",
   "driver.availability.saved",
   "fleet.vehicle_swap.requested",
+  "fleet.alert",
 ] as const;
 export type FleetEventName = (typeof FLEET_EVENT_NAMES)[number];
 
@@ -2060,7 +2061,7 @@ export const FLEET_EVENT_PAYLOAD_SCHEMAS = {
       reportedAt: Timestamp,
     })
     .strict(),
-} as const satisfies Record<FleetEventName | "fleet.alert", z.ZodTypeAny>;
+} as const satisfies Record<FleetEventName, z.ZodTypeAny>;
 export type FleetEventPayloadMap = {
   readonly [K in keyof typeof FLEET_EVENT_PAYLOAD_SCHEMAS]: z.infer<
     (typeof FLEET_EVENT_PAYLOAD_SCHEMAS)[K]

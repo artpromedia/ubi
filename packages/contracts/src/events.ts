@@ -45,6 +45,7 @@ export const SUBJECT_TYPES = [
   "mp_award",
   "mp_claim",
   "mp_hold",
+  "mp_settlement",
   "rate_profile",
   // post-award trip amendments (A02)
   "mp_amendment",
@@ -395,13 +396,11 @@ export const EVENT_NAMES = [
   // Driver marketplace preferences saved (versioned PATCH, A04). Filters and
   // ranks the feed only — never eligibility, never an automatic bid.
   "mp.driver_preferences.saved",
-  // Dedicated marketplace settlement event (G15). payment-service settles a
-  // completed marketplace ride and, once migrated, emits THIS name alongside
-  // the generic `transfer.posted` / `payment.cash_acknowledged` it emits today
-  // (disambiguated only by aggregateType). Consumers (notification-service,
-  // realtime-gateway) recognize it now so the eventual producer switch is
-  // backward compatible: the old names keep working until every consumer reads
-  // the dedicated one.
+  // Dedicated marketplace settlement event (G15 / P3-01). payment-service
+  // emits THIS name (subject `mp_award`) alongside the legacy `transfer.posted`
+  // / `payment.cash_acknowledged` ledger events (subject `mp_settlement`) so
+  // notification-service and realtime-gateway consume a dedicated marketplace
+  // settlement event while legacy ledger consumers stay backward compatible.
   "mp.settlement.posted",
   // ── Post-award trip amendments (A02 items 4-6) — subject mp_amendment ──
   // proposed → awaiting_approvals (incremental commission + rider top-up

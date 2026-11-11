@@ -112,7 +112,7 @@ export async function closeTestDb(): Promise<void> {
 let counter = 0;
 export function uid(prefix: string): string {
   counter += 1;
-  return `${prefix}_${process.pid.toString(36)}_${Date.now().toString(36)}_${counter}`;
+  return `${prefix}_${process.pid.toString(36).padStart(4, "0")}_${Date.now().toString(36)}_${counter}`;
 }
 
 export function idemKey(label = "k"): string {

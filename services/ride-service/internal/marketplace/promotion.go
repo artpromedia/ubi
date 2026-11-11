@@ -280,6 +280,16 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	if unwound {
 		s.driveDriverCancelReversal(ctx, unwind, now)
 	}
+	if driverCancelled || ride.State == machine.RiderNoShow {
+		cityID := ""
+		if unwind != nil && unwind.request != nil {
+			cityID = unwind.request.CityID
+		}
+		if flagErr := s.evaluateRepeatedCancellationPattern(ctx, claim.DriverID, cityID, now); flagErr != nil {
+			s.deps.Logger.Warn().Err(flagErr).Str("driver_id", claim.DriverID.String()).
+				Msg("repeated-cancellation standing evaluation failed")
+		}
+	}
 
 	return s.promoteNextFor(ctx, claim.DriverID)
 }

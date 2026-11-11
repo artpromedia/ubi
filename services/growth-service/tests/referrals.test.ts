@@ -245,4 +245,73 @@ describe("qualification and reward", () => {
     });
     expect(noReward).toBeNull();
   });
+
+  it("enforces the monthly referral cap atomically under concurrent qualifications (P3-02)", async () => {
+    await db.campaign.updateMany({
+      where: { benefitType: "referral", state: "active" },
+      data: { state: "ended" },
+    });
+    await seedCampaign(db, {
+      benefitType: "referral",
+      budgetLimitMinor: 10_000_000,
+      currency: "NGN",
+      value: {
+        reward: { amountMinor: 200_000, currency: "NGN" },
+        refereeBenefit: { amountMinor: 100_000, currency: "NGN" },
+        monthlyCap: 1,
+        qualifyingEvent: "first completed and paid ride",
+      },
+    });
+    const sharedReferrer = { id: uid("referrer_cap"), role: "rider" as const };
+    const { code } = await share(deps, sharedReferrer);
+
+    const installFor = async (suffix: string): Promise<string> => {
+      const referee = { id: uid(`referee_${suffix}`), role: "rider" as const };
+      await claimAttribution(deps, {
+        actor: referee,
+        cityId: null,
+        code,
+        source: "deferred_link",
+        correlationId: null,
+      });
+      const referral = await db.referral.findFirst({
+        where: { refereeId: referee.id },
+      });
+      return referral!.id;
+    };
+
+    const [refA, refB] = await Promise.all([installFor("a"), installFor("b")]);
+    const [outA, outB] = await Promise.all([
+      qualifyReferral(deps, {
+        actor: { id: "system", role: "growth_admin" },
+        cityId: null,
+        referralId: refA,
+        qualifyingRideId: uid("ride"),
+        correlationId: null,
+      }),
+      qualifyReferral(deps, {
+        actor: { id: "system", role: "growth_admin" },
+        cityId: null,
+        referralId: refB,
+        qualifyingRideId: uid("ride"),
+        correlationId: null,
+      }),
+    ]);
+
+    const outcomes = [outA.outcome, outB.outcome].sort();
+    expect(outcomes).toEqual(["reward_pending", "rewarded"]);
+    const pending = outA.outcome === "reward_pending" ? outA : outB;
+    if (pending.outcome === "reward_pending") {
+      expect(pending.reasonCode).toBe("monthly_cap_reached");
+    }
+
+    const grantedCount = await db.promotionReservation.count({
+      where: {
+        userId: sharedReferrer.id,
+        adjustmentType: "referral_reward",
+        state: { in: ["reserved", "consumed"] },
+      },
+    });
+    expect(grantedCount).toBe(1);
+  });
 });

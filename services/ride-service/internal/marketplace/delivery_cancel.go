@@ -365,3 +365,9 @@ func (s *Store) DeliveryCancelByAward(ctx context.Context, db DB, awardID uuid.U
 	return scanDeliveryCancel(db.QueryRow(ctx,
 		`SELECT `+deliveryCancelColumns+` FROM mp.delivery_cancellations WHERE award_id = $1`, awardID))
 }
+
+// DeliveryCancelForUpdate reads and locks one award's owed cancellation.
+func (s *Store) DeliveryCancelForUpdate(ctx context.Context, tx pgx.Tx, awardID uuid.UUID) (*DeliveryCancelRow, error) {
+	return scanDeliveryCancel(tx.QueryRow(ctx,
+		`SELECT `+deliveryCancelColumns+` FROM mp.delivery_cancellations WHERE award_id = $1 FOR UPDATE`, awardID))
+}

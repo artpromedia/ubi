@@ -123,6 +123,31 @@ describe("rebate arithmetic (pure)", () => {
       computeRebate(rule, withSplit).amountMinor,
     );
   });
+
+  it("refuses a rule whose baseBps disagrees with the live commission rate (P3-03)", () => {
+    const rule = ruleRow({
+      kind: "percentage_points",
+      baseBps: 2_000,
+      reductionBps: 500,
+    });
+    expect(() =>
+      computeRebate(rule, {
+        fareMinor: 10_000,
+        baseCommissionMinor: 1_000, // 10% (1,000 bps) marketplace commission
+        currency: "NGN",
+        paymentMethod: "wallet",
+      }),
+    ).toThrow(/baseBps disagrees with the live commission rate/);
+
+    expect(() =>
+      computeRebate(rule, {
+        fareMinor: 10_000,
+        liveCommissionBps: 1_000,
+        currency: "NGN",
+        paymentMethod: "wallet",
+      }),
+    ).toThrow(/baseBps disagrees with the live commission rate/);
+  });
 });
 
 describe("posting driver incentives", () => {
@@ -267,6 +292,7 @@ describe("posting driver incentives", () => {
     if (a.posted && b.posted) {
       expect(b.replayed).toBe(true);
       expect(b.posting.id).toBe(a.posting.id);
+      expect(b.posting.effectiveBps).toBe(a.posting.effectiveBps);
     }
     const count = await db.driverIncentivePosting.count({
       where: { tripId, kind: "rebate" },

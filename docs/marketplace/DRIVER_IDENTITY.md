@@ -1,63 +1,46 @@
-# Rider-facing driver identity (G09) — what is real vs honestly unavailable
+# Rider-facing driver identity (G09 / A06 part A / CC-A01)
 
-Status: **partial by design.** The rider-facing driver display is now honest
-about what ride-service can and cannot verify. It does **not** fabricate a
-rating or trip count as if they were real.
+Status: **implemented.** Rider-facing driver and vehicle cards resolve verified
+identity, rating, trip history, and vehicle metadata through `user-service` and
+`fleet-service`, and fall back honestly (`profileStatus: "unavailable"`) when a
+profile cannot be verified rather than fabricating numbers.
 
-## The gap this closes
+## What was originally missing (G09)
 
-The audit's G09 pointed at a pseudonymous display: `maskedDriverView`
+In the initial marketplace prototype, `maskedDriverView`
 (`internal/marketplace/views.go`) returned `"Driver <hash>"`, `rating: "–"`,
 `completedTrips: 0`, `plateMasked: "•••"`, and `vehicle = the requested class`.
-The `0` trips read like a real "brand-new driver" figure, which it was not.
+The `0` trips read like a real "brand-new driver" figure when no profile had
+been fetched.
 
-## What is verifiably available inside ride-service
+## Current architecture
 
-Nothing identity- or reputation-shaped. Verified driver identity — legal/first
-name, photo, vehicle registration/plate, star rating and completed-trip history
-— is owned by **user-service**. ride-service holds **no projection** of it and
-makes **no cross-service call** for it. The move core states this in its own
-view layer: `internal/move/views.go` — _"names, plates and photos belong to
-user-service, and privacy by role means this service"_ does not restate them.
+1. **Verified driver profile port (`internal/marketplace/driverprofiles.go`, A06 part A):**
+   - `ride-service` queries `user-service`'s privacy-limited internal read model:
+     `GET {USER_SERVICE_URL}/internal/driver-profiles?ids=<uuid>,…` authenticated
+     with `x-service-name: ride-service` and `x-service-key: DRIVER_PROFILE_RIDE_SERVICE_KEY`.
+   - Responses are validated against `DriverProfilesResponseSchema`
+     (`packages/contracts/src/driver-profile.ts`): display name, initials,
+     verified photo reference, verification status (`verified` | `pending_review`
+     | `not_current`), registered vehicle (`make`, `model`, `colour`, `type`,
+     `plateMasked`), rating (`average`, `count`), `completedTrips`, and
+     `memberSince`.
+   - When `p.Verified()` is true (`Available && Verification.Status == "verified"`),
+     `verifiedDriverView` emits `profileStatus: "verified"` along with the
+     verified `displayName`, `rating`, `completedTrips`, `plateMasked`, and the
+     rich `driverProfile` card (`MpOfferDriverProfileSchema`).
 
-The one server-**verified** fact is the **vehicle class**: the driver is
-eligible for it and is bidding on it (eligibility gates on
-`session.Offers(request.VehicleClass)`), so `vehicle` is real.
+2. **Fleet vehicle overlay (`internal/marketplace/fleet_live.go`, CC-A01 / DEC-3 = A):**
+   - When a fleet-managed driver goes online (`POST /v1/drivers/me/online`) or wins
+     a live/advance marketplace award, `ride-service` resolves their active
+     vehicle assignment from `fleet-service` (`GET /internal/fleet/drivers/{driverId}/vehicle-for-window`),
+     persists the snapshot (`mp.driver_online_vehicles`, `mp.awards.fleet_vehicle`),
+     and overlays the assigned fleet vehicle's masked plate (`•••XX`), make,
+     model, and colour onto offer, award, queue, and receipt views.
 
-## The decision
-
-`verifiedDriverView` (replacing `maskedDriverView`) returns the same fields plus
-an explicit `profileStatus`:
-
-- `profileStatus: "unavailable"` — the authoritative honesty gate. When set, the
-  identity/rating fields are pseudonymous placeholders (`displayName:
-"Driver <tag>"`, `rating: "–"`, `completedTrips: 0`, `plateMasked: "•••"`) that
-  a client **must not** present as verified figures.
-- `vehicle` — always the server-verified eligible class.
-
-The offer projection (during bidding, `offerViewOf`), the winner projection
-(after selection — the queue view's `driver`) and the queue projection all
-derive the driver from this **one** function, so a driver never renders two
-different ways. Tests assert the offer and queue drivers are identical and that
-no numeric rating is invented (`TestWinnerAndOfferDriverConsistent`).
-
-Wire types were deliberately **not** widened to nullable: the rider-mobile
-screens (owned by another surface) read `rating: string` / `completedTrips:
-number`, and a nullable would break their compile. `profileStatus` is an
-additive field the screens ignore.
-
-## Remaining dependency (new, tracked)
-
-To show a **real** name, plate, rating and trip count, ride-service needs a
-verified driver profile join. Two ways to supply it, both out of this slice's
-scope (they cross a service boundary):
-
-1. a synchronous read model / call to **user-service** for a privacy-scoped
-   driver display card, or
-2. a driver-profile **projection table** in ride-service kept in sync via
-   user-service events.
-
-When either lands: fill the verified branch of `verifiedDriverView`, flip
-`profileStatus` to `"verified"`, and widen `rating`/`completedTrips` to nullable
-across `@ubi/contracts`, the OpenAPI and the RN screens **in one change** so the
-"unavailable" case can drop its placeholders. Tracked as a C06 addendum (A08).
+3. **Honest fallback (`profileStatus: "unavailable"`):**
+   - When `user-service` is unconfigured, unreachable, or the driver is not
+     verified, `verifiedDriverView` sets `profileStatus: "unavailable"` and
+     `driverProfile.status: "unavailable"`. Clients render `"Driver details
+unavailable"` instead of presenting placeholder numbers as verified facts.
+   - An offer or award is never blocked by a profile lookup failure.

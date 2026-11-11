@@ -244,9 +244,14 @@ func timelineKeyRedacted(key string) bool {
 }
 
 // phoneLike matches a phone number written as a value, once spaces, dashes
-// and brackets are removed: E.164 (+ and 8-15 digits) or a national number
-// (a leading 0 and 10-12 digits). Dates and amounts never match.
-var phoneLike = regexp.MustCompile(`^(\+[1-9][0-9]{7,14}|0[0-9]{9,11})$`)
+// and brackets are removed: E.164 (+ and 8-15 digits), an unprefixed
+// international/subscriber number (9-15 digits), or a national number with a
+// leading 0 (9-12 digits). ISO dates are excluded before stripping separators.
+var (
+	phoneLike           = regexp.MustCompile(`^(\+?[1-9][0-9]{8,14}|0[0-9]{8,11})$`)
+	formattedSubscriber = regexp.MustCompile(`^[0-9]{7,8}$`)
+	isoDateOrTimePrefix = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}`)
+)
 
 // phoneSeparators are stripped before a value is judged phone-like.
 var phoneSeparators = strings.NewReplacer(" ", "", "-", "", "(", "", ")", "", ".", "")
@@ -293,7 +298,12 @@ func redactTimelineValue(value any) any {
 		}
 		return out
 	case string:
-		if phoneLike.MatchString(phoneSeparators.Replace(strings.TrimSpace(typed))) {
+		trimmed := strings.TrimSpace(typed)
+		if isoDateOrTimePrefix.MatchString(trimmed) {
+			return typed
+		}
+		stripped := phoneSeparators.Replace(trimmed)
+		if phoneLike.MatchString(stripped) || (trimmed != stripped && formattedSubscriber.MatchString(stripped)) {
 			return timelineRedacted
 		}
 		return typed

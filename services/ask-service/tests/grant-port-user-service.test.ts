@@ -32,6 +32,7 @@ import { getExecution } from "../src/ops/executions";
 import { handleMessage, openThread } from "../src/ops/threads";
 import {
   createHttpGrantPort,
+  grantTermsVersion,
   wireGrantIdempotencyKey,
   type GrantMintRequest,
   type GrantPort,
@@ -145,7 +146,9 @@ async function seedMandate(userId: string, status = "active"): Promise<string> {
 describe("the production grant port against user-service's mounted route", () => {
   it("mints an attended grant, persisted by user-service exactly as asked", async () => {
     const request = attended();
-    expect(request.idempotencyKey.length).toBeGreaterThan(64);
+    const expectedWireKey = wireGrantIdempotencyKey(request.idempotencyKey);
+    expect(expectedWireKey.length).toBeGreaterThanOrEqual(8);
+    expect(expectedWireKey.length).toBeLessThanOrEqual(64);
 
     const minted = await port.mint(request);
 
@@ -164,9 +167,7 @@ describe("the production grant port against user-service's mounted route", () =>
     });
     expect(Number(row?.totalMinor)).toBe(4_500_000);
     // The key user-service stored is the port's digest of the scoped key.
-    expect(row?.idempotencyKey).toBe(
-      wireGrantIdempotencyKey(request.idempotencyKey),
-    );
+    expect(row?.idempotencyKey).toBe(expectedWireKey);
     expect(minted.assurance).toBe("pin");
   });
 
@@ -306,7 +307,12 @@ describe("the Ask confirm paths with user-service as the minting authority", () 
     const review = await testDb().askReview.findUniqueOrThrow({
       where: { id: turn.reviewId as string },
     });
-    expect(review.termsVersion.length).toBeGreaterThan(60);
+    const expectedTermsVersion = grantTermsVersion(
+      "ask.review.v1",
+      review.termsVersion,
+    );
+    expect(expectedTermsVersion.length).toBeGreaterThanOrEqual(1);
+    expect(expectedTermsVersion.length).toBeLessThanOrEqual(60);
 
     const { executionId } = await confirmReview(deps, {
       actor,
@@ -323,6 +329,7 @@ describe("the Ask confirm paths with user-service as the minting authority", () 
     const grant = await testDb().actionGrant.findFirstOrThrow({
       where: { actorId: actor.id, resourceRef: review.id },
     });
+    expect(grant.termsVersion).toBe(expectedTermsVersion);
     expect(grant.termsVersion.length).toBeLessThanOrEqual(60);
     expect(grant.consumedAt).not.toBeNull();
     expect(Number(grant.totalMinor)).toBe(6_000_000);

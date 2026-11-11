@@ -338,10 +338,17 @@ func TestAdminRecoveryCarriesCurrencyAndSagasTheirFunding(t *testing.T) {
 	var page marketplace.PendingSagasPage
 	h.DecodeBody(sagas, &page)
 	award := awardRow(t, h, stalled)
+	stalledAwardFound := false
 	for _, row := range page.Rows {
-		if row.AwardID == award.ID.String() && row.FundingSource != marketplace.FundingSourceRider {
-			t.Fatalf("a personal wallet award is rider-funded: %+v", row)
+		if row.AwardID == award.ID.String() {
+			stalledAwardFound = true
+			if row.FundingSource != marketplace.FundingSourceRider {
+				t.Fatalf("a personal wallet award is rider-funded: %+v", row)
+			}
 		}
+	}
+	if !stalledAwardFound {
+		t.Fatalf("stalled personal wallet award %s not found on pending-sagas board: %+v", award.ID, page.Rows)
 	}
 
 	double := newBusinessDouble(t, businessServiceKey)

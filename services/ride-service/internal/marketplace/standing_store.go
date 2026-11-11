@@ -243,8 +243,13 @@ func (a DriverAggregate) CancellationRate() float64 {
 
 // DriverStandingAggregate computes one driver's window aggregate.
 func (s *Store) DriverStandingAggregate(ctx context.Context, db DB, driverID uuid.UUID, windowDays int) (*DriverAggregate, error) {
+	return s.DriverStandingAggregateAt(ctx, db, driverID, windowDays, time.Now().UTC())
+}
+
+// DriverStandingAggregateAt computes one driver's window aggregate relative to now.
+func (s *Store) DriverStandingAggregateAt(ctx context.Context, db DB, driverID uuid.UUID, windowDays int, now time.Time) (*DriverAggregate, error) {
 	agg := &DriverAggregate{DriverID: driverID, WindowDays: windowDays}
-	since := time.Now().UTC().AddDate(0, 0, -windowDays)
+	since := now.UTC().AddDate(0, 0, -windowDays)
 	err := db.QueryRow(ctx, `
 		SELECT COALESCE(MAX(city_id), ''),
 			COUNT(*) FILTER (WHERE state = $2),
@@ -274,7 +279,12 @@ type DriverStandingListRow struct {
 // the abuse addendum (A06) named as missing. Pagination is offset-based: the
 // underlying query is a GROUP BY aggregate, not a keyset-ordered table.
 func (s *Store) ListDriverStanding(ctx context.Context, db DB, cityID string, windowDays, minRides, limit, offset int) ([]*DriverStandingListRow, int, error) {
-	since := time.Now().UTC().AddDate(0, 0, -windowDays)
+	return s.ListDriverStandingAt(ctx, db, cityID, windowDays, minRides, limit, offset, time.Now().UTC())
+}
+
+// ListDriverStandingAt lists drivers whose trailing-window sample relative to now meets minRides.
+func (s *Store) ListDriverStandingAt(ctx context.Context, db DB, cityID string, windowDays, minRides, limit, offset int, now time.Time) ([]*DriverStandingListRow, int, error) {
+	since := now.UTC().AddDate(0, 0, -windowDays)
 	countQuery := `
 		SELECT COUNT(*) FROM (
 			SELECT driver_id FROM ride.rides
@@ -568,4 +578,19 @@ func (s *Store) LatestEffectiveStanding(ctx context.Context, db DB, driverID uui
 		LIMIT 1`,
 		driverID, StandingActionSuspension, StandingActionReinstatement,
 		StandingStatusActive, StandingStatusAppealed, StandingStatusAppealDenied))
+}
+
+// HasPendingStandingAction reports whether the driver already has an
+// unreviewed standing proposal in `pending_approval`.
+func (s *Store) HasPendingStandingAction(ctx context.Context, db DB, driverID uuid.UUID) (bool, error) {
+	var exists bool
+	err := db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM mp.driver_standing_actions
+			WHERE driver_id = $1 AND status = $2
+		)`, driverID, StandingStatusPendingApproval).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check pending standing action for %s: %w", driverID, err)
+	}
+	return exists, nil
 }
