@@ -109,7 +109,7 @@ function toModelHistory(history: readonly StoredMessage[]): ModelMessage[] {
  * real tool name looks sensitive, so a redacted name never runs anything; it is
  * answered as an unavailable tool instead of tripping the backstop.)
  */
-function recordableCall(
+export function recordableCall(
   call: ModelToolCall,
   usedIds: Set<string>,
 ): ModelToolCall {

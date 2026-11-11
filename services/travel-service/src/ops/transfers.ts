@@ -25,7 +25,6 @@
  * ride-service's (the traveller's own funding at award, the driver's 10%
  * captured once there); the flight's is its order's.
  */
-import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 
 import {
@@ -69,6 +68,7 @@ import { RideRefusal, RideUnavailableError } from "../ports/ride-port";
 
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
+import type { Prisma } from "@prisma/client";
 
 /** A flight a ride can be arranged against: the booking really exists. */
 const BOOKED_FLIGHT_STATES: ReadonlySet<string> = new Set([

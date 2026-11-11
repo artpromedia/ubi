@@ -51,6 +51,7 @@ import { ContractError } from "@ubi/contracts";
 
 import { logger } from "../lib/logger";
 import { failure } from "../middleware";
+import { reconcileOrder } from "../ops/reconcile";
 
 import type { TravelDeps } from "../ops/context";
 import type { JsonRecord } from "../ops/types";
@@ -63,13 +64,15 @@ const MIN_KEY_LENGTH = 32;
 
 /** What a background status read answers — state, never money or people. */
 export interface AskOrderStatus {
-  readonly orderId: string;
+  readonly orderId: string | null;
   readonly kind: string;
   readonly state: string;
   readonly stateAt: string;
   readonly supplierRefs: JsonRecord;
   /** The traveller the order belongs to, read from the order itself. */
   readonly ownerId: string;
+  readonly chargedMinor?: number;
+  readonly releasedMinor?: number;
 }
 
 function digest(value: string): Buffer {
@@ -123,9 +126,48 @@ export function createAskInternalRoutes(deps: TravelDeps): Hono {
     try {
       const grantId = c.req.param("grantId");
       const orderId = c.req.param("orderId");
-      const order = await deps.db.travelOrder.findUnique({
+      const cartId = c.req.query("cartId") ?? null;
+      const shouldReconcile = c.req.query("reconcile") === "1";
+
+      let order = await deps.db.travelOrder.findUnique({
         where: { id: orderId },
       });
+      if (order === null && cartId !== null && shouldReconcile) {
+        order = await deps.db.travelOrder.findFirst({
+          where: { cartId, grantId },
+        });
+      }
+
+      if (order === null && cartId !== null && shouldReconcile) {
+        const cart = await deps.db.travelCart.findUnique({
+          where: { id: cartId },
+        });
+        const anyOrderForCart = await deps.db.travelOrder.findFirst({
+          where: { cartId },
+        });
+        if (
+          cart === null ||
+          anyOrderForCart !== null ||
+          cart.status === "checked_out"
+        ) {
+          throw new ContractError("not_found", "no such order", { orderId });
+        }
+        const firstItem = Array.isArray(cart.items)
+          ? (cart.items[0] as { kind?: string } | undefined)
+          : undefined;
+        const status: AskOrderStatus = {
+          orderId: null,
+          kind: firstItem?.kind === "stay" ? "stay" : "flight",
+          state: "failed_released",
+          stateAt: cart.updatedAt.toISOString(),
+          supplierRefs: {},
+          ownerId: cart.userId,
+          chargedMinor: 0,
+          releasedMinor: 0,
+        };
+        return c.json(status, 200);
+      }
+
       // Not booked under an AI grant, or under a different one: the same
       // answer as no order at all, so the key learns nothing it may not read.
       if (
@@ -135,6 +177,24 @@ export function createAskInternalRoutes(deps: TravelDeps): Hono {
       ) {
         throw new ContractError("not_found", "no such order", { orderId });
       }
+
+      if (
+        shouldReconcile &&
+        (order.state === "unknown_reconciling" ||
+          order.state === "supplier_pending")
+      ) {
+        await reconcileOrder(deps, {
+          actor: { id: order.userId, role: "rider" },
+          cityId: order.cityId ?? "lagos",
+          orderId: order.id,
+          correlationId: null,
+        });
+        order =
+          (await deps.db.travelOrder.findUnique({
+            where: { id: order.id },
+          })) ?? order;
+      }
+
       const status: AskOrderStatus = {
         orderId: order.id,
         kind: order.kind,
@@ -142,6 +202,12 @@ export function createAskInternalRoutes(deps: TravelDeps): Hono {
         stateAt: order.stateAt.toISOString(),
         supplierRefs: asRecord(order.supplierRefs),
         ownerId: order.userId,
+        ...(shouldReconcile
+          ? {
+              chargedMinor: Number(order.chargedMinor),
+              releasedMinor: Number(order.releasedMinor),
+            }
+          : {}),
       };
       return c.json(status, 200);
     } catch (error) {

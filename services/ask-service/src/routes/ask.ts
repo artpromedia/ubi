@@ -35,10 +35,11 @@ import {
   gatewayAuth,
   idempotencyKeyOf,
   marketplaceAllowed,
+  travelBookPermission,
 } from "../middleware";
 import { parseBody, parseOptionalBody } from "./parse";
 import { redis } from "../lib/redis";
-import { getExecution } from "../ops/executions";
+import { getExecution, reconcileTravelExecution } from "../ops/executions";
 import {
   cancelMarketplaceRequest,
   createMarketplaceReview,
@@ -273,6 +274,7 @@ export function createAskRoutes(deps: AskDeps): Hono {
         idempotencyKey: idempotencyKeyOf(c),
         correlationId: correlationIdOf(c),
         marketplaceAllowed: marketplaceAllowed(c),
+        travelBookPermission: travelBookPermission(c),
       });
       return c.json(result, 202);
     } catch (error) {
@@ -300,19 +302,27 @@ export function createAskRoutes(deps: AskDeps): Hono {
     }
   });
 
-  // Settles an ambiguous marketplace outcome under the SAME grant and intent;
-  // a settled (or travel) execution is returned unchanged. Idempotent.
+  // Settles an ambiguous marketplace or travel outcome under the SAME grant
+  // and intent; a settled execution is returned unchanged. Idempotent.
   routes.post("/executions/:executionId/reconcile", async (c) => {
     try {
       idempotencyKeyOf(c);
       const actor = actorOf(c);
+      const cityId = cityOf(c);
+      const correlationId = correlationIdOf(c);
       const executionId = c.req.param("executionId");
       await reconcileMarketplaceExecution(deps, {
         actor,
-        cityId: cityOf(c),
+        cityId,
         executionId,
-        correlationId: correlationIdOf(c),
+        correlationId,
         marketplaceAllowed: marketplaceAllowed(c),
+      });
+      await reconcileTravelExecution(deps, {
+        actor,
+        cityId,
+        executionId,
+        correlationId,
       });
       return c.json(await getExecution(deps, actor, executionId), 200);
     } catch (error) {

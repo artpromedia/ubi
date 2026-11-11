@@ -105,6 +105,13 @@ export interface ConfirmInput {
    * selects in the marketplace, so it needs the same scope `/v1/mp` does.
    */
   readonly marketplaceAllowed?: boolean;
+  /**
+   * Whether the gateway granted this session `travel:book` and full device
+   * trust (middleware/auth.ts `travelBookPermission`). Checked before minting
+   * and consuming the single-use grant so the review stays confirmable after
+   * device step-up.
+   */
+  readonly travelBookPermission?: "allowed" | "limited_mode" | "scope_missing";
 }
 
 export interface ConfirmResult {
@@ -369,6 +376,23 @@ export async function confirmReview(
       executionId,
       correlationId: input.correlationId,
     });
+  }
+
+  // Check travel:book and limited mode BEFORE minting or consuming the
+  // single-use grant so the review stays awaiting_confirmation.
+  if (input.travelBookPermission === "limited_mode") {
+    throw new ContractError(
+      "limited_mode",
+      "This device is not verified yet (limited mode). Finish the security check in the UBI app, then confirm your booking. Nothing was booked or charged.",
+      { reason: "limited_mode", required: ["travel:book"] },
+    );
+  }
+  if (input.travelBookPermission === "scope_missing") {
+    throw new ContractError(
+      "forbidden",
+      "This session is not allowed to book travel (it lacks travel:book). Nothing was booked or charged.",
+      { reason: "scope_missing", required: ["travel:book"] },
+    );
   }
 
   // Terms check 1: the client is looking at a version we no longer hold.

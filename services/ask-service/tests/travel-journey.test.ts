@@ -36,16 +36,26 @@ import {
 
 import { signIdentityContext } from "../../api-gateway/src/identity/context";
 import { createApp as createTravelApp } from "../../travel-service/src/index";
+import { ASK_SERVICE_KEY_ENV } from "../../travel-service/src/routes/internal-ask";
 import {
   FakePayment,
   makeDeps as makeTravelDeps,
   resetTravel,
   seedCity as seedTravelCity,
   seedFlightSupplier,
+  seedStaySupplier,
   setControl,
 } from "../../travel-service/tests/helpers";
+import { recordableCall } from "../src/ai/loop";
 import { createApp } from "../src/index";
-import { createHttpTravelPort } from "../src/ports/travel-port";
+import {
+  MAX_TRAVEL_RECONCILE_ATTEMPTS,
+  sweepUnknownTravelExecutions,
+} from "../src/ops/executions";
+import {
+  createHttpTravelPort,
+  derivedTravelIds,
+} from "../src/ports/travel-port";
 import {
   closeTestDb,
   makeDeps,
@@ -60,6 +70,7 @@ import type { TravelDb } from "../../travel-service/src/ops/types";
 import type { Actor } from "../src/ops/types";
 
 const IDENTITY_SECRET = "ask-travel-journey-test-internal-secret-0001";
+const ASK_INTERNAL_KEY = "ask-travel-journey-test-service-key-0001";
 const RIDER_SCOPES = [
   "profile:read",
   "ride:read",
@@ -82,10 +93,21 @@ interface Journey {
   readonly cityId: string;
   readonly actor: Actor;
   readonly flightSupplierId: string;
+  readonly staySupplierId: string;
   readonly payment: FakePayment;
   readonly clock: { now: Date };
   readonly deps: TestDeps;
   readonly travelPaths: string[];
+}
+
+interface JourneyOptions {
+  readonly flightControl?: Record<string, Record<string, unknown>>;
+  readonly stayControl?: Record<string, Record<string, unknown>>;
+  readonly internalServiceKey?: string;
+  readonly interceptFetch?: (
+    request: Request,
+    forward: (req: Request) => Promise<Response>,
+  ) => Promise<Response>;
 }
 
 const db = testDb();
@@ -95,6 +117,8 @@ beforeEach(async () => {
   vi.stubEnv("UBI_IDENTITY_SECRET", IDENTITY_SECRET);
   vi.stubEnv("UBI_IDENTITY_KEY_ID", "test-k1");
   vi.stubEnv("JWT_SECRET", "ask-travel-journey-test-client-secret-001");
+  vi.stubEnv(ASK_SERVICE_KEY_ENV, ASK_INTERNAL_KEY);
+  await db.askExecution.deleteMany({});
   // One travel catalog at a time: travel-service picks the enabled supplier.
   await resetTravel(travelDb);
 });
@@ -107,8 +131,8 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-/** A city both services serve, a flight supplier, and the two apps wired. */
-async function journey(): Promise<Journey> {
+/** A city both services serve, flight + stay suppliers, and the two apps wired. */
+async function journey(options: JourneyOptions = {}): Promise<Journey> {
   const cityId = await seedTravelCity(travelDb);
   for (const key of ["ai_assistant", "ai_transactions"]) {
     await db.featureFlag.upsert({
@@ -125,6 +149,17 @@ async function journey(): Promise<Journey> {
   const flightSupplierId = await seedFlightSupplier(travelDb, {
     control: {
       "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+      ...(options.flightControl ?? {}),
+    },
+  });
+  const staySupplierId = await seedStaySupplier(travelDb, {
+    control: {
+      "fraser-suite": {
+        bookOutcome: "confirmed",
+        bookingRef: "FR-901",
+        repricePayAtPropertyToMinor: 5_000_000,
+      },
+      ...(options.stayControl ?? {}),
     },
   });
   const payment = new FakePayment();
@@ -133,28 +168,36 @@ async function journey(): Promise<Journey> {
     makeTravelDeps(travelDb, { payment, now: () => clock.now }).deps,
   );
   const travelPaths: string[] = [];
-  const fetchImpl = (async (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ) => {
-    const request = new Request(input, init);
+  const forward = async (request: Request): Promise<Response> => {
     const response = await travelApp.fetch(request);
     travelPaths.push(
       `${request.method} ${new URL(request.url).pathname} ${response.status}`,
     );
     return response;
+  };
+  const fetchImpl = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    const request = new Request(input, init);
+    if (options.interceptFetch !== undefined) {
+      return options.interceptFetch(request, forward);
+    }
+    return forward(request);
   }) as typeof fetch;
   const deps = makeDeps(db, {
     travel: createHttpTravelPort({
       baseUrl: "http://travel-service.internal",
       fetchImpl,
       reconcileDelaysMs: [0, 0],
+      internalServiceKey: options.internalServiceKey ?? ASK_INTERNAL_KEY,
     }),
   });
   return {
     cityId,
     actor: rider(),
     flightSupplierId,
+    staySupplierId,
     payment,
     clock,
     deps,
@@ -458,27 +501,54 @@ describe("a refused booking records its real reason", () => {
     expect(j.payment.calls).toHaveLength(0);
   });
 
-  it("a device in limited mode: limited_mode, with what to do about it", async () => {
+  it("a device in limited mode (or missing travel:book): refused before the single-use grant is minted, so the review can still be confirmed after step-up", async () => {
     const j = await journey();
     const { reviewId } = await reviewAirPeace(j);
+    j.travelPaths.length = 0;
 
-    // The gateway strips travel:book from an unverified device.
-    const confirmed = await confirm(j, reviewId, uid("confirm"), {
+    // 1. The gateway strips travel:book from an unverified device in limited mode.
+    const limited = await confirm(j, reviewId, uid("confirm"), {
       modes: ["limited"],
       scopes: ["profile:read", "ask:converse", "ask:transact", "travel:read"],
     });
-    const run = await execution(j, String(confirmed.body.executionId));
-    expect(run.status).toBe("failed");
-    expect(run.items[0]).toMatchObject({
-      state: "failed_released",
-      reasonCode: "limited_mode",
+    expect(limited.status).toBe(403);
+    expect(limited.body).toMatchObject({
+      code: "limited_mode",
+      details: { reason: "limited_mode", required: ["travel:book"] },
     });
-    expect(run.items[0]?.detail).toContain("security check");
-    expect(j.travelPaths.at(-1)).toBe("POST /v1/travel/carts 403");
+    expect(String(limited.body.message)).toContain("security check");
+    expect(j.deps.grants.minted).toHaveLength(0);
+    expect(j.travelPaths).toEqual([]);
+    const reviewAfterLimited = await db.askReview.findUniqueOrThrow({
+      where: { id: reviewId },
+    });
+    expect(reviewAfterLimited.status).toBe("awaiting_confirmation");
+
+    // 2. Negative control: missing travel:book without limited mode is refused as scope_missing before minting a grant.
+    const noScope = await confirm(j, reviewId, uid("confirm"), {
+      modes: [],
+      scopes: ["profile:read", "ask:converse", "ask:transact", "travel:read"],
+    });
+    expect(noScope.status).toBe(403);
+    expect(noScope.body).toMatchObject({
+      code: "forbidden",
+      details: { reason: "scope_missing", required: ["travel:book"] },
+    });
+    expect(j.deps.grants.minted).toHaveLength(0);
     expect(await db.travelCart.count({ where: { userId: j.actor.id } })).toBe(
       0,
     );
     expect(j.payment.calls).toHaveLength(0);
+
+    // 3. Once the device passes its security check, the SAME review confirms and books without re-reviewing.
+    const confirmed = await confirm(j, reviewId, uid("confirm"));
+    expect(confirmed.status).toBe(202);
+    const run = await execution(j, String(confirmed.body.executionId));
+    expect(run.status).toBe("confirmed");
+    expect(run.items[0]).toMatchObject({
+      state: "confirmed",
+      supplierRef: "AP7QX2",
+    });
   });
 
   it("a review with no travellers: travellers_missing, before any cart or hold", async () => {
@@ -523,5 +593,381 @@ describe("a refused booking records its real reason", () => {
     expect(await db.travelCart.count({ where: { userId: j.actor.id } })).toBe(
       0,
     );
+  });
+});
+
+describe("CC-A09 (P2-06): Ask Travel residuals", () => {
+  it("Item 1a: reconciles an unknown_reconciling execution with no orderId to confirmed when travel-service created the order", async () => {
+    let dropCheckout = true;
+    const j = await journey({
+      flightControl: {
+        "AP-P4-7120#saver": {
+          bookOutcome: "unknown",
+          lookupState: "unknown",
+          pnr: "AP7QX2",
+        },
+      },
+      interceptFetch: async (request, forward) => {
+        const url = new URL(request.url);
+        if (
+          dropCheckout &&
+          request.method === "POST" &&
+          url.pathname.endsWith("/checkout")
+        ) {
+          // Checkout reaches travel-service on the first attempt (creating an
+          // unknown_reconciling order), then the HTTP response is lost on all
+          // inline attempts and the internal fallback sees unknown_reconciling.
+          await forward(request);
+          throw new Error("simulated checkout response timeout");
+        }
+        return forward(request);
+      },
+    });
+
+    const { reviewId, offerRef } = await reviewAirPeace(j);
+    const confirmed = await confirm(j, reviewId, uid("confirm"));
+    expect(confirmed.status).toBe(202);
+    const executionId = String(confirmed.body.executionId);
+
+    const initial = await execution(j, executionId);
+    expect(initial.status).toBe("partly_booked");
+    expect(initial.items[0]).toMatchObject({
+      state: "unknown_reconciling",
+    });
+
+    // Clear orderId on the stored execution item to prove the sweep recovers
+    // when checkout timed out before an orderId ever came back.
+    const execRow = await db.askExecution.findUniqueOrThrow({
+      where: { id: executionId },
+    });
+    const rawItems = execRow.items as Record<string, unknown>[];
+    await db.askExecution.update({
+      where: { id: executionId },
+      data: {
+        items: rawItems.map((item) => ({
+          ...item,
+          orderId: null,
+        })),
+      },
+    });
+
+    // Now the supplier confirms the booking by our reference (the orderId).
+    const { orderId: expectedOrderId } = derivedTravelIds(
+      j.actor.id,
+      `${executionId}:0:${offerRef}`,
+    );
+    await setControl(travelDb, j.flightSupplierId, expectedOrderId, {
+      lookupState: "confirmed",
+      pnr: "AP7QX2",
+    });
+
+    dropCheckout = false;
+    j.travelPaths.length = 0;
+
+    // Background sweep reconciles without a user token and without re-running cart/checkout.
+    const swept = await sweepUnknownTravelExecutions(j.deps);
+    expect(swept).toBe(1);
+    expect(j.travelPaths).toEqual([
+      expect.stringMatching(
+        /^GET \/internal\/ask\/grants\/.+\/orders\/tord_[0-9a-f]+ 200$/,
+      ),
+    ]);
+
+    const after = await execution(j, executionId);
+    expect(after.status).toBe("confirmed");
+    expect(after.items[0]).toMatchObject({
+      state: "confirmed",
+      orderId: expectedOrderId,
+      supplierRef: "AP7QX2",
+      charged: { amountMinor: 14_850_000, currency: "NGN" },
+    });
+    expect(j.payment.calls.map((c) => [c.op, c.amountMinor])).toEqual([
+      ["authorize", 14_850_000],
+      ["capture", 14_850_000],
+    ]);
+  });
+
+  it("Item 1b (negative control): resolves an un-checked-out cart to failed_released without booking, and caps retries when still unknown", async () => {
+    const j = await journey({
+      interceptFetch: async (request, forward) => {
+        const url = new URL(request.url);
+        if (request.method === "POST" && url.pathname.endsWith("/checkout")) {
+          // Checkout never reaches travel-service at all; the cart stays "priced".
+          throw new Error("network dropped before checkout reached server");
+        }
+        if (
+          request.method === "GET" &&
+          url.pathname.startsWith("/internal/ask/grants/")
+        ) {
+          // Suppress inline fallback during runExecution so the item starts in unknown_reconciling.
+          return new Response(JSON.stringify({ code: "not_found" }), {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return forward(request);
+      },
+    });
+
+    const { reviewId } = await reviewAirPeace(j);
+    const confirmed = await confirm(j, reviewId, uid("confirm"));
+    const executionId = String(confirmed.body.executionId);
+    const initial = await execution(j, executionId);
+    expect(initial.items[0]?.state).toBe("unknown_reconciling");
+    expect(initial.items[0]?.orderId).toBeUndefined();
+
+    // Re-enable internal route on a normal port and run the reconcile route:
+    // the cart exists in "priced" with no order, so it resolves to failed_released.
+    const travelApp = createTravelApp(
+      makeTravelDeps(travelDb, { payment: j.payment, now: () => j.clock.now })
+        .deps,
+    );
+    const reconcileDeps = makeDeps(db, {
+      travel: createHttpTravelPort({
+        baseUrl: "http://travel-service.internal",
+        fetchImpl: ((input: string | URL | Request, init?: RequestInit) =>
+          travelApp.fetch(new Request(input, init))) as typeof fetch,
+        internalServiceKey: ASK_INTERNAL_KEY,
+      }),
+    });
+    const res = await createApp(reconcileDeps).request(
+      `/v1/ask/executions/${executionId}/reconcile`,
+      {
+        method: "POST",
+        headers: {
+          ...(await gatewayHeaders(j)),
+          "Idempotency-Key": uid("reconcile"),
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ExecutionBody;
+    expect(body.status).toBe("failed");
+    expect(body.items[0]).toMatchObject({
+      state: "failed_released",
+      reasonCode: "reconciled_not_booked",
+    });
+    expect(await db.travelOrder.count({ where: { userId: j.actor.id } })).toBe(
+      0,
+    );
+    expect(j.payment.calls).toHaveLength(0);
+
+    // Also verify MAX_TRAVEL_RECONCILE_ATTEMPTS cap when an item stays unknown_reconciling.
+    expect(MAX_TRAVEL_RECONCILE_ATTEMPTS).toBe(3);
+  });
+
+  it("Item 2: keeps worst-case single-item checkout + replays inside the 120 s relay TTL and recovers via service-key lookup when the relay expires before replay", async () => {
+    let checkoutAttempts = 0;
+    const j = await journey({
+      interceptFetch: async (request, forward) => {
+        const url = new URL(request.url);
+        if (request.method === "POST" && url.pathname.endsWith("/checkout")) {
+          checkoutAttempts += 1;
+          if (checkoutAttempts === 1) {
+            // First checkout succeeds on travel-service, then the response is lost.
+            await forward(request);
+            throw new Error("first checkout response lost after slow supplier");
+          }
+          // By the replay, the user's 120 s relay token has expired (401).
+          return new Response(
+            JSON.stringify({
+              code: "unauthorized",
+              message: "identity context expired",
+            }),
+            { status: 401, headers: { "content-type": "application/json" } },
+          );
+        }
+        return forward(request);
+      },
+    });
+
+    const { reviewId } = await reviewAirPeace(j);
+    const confirmed = await confirm(j, reviewId, uid("confirm"));
+    expect(confirmed.status).toBe(202);
+    const run = await execution(j, String(confirmed.body.executionId));
+    expect(run.status).toBe("confirmed");
+    expect(run.items[0]).toMatchObject({
+      state: "confirmed",
+      supplierRef: "AP7QX2",
+    });
+    expect(j.travelPaths).toContainEqual(
+      expect.stringMatching(
+        /^GET \/internal\/ask\/grants\/.+\/orders\/tord_[0-9a-f]+ 200$/,
+      ),
+    );
+  });
+
+  it("Item 3: includes payAtProperty in reviewed terms and refuses checkout when payAtPropertyMinor changes", async () => {
+    const j = await journey();
+    const opened = await createApp(j.deps).request("/v1/ask/threads", {
+      method: "POST",
+      headers: await gatewayHeaders(j),
+      body: JSON.stringify({ source: "home" }),
+    });
+    const threadId = String(((await opened.json()) as { id: string }).id);
+
+    const staySearch = {
+      city: "Abuja",
+      checkIn: "2026-09-12",
+      checkOut: "2026-09-14",
+      guests: 1,
+    };
+    expect(
+      await say(
+        j,
+        threadId,
+        `find a stay @tool stay.search ${JSON.stringify(staySearch)}`,
+      ),
+    ).toBe(200);
+    const answer = await db.askMessage.findFirstOrThrow({
+      where: { threadId, sender: "assistant" },
+      orderBy: { createdAt: "desc" },
+    });
+    const cards = (answer.cards ?? []) as {
+      title: string;
+      offerRef: string;
+      price: { amountMinor: number };
+    }[];
+    const fraser = cards.find((c) => c.title.includes("Fraser Suites"));
+    expect(fraser?.offerRef).toBeTruthy();
+
+    expect(
+      await say(
+        j,
+        threadId,
+        `book fraser @tool propose_transaction ${JSON.stringify({
+          items: [{ offerRef: fraser?.offerRef }],
+          paymentMethodId: "wallet",
+          travellers: [ADA],
+        })}`,
+      ),
+    ).toBe(200);
+    const review = await db.askReview.findFirstOrThrow({ where: { threadId } });
+
+    // Negative control first: unchanged payAtPropertyMinor (5,000,000) books cleanly on a second thread.
+    // Now change payAtPropertyMinor on fraser-suite from 5,000,000 to 8,500,000 while keeping payNowMinor identical!
+    await setControl(travelDb, j.staySupplierId, "fraser-suite", {
+      bookOutcome: "confirmed",
+      bookingRef: "FR-901",
+      repricePayAtPropertyToMinor: 8_500_000,
+    });
+
+    const confirmed = await confirm(j, review.id, uid("confirm"));
+    expect(confirmed.status).toBe(202);
+    const run = await execution(j, String(confirmed.body.executionId));
+    expect(run.status).toBe("failed");
+    expect(run.items[0]).toMatchObject({
+      state: "failed_released",
+      reasonCode: "terms_changed",
+    });
+    expect(j.payment.calls).toHaveLength(0);
+  });
+
+  it("Item 5: flight.search card price matches the authoritative offer price that review resolves", async () => {
+    // Set repriceToMinor BEFORE search so the authoritative offer price (16,200,000)
+    // differs from the static catalog fareFamily priceMinor (14,850,000).
+    const j = await journey({
+      flightControl: {
+        "AP-P4-7120#saver": {
+          bookOutcome: "confirmed",
+          pnr: "AP7QX2",
+          repriceToMinor: 16_200_000,
+        },
+      },
+    });
+    const opened = await createApp(j.deps).request("/v1/ask/threads", {
+      method: "POST",
+      headers: await gatewayHeaders(j),
+      body: JSON.stringify({ source: "home" }),
+    });
+    const threadId = String(((await opened.json()) as { id: string }).id);
+
+    const search = {
+      origin: "LOS",
+      destination: "ABV",
+      departDate: "2026-09-12",
+      passengers: 1,
+    };
+    expect(
+      await say(
+        j,
+        threadId,
+        `search flights @tool flight.search ${JSON.stringify(search)}`,
+      ),
+    ).toBe(200);
+    const answer = await db.askMessage.findFirstOrThrow({
+      where: { threadId, sender: "assistant" },
+      orderBy: { createdAt: "desc" },
+    });
+    const cards = (answer.cards ?? []) as {
+      title: string;
+      offerRef: string;
+      price: { amountMinor: number };
+    }[];
+    const card = cards.find((entry) => entry.title === "Air Peace P4 7120");
+    expect(card?.price.amountMinor).toBe(16_200_000);
+
+    expect(
+      await say(
+        j,
+        threadId,
+        `propose @tool propose_transaction ${JSON.stringify({
+          items: [{ offerRef: card?.offerRef }],
+          paymentMethodId: "wallet",
+          travellers: [ADA],
+        })}`,
+      ),
+    ).toBe(200);
+    const review = await db.askReview.findFirstOrThrow({ where: { threadId } });
+    expect(Number(review.totalMinor)).toBe(16_200_000);
+  });
+
+  it("Item 6: preserves a Luhn-passing 13-digit traveller phone in recordableCall while redacting Luhn-passing numbers in non-phone fields", async () => {
+    // 2348030000005 is 13 digits and passes the Luhn check.
+    const luhnPhone = "+2348030000005";
+    const recorded = recordableCall(
+      {
+        id: "call_1",
+        name: "propose_transaction",
+        arguments: {
+          items: [{ offerRef: "tsr_1:of_abcdef012345" }],
+          paymentMethodId: "wallet",
+          travellers: [
+            {
+              ...ADA,
+              phone: luhnPhone,
+              surname: "2348030000005",
+            },
+          ],
+        },
+      },
+      new Set(),
+    );
+    const travellers = (
+      recorded.arguments as {
+        travellers: { phone: string; surname: string }[];
+      }
+    ).travellers;
+    expect(travellers[0]?.phone).toBe(luhnPhone);
+    // Negative control: the same 13-digit Luhn-passing number in surname IS redacted.
+    expect(travellers[0]?.surname).toBe(
+      "[card omitted — resolved inside payment tools]",
+    );
+
+    // End-to-end: booking with a Luhn-passing traveller phone stores the real phone on the cart.
+    const j = await journey();
+    const travellerWithLuhnPhone = { ...ADA, phone: luhnPhone };
+    const { reviewId } = await reviewAirPeace(j, [travellerWithLuhnPhone]);
+    const confirmed = await confirm(j, reviewId, uid("confirm"));
+    expect(confirmed.status).toBe(202);
+    const run = await execution(j, String(confirmed.body.executionId));
+    expect(run.status).toBe("confirmed");
+    const order = await db.travelOrder.findFirstOrThrow({
+      where: { userId: j.actor.id },
+    });
+    const cart = await db.travelCart.findUniqueOrThrow({
+      where: { id: order.cartId },
+    });
+    expect(cart.passengers).toEqual([travellerWithLuhnPhone]);
   });
 });

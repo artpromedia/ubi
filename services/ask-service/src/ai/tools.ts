@@ -37,6 +37,7 @@ export interface ReviewProposalItem {
   readonly detail: string | null;
   readonly priceMinor: number;
   readonly currency: string;
+  readonly payAtPropertyMinor?: number | null;
   readonly terms: readonly { text: string; tone: string }[];
   readonly offerRef: string;
   /** The grant action this item will need at execution time. */
@@ -621,6 +622,7 @@ const proposeTool: AskTool = {
         detail: offer.detail,
         priceMinor: offer.priceMinor,
         currency: offer.currency,
+        payAtPropertyMinor: offer.payAtPropertyMinor ?? null,
         terms: offer.terms,
         offerRef: offer.offerRef,
         action: offer.kind === "flight" ? "flight.book" : "stay.book",

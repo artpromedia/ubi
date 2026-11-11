@@ -140,6 +140,7 @@ const controlSchema = z.object({
     .optional(),
   documentsIssued: z.boolean().optional(),
   repriceToMinor: z.number().int().optional(),
+  repricePayAtPropertyToMinor: z.number().int().optional(),
   soldOut: z.boolean().optional(),
   /**
    * The supplier reports the offer's terms (cancellation policy, board) as
@@ -621,6 +622,8 @@ function rateOffer(cfg: FixtureConfig, rate: FixtureRate): AdapterOffer {
   const currency = rate.capabilities.currency;
   const control = controlFor(cfg, rate.id);
   const priceMinor = control.repriceToMinor ?? rate.payNowMinor;
+  const payAtPropertyMinor =
+    control.repricePayAtPropertyToMinor ?? rate.payAtPropertyMinor;
   const supplierPrice =
     rate.supplierPriceMinor !== undefined && rate.supplierCurrency !== undefined
       ? money(rate.supplierPriceMinor, rate.supplierCurrency)
@@ -640,9 +643,9 @@ function rateOffer(cfg: FixtureConfig, rate: FixtureRate): AdapterOffer {
       occupancy: rate.occupancy ?? null,
       payNow: { amountMinor: priceMinor, currency },
       payAtProperty:
-        rate.payAtPropertyMinor === undefined
+        payAtPropertyMinor === undefined
           ? null
-          : { amountMinor: rate.payAtPropertyMinor, currency },
+          : { amountMinor: payAtPropertyMinor, currency },
       supplierPrice:
         supplierPrice === null
           ? null
@@ -663,9 +666,9 @@ function rateOffer(cfg: FixtureConfig, rate: FixtureRate): AdapterOffer {
     supplierPrice,
     fx,
     payAtProperty:
-      rate.payAtPropertyMinor === undefined
+      payAtPropertyMinor === undefined
         ? null
-        : money(rate.payAtPropertyMinor, currency),
+        : money(payAtPropertyMinor, currency),
     capabilities: toCapabilities(rate.capabilities),
     soldOut: control.soldOut ?? false,
     policy: {

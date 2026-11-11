@@ -38,6 +38,48 @@ const PLACEHOLDER = {
   address: "[address omitted — resolved inside a location tool]",
 } as const;
 
+const TRAVELLER_PHONE_PATH = /(?:^|\.|\[)travellers\[\d+\]\.phone$/;
+const TRAVELLER_PHONE_VALUE = /^\+?[0-9 ()-]{5,24}$/;
+const TRAVELLERS_JSON_ARRAY = /"travellers"\s*:\s*\[[\s\S]*?\]/g;
+const PHONE_JSON_PROP = /"phone"\s*:\s*"(\+?[0-9 ()-]{5,24})"/g;
+
+function isTravellerPhoneField(path: string, value: string): boolean {
+  return (
+    TRAVELLER_PHONE_PATH.test(path) && TRAVELLER_PHONE_VALUE.test(value.trim())
+  );
+}
+
+/**
+ * Character ranges `[start, end)` of `"phone": "..."` values inside a JSON
+ * `"travellers": [...]` array so serialized tool calls / directives do not
+ * mistake a traveller's phone number for a payment card number.
+ */
+function travellerPhoneSpansInText(
+  text: string,
+): readonly (readonly [number, number])[] {
+  if (!text.includes('"travellers"') || !text.includes('"phone"')) {
+    return [];
+  }
+  const spans: (readonly [number, number])[] = [];
+  for (const arrayMatch of text.matchAll(TRAVELLERS_JSON_ARRAY)) {
+    const base = arrayMatch.index ?? 0;
+    for (const phoneMatch of arrayMatch[0].matchAll(PHONE_JSON_PROP)) {
+      const rel = phoneMatch.index ?? 0;
+      spans.push([base + rel, base + rel + phoneMatch[0].length]);
+    }
+  }
+  return spans;
+}
+
+function insideAnySpan(
+  index: number,
+  length: number,
+  spans: readonly (readonly [number, number])[],
+): boolean {
+  const end = index + length;
+  return spans.some(([s, e]) => index >= s && end <= e);
+}
+
 function luhnValid(digits: string): boolean {
   let sum = 0;
   let alt = false;
@@ -62,18 +104,46 @@ function luhnValid(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-/** Rewrites recognisable sensitive spans in free text into opaque placeholders. */
-export function redact(text: string): string {
+function redactNonCard(text: string): string {
   let out = text;
-  out = out.replace(CARD_LIKE, (match) => {
-    const digits = match.replace(/[^\d]/g, "");
-    return digits.length >= 13 && luhnValid(digits) ? PLACEHOLDER.card : match;
-  });
   out = out.replace(PIN_LABELLED, PLACEHOLDER.pin);
   out = out.replace(NIN_BVN, PLACEHOLDER.document);
   out = out.replace(PASSPORT, PLACEHOLDER.document);
   out = out.replace(STREET_ADDRESS, PLACEHOLDER.address);
   return out;
+}
+
+/** Rewrites recognisable sensitive spans in free text into opaque placeholders. */
+export function redact(text: string): string {
+  const phoneSpans = travellerPhoneSpansInText(text);
+  const out = text.replace(CARD_LIKE, (match, offset: number) => {
+    if (insideAnySpan(offset, match.length, phoneSpans)) {
+      return match;
+    }
+    const digits = match.replace(/[^\d]/g, "");
+    return digits.length >= 13 && luhnValid(digits) ? PLACEHOLDER.card : match;
+  });
+  return redactNonCard(out);
+}
+
+function redactValueAt(value: unknown, path: string): unknown {
+  if (typeof value === "string") {
+    return isTravellerPhoneField(path, value)
+      ? redactNonCard(value)
+      : redact(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, index) => redactValueAt(item, `${path}[${index}]`));
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        redact(key),
+        redactValueAt(child, path === "" ? key : `${path}.${key}`),
+      ]),
+    );
+  }
+  return value;
 }
 
 /**
@@ -82,21 +152,7 @@ export function redact(text: string): string {
  * model, so text a model hallucinated cannot trip the backstop below.
  */
 export function redactValue(value: unknown): unknown {
-  if (typeof value === "string") {
-    return redact(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map(redactValue);
-  }
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [
-        redact(key),
-        redactValue(child),
-      ]),
-    );
-  }
-  return value;
+  return redactValueAt(value, "");
 }
 
 export interface SensitiveHit {
@@ -105,10 +161,17 @@ export interface SensitiveHit {
 }
 
 function scanString(value: string, path: string, hits: SensitiveHit[]): void {
-  for (const match of value.matchAll(CARD_LIKE)) {
-    const digits = match[0].replace(/[^\d]/g, "");
-    if (digits.length >= 13 && luhnValid(digits)) {
-      hits.push({ kind: "card", path });
+  if (!isTravellerPhoneField(path, value)) {
+    const phoneSpans = travellerPhoneSpansInText(value);
+    for (const match of value.matchAll(CARD_LIKE)) {
+      const offset = match.index ?? 0;
+      if (insideAnySpan(offset, match[0].length, phoneSpans)) {
+        continue;
+      }
+      const digits = match[0].replace(/[^\d]/g, "");
+      if (digits.length >= 13 && luhnValid(digits)) {
+        hits.push({ kind: "card", path });
+      }
     }
   }
   if (PIN_LABELLED.test(value)) {

@@ -171,10 +171,15 @@ export async function flightSearch(
   };
 }
 
-/** A bookable offer as a search answers it: its snapshot plus its key. */
+/** A bookable offer as a search answers it: its snapshot plus its key and authoritative price. */
 function offerViewWithKey(offer: JsonRecord): JsonRecord {
   return {
     ...(offer.snapshot as JsonRecord),
+    ...(typeof offer.priceMinor === "number" &&
+    typeof offer.currency === "string"
+      ? { price: money(offer.priceMinor, offer.currency) }
+      : {}),
+    ...(typeof offer.soldOut === "boolean" ? { soldOut: offer.soldOut } : {}),
     offerKey: offerKeyFor(String(offer.offerRef)),
   };
 }

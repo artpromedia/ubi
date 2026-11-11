@@ -107,12 +107,17 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
-import { ContractError, type ErrorCode } from "@ubi/contracts";
+import {
+  ContractError,
+  scopedIdempotencyKey,
+  type ErrorCode,
+} from "@ubi/contracts";
 
 import {
   currentIdentityRelay,
   signedRelayHeaders,
 } from "../lib/identity-relay";
+import { deterministicId } from "../lib/ids";
 import { toolLogger } from "../lib/logger";
 import { isProductionEnvironment } from "../lib/ride-context";
 
@@ -154,6 +159,7 @@ export interface ResolvedOffer {
   readonly detail: string | null;
   readonly priceMinor: number;
   readonly currency: string;
+  readonly payAtPropertyMinor?: number | null;
   readonly termsVersion: string;
   readonly terms: readonly { text: string; tone: string }[];
   /**
@@ -167,6 +173,21 @@ export interface BookingStatusResult {
   readonly orderId: string;
   readonly state: string;
   readonly supplierRef: string | null;
+}
+
+export interface ExecutionItemReconcileRef {
+  readonly grantId: string;
+  readonly actorId: string;
+  readonly idempotencyKey: string;
+  readonly orderId?: string | null;
+}
+
+export interface ExecutionItemReconcileResult {
+  readonly orderId: string | null;
+  readonly state: string;
+  readonly supplierRef: string | null;
+  readonly chargedMinor: number | null;
+  readonly releasedMinor: number | null;
 }
 
 /** One booked item's outcome. A partial failure is its own released state. */
@@ -221,6 +242,8 @@ export interface BookInput {
   /** The exact price the user approved on the review — never charged otherwise. */
   readonly priceMinor: number;
   readonly currency: string;
+  /** Pay-at-property amount reviewed with the offer, when applicable. */
+  readonly payAtPropertyMinor?: number | null;
   readonly travellers: readonly Traveller[];
   /** The review's pinned purchase; resolved from the offer when absent. */
   readonly purchase?: TravelPurchaseRef | null;
@@ -273,14 +296,22 @@ export interface TravelPort {
   executionOrderStatus(
     ref: ExecutionOrderRef,
   ): Promise<BookingStatusResult | null>;
+  /**
+   * Reconciles one execution item (with or without a known `orderId`) by its
+   * derived cart and order keys under the service key alone. Never books again.
+   */
+  reconcileExecutionItem?(
+    ref: ExecutionItemReconcileRef,
+  ): Promise<ExecutionItemReconcileResult | null>;
 }
 
 interface TravelHttpOptions {
   readonly baseUrl: string;
   /**
    * The key for travel-service's background-read surface
-   * (TRAVEL_ASK_SERVICE_KEY there). Used ONLY by `executionOrderStatus`;
-   * request-scoped calls relay the user's gateway context instead.
+   * (TRAVEL_ASK_SERVICE_KEY there). Used ONLY by `executionOrderStatus` and
+   * `reconcileExecutionItem`; request-scoped calls relay the user's gateway
+   * context instead.
    */
   readonly internalServiceKey?: string;
   readonly timeoutMs?: number;
@@ -338,6 +369,7 @@ const FlightOfferSchema = z
     to: z.string().nullable().optional(),
     stops: z.number().int().nonnegative().optional(),
     soldOut: z.boolean().optional(),
+    price: MoneySchema.optional(),
     chosenFareFamilyId: z.string().min(1).nullable().optional(),
     fareFamilies: z.array(FareFamilySchema).min(1),
   })
@@ -432,6 +464,7 @@ const CartSchema = z
           kind: z.enum(["flight", "stay"]),
           price: MoneySchema,
           previousPrice: MoneySchema.nullable().optional(),
+          payAtProperty: MoneySchema.nullable().optional(),
           unavailable: z.enum(["sold_out", "expired"]).nullable().optional(),
         })
         .passthrough(),
@@ -466,10 +499,12 @@ const CheckoutSchema = z
 /** travel-service routes/internal-ask.ts AskOrderStatus. */
 const AskOrderStatusSchema = z
   .object({
-    orderId: z.string().min(1),
+    orderId: z.string().min(1).nullable(),
     state: z.string().min(1),
     supplierRefs: z.record(z.unknown()),
     ownerId: z.string().min(1),
+    chargedMinor: z.number().int().nonnegative().optional(),
+    releasedMinor: z.number().int().nonnegative().optional(),
   })
   .passthrough();
 
@@ -524,7 +559,7 @@ function assistantOfferRef(searchId: string, offerKey: string): string {
  * The cart and checkout keys for one execution item: url-safe, bounded (the
  * travel keys are ≤ 64 characters) and the same on every retry.
  */
-function itemKeys(idempotencyKey: string): {
+export function itemKeys(idempotencyKey: string): {
   cart: string;
   checkout: string;
 } {
@@ -533,6 +568,37 @@ function itemKeys(idempotencyKey: string): {
     .digest("hex")
     .slice(0, 40);
   return { cart: `ask-${digest}-cart`, checkout: `ask-${digest}-checkout` };
+}
+
+/**
+ * The deterministic cartId and orderId travel-service computes for one
+ * execution item, so an `unknown_reconciling` item whose checkout answer was
+ * lost (`orderId: null`) can still be looked up by its derived references.
+ */
+export function derivedTravelIds(
+  actorId: string,
+  idempotencyKey: string,
+): {
+  readonly cartKey: string;
+  readonly checkoutKey: string;
+  readonly cartId: string;
+  readonly orderId: string;
+} {
+  const keys = itemKeys(idempotencyKey);
+  const cartScoped = scopedIdempotencyKey("travel.cart", actorId, keys.cart);
+  const cartId = deterministicId("cart", cartScoped);
+  const checkoutScoped = scopedIdempotencyKey(
+    `travel.checkout:${cartId}`,
+    actorId,
+    keys.checkout,
+  );
+  const orderId = deterministicId("tord", `${checkoutScoped}:0`);
+  return {
+    cartKey: keys.cart,
+    checkoutKey: keys.checkout,
+    cartId,
+    orderId,
+  };
 }
 
 function capitalise(text: string): string {
@@ -872,9 +938,9 @@ type CheckoutAnswer =
 
 export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
   const doFetch = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 12_000;
-  const checkoutTimeoutMs = options.checkoutTimeoutMs ?? 45_000;
-  const reconcileDelaysMs = options.reconcileDelaysMs ?? [1_000, 3_000];
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const checkoutTimeoutMs = options.checkoutTimeoutMs ?? 22_000;
+  const reconcileDelaysMs = options.reconcileDelaysMs ?? [1_000, 2_000];
   const base = options.baseUrl.replace(/\/+$/, "");
 
   /**
@@ -1247,7 +1313,104 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
       const latest = await readOrder(actor, order.id);
       return bookedFromOrder(latest ?? order, input, "reconciled");
     }
+
+    if (
+      options.internalServiceKey !== undefined &&
+      options.internalServiceKey.length > 0
+    ) {
+      try {
+        const reconciled = await reconcileExecutionItemInternal({
+          grantId: input.grantId,
+          actorId: actor.id,
+          idempotencyKey: input.idempotencyKey,
+        });
+        if (reconciled !== null && reconciled.orderId !== null) {
+          return {
+            kind: input.kind,
+            state: reconciled.state,
+            orderId: reconciled.orderId,
+            supplierRef: reconciled.supplierRef,
+            chargedMinor: reconciled.chargedMinor,
+            releasedMinor: reconciled.releasedMinor,
+            detail: DONE_DETAIL[reconciled.state] ?? null,
+            reasonCode: "reconciled",
+          };
+        }
+      } catch {
+        // Leave as unknown_reconciling for the background sweep.
+      }
+    }
+
     return unresolvedItem(input);
+  }
+
+  async function reconcileExecutionItemInternal(
+    ref: ExecutionItemReconcileRef,
+  ): Promise<ExecutionItemReconcileResult | null> {
+    const key = options.internalServiceKey;
+    if (key === undefined || key.length === 0) {
+      throw new ContractError(
+        "service_unavailable",
+        "background travel reads are not configured",
+      );
+    }
+    const derived = derivedTravelIds(ref.actorId, ref.idempotencyKey);
+    const targetOrderId =
+      ref.orderId !== undefined &&
+      ref.orderId !== null &&
+      ref.orderId.length > 0
+        ? ref.orderId
+        : derived.orderId;
+    try {
+      const response = await send(
+        `/internal/ask/grants/${encodeURIComponent(ref.grantId)}/orders/${encodeURIComponent(targetOrderId)}?cartId=${encodeURIComponent(derived.cartId)}&reconcile=1`,
+        "GET",
+        { "X-Service-Key": key },
+      );
+      if (response.status === 404) {
+        return null;
+      }
+      if (response.status === 401) {
+        throw new ContractError(
+          "unauthorized",
+          "the travel service refused the background read's service key",
+        );
+      }
+      if (!response.ok) {
+        unavailable("booking status");
+      }
+      const parsed = AskOrderStatusSchema.safeParse(await bodyOf(response));
+      if (!parsed.success) {
+        toolLogger.error(
+          { orderId: targetOrderId },
+          "travel-service answered a background item reconciliation the port cannot verify; refusing it",
+        );
+        unavailable("booking status");
+      }
+      if (parsed.data.ownerId !== ref.actorId) {
+        toolLogger.warn(
+          { orderId: targetOrderId },
+          "a background travel reconciliation returned a record owned by someone else; ignoring it",
+        );
+        return null;
+      }
+      return {
+        orderId: parsed.data.orderId,
+        state: parsed.data.state,
+        supplierRef: supplierRefOf(parsed.data.supplierRefs),
+        chargedMinor:
+          parsed.data.chargedMinor !== undefined && parsed.data.chargedMinor > 0
+            ? parsed.data.chargedMinor
+            : null,
+        releasedMinor:
+          parsed.data.releasedMinor !== undefined &&
+          parsed.data.releasedMinor > 0
+            ? parsed.data.releasedMinor
+            : null,
+      };
+    } catch (error) {
+      return searchFailure(error, "background booking status");
+    }
   }
 
   return {
@@ -1285,7 +1448,12 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
           const fare = offer.fareFamilies.find(
             (family) => family.id === chosen,
           );
-          if (fare === undefined || fare.price.amountMinor <= 0) {
+          const priced = offer.price ?? fare?.price;
+          if (
+            fare === undefined ||
+            priced === undefined ||
+            priced.amountMinor <= 0
+          ) {
             // A fare the search did not price is not something to show.
             return unavailable("flight search");
           }
@@ -1304,8 +1472,8 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
             subtitle: [route, `departs ${offer.departAt}`, stops, fare.name]
               .filter((part): part is string => part !== null && part !== "")
               .join(" · "),
-            priceMinor: fare.price.amountMinor,
-            currency: fare.price.currency,
+            priceMinor: priced.amountMinor,
+            currency: priced.currency,
             quotedAt: search.pricesAsOf,
             warnings: [],
           });
@@ -1426,6 +1594,10 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
           detail: view.detail,
           priceMinor: view.price.amountMinor,
           currency: view.price.currency,
+          payAtPropertyMinor:
+            view.payAtProperty !== null && view.payAtProperty.amountMinor > 0
+              ? view.payAtProperty.amountMinor
+              : null,
           termsVersion: termsVersionOf(view),
           terms: reviewTerms(view),
           purchase: view.cartItem,
@@ -1571,7 +1743,7 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
           unavailable("booking status");
         }
         const parsed = AskOrderStatusSchema.safeParse(await bodyOf(response));
-        if (!parsed.success) {
+        if (!parsed.success || parsed.data.orderId === null) {
           toolLogger.error(
             { orderId: ref.orderId },
             "travel-service answered a background order read the port cannot verify; refusing it",
@@ -1596,6 +1768,8 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
         return searchFailure(error, "background booking status");
       }
     },
+
+    reconcileExecutionItem: reconcileExecutionItemInternal,
   };
 
   /**
@@ -1683,10 +1857,21 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
         "The travel service priced something other than the reviewed offer.",
       );
     }
+    const actualPayAtPropertyMinor =
+      item.payAtProperty !== null &&
+      item.payAtProperty !== undefined &&
+      item.payAtProperty.amountMinor > 0
+        ? item.payAtProperty.amountMinor
+        : null;
+    const payAtPropertyChanged =
+      input.payAtPropertyMinor !== undefined
+        ? actualPayAtPropertyMinor !== input.payAtPropertyMinor
+        : actualPayAtPropertyMinor !== null;
     if (
       cart.total.amountMinor !== input.priceMinor ||
       cart.total.currency !== input.currency ||
-      item.price.amountMinor !== input.priceMinor
+      item.price.amountMinor !== input.priceMinor ||
+      payAtPropertyChanged
     ) {
       throw cartRefusal(cart, input);
     }

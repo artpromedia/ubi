@@ -198,7 +198,10 @@ export async function checkout(
     (item) => item.validation.expired === true || !item.validation.available,
   );
   const anyTermsChanged = revalidated.some(
-    (item) => item.validation.termsChanged === true,
+    (item) =>
+      item.validation.termsChanged === true ||
+      (item.validation.offer.payAtProperty?.amountMinor ?? 0) !==
+        (item.priced.payAtPropertyMinor ?? 0),
   );
   const priceMoved = revalidatedTotal !== cartTotal;
   // A price the last 409 surfaced has not been agreed to until it is echoed.
@@ -224,6 +227,8 @@ export async function checkout(
       ...item.priced,
       previousPriceMinor: item.priced.priceMinor,
       priceMinor: item.validation.offer.price.amountMinor,
+      payAtPropertyMinor:
+        item.validation.offer.payAtProperty?.amountMinor ?? null,
       capabilities: item.validation.offer.capabilities as unknown as JsonRecord,
       policy: item.validation.offer.policy,
       offerSnapshot: item.validation.offer.snapshot,

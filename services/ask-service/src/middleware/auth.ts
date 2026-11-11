@@ -238,6 +238,31 @@ export function marketplaceAllowed(c: Context): boolean {
   return identity.scopes.includes(MARKETPLACE_SCOPE);
 }
 
+/** The scope a session needs to book travel. */
+export const TRAVEL_BOOK_SCOPE = "travel:book";
+
+export type TravelBookPermission = "allowed" | "limited_mode" | "scope_missing";
+
+/**
+ * Whether this request's verified identity may book travel, checked before
+ * minting and consuming a single-use grant on `confirmReview`.
+ */
+export function travelBookPermission(c: Context): TravelBookPermission {
+  const identity = c.get("identity");
+  if (identity === undefined) {
+    return isProductionEnvironment(process.env.NODE_ENV)
+      ? "scope_missing"
+      : "allowed";
+  }
+  if (identity.modes.includes("limited")) {
+    return "limited_mode";
+  }
+  if (!identity.scopes.includes(TRAVEL_BOOK_SCOPE)) {
+    return "scope_missing";
+  }
+  return "allowed";
+}
+
 /** Refuses a marketplace action the gateway's scopes do not allow. */
 export function assertMarketplaceAllowed(c: Context): void {
   if (!marketplaceAllowed(c)) {

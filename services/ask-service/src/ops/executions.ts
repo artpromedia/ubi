@@ -44,6 +44,11 @@ function outboxKey(): string {
 
 const CONFIRMED_STATES = new Set(["confirmed", "ticketed", "reserved"]);
 const FAILED_STATES = new Set(["failed_released", "reservation_failed"]);
+const RECONCILABLE_ITEM_STATES = new Set([
+  "unknown_reconciling",
+  "supplier_pending",
+]);
+export const MAX_TRAVEL_RECONCILE_ATTEMPTS = 3;
 
 export interface ExecutionItemState {
   readonly kind: string;
@@ -57,6 +62,8 @@ export interface ExecutionItemState {
   readonly detail: string | null;
   /** Why the item is not (yet) booked, when it is not. */
   readonly reasonCode?: string | null;
+  /** How many background/explicit reconcile sweeps have checked this item. */
+  readonly reconcileAttempts?: number;
 }
 
 /**
@@ -168,6 +175,9 @@ export async function runExecution(
         kind: item.kind,
         priceMinor: item.priceMinor,
         currency: item.currency,
+        ...(item.payAtPropertyMinor !== undefined
+          ? { payAtPropertyMinor: item.payAtPropertyMinor }
+          : {}),
         travellers: stored.travellers,
         purchase: item.purchase ?? null,
       });
@@ -271,6 +281,256 @@ export async function runExecution(
       ],
     };
   });
+}
+
+export interface ReconcileTravelExecutionInput {
+  readonly executionId: string;
+  readonly actor: Actor;
+  readonly cityId: string;
+  readonly correlationId: string | null;
+}
+
+/**
+ * Reconciles uncertain travel execution items (`unknown_reconciling` or
+ * `supplier_pending`), including items whose checkout answer was lost before
+ * `orderId` was returned (`orderId: null`). Looks up the cart and order by
+ * their deterministic derived keys on travel-service's service-key surface,
+ * with a bounded retry count per item (`MAX_TRAVEL_RECONCILE_ATTEMPTS`), and
+ * never books again.
+ */
+export async function reconcileTravelExecution(
+  deps: AskDeps,
+  input: ReconcileTravelExecutionInput,
+): Promise<boolean> {
+  const exec = await deps.db.askExecution.findUnique({
+    where: { id: input.executionId },
+    include: { review: true },
+  });
+  if (
+    exec === null ||
+    exec.review.userId !== input.actor.id ||
+    exec.review.grantId === null
+  ) {
+    return false;
+  }
+  const grantId = exec.review.grantId;
+  const rawItems = Array.isArray(exec.items)
+    ? (exec.items as unknown as ExecutionItemState[])
+    : [];
+  const hasReconcilable = rawItems.some(
+    (item) =>
+      (item.kind === "flight" || item.kind === "stay") &&
+      RECONCILABLE_ITEM_STATES.has(item.state) &&
+      (item.reconcileAttempts ?? 0) < MAX_TRAVEL_RECONCILE_ATTEMPTS,
+  );
+  if (!hasReconcilable) {
+    return false;
+  }
+
+  const stored = parseStoredReview(exec.review.items);
+  const nextItems: ExecutionItemState[] = [];
+  let changed = false;
+
+  for (const [index, item] of rawItems.entries()) {
+    const attempts = item.reconcileAttempts ?? 0;
+    const reviewItem = stored.items[index];
+    if (
+      (item.kind !== "flight" && item.kind !== "stay") ||
+      !RECONCILABLE_ITEM_STATES.has(item.state) ||
+      attempts >= MAX_TRAVEL_RECONCILE_ATTEMPTS ||
+      reviewItem === undefined
+    ) {
+      nextItems.push(item);
+      continue;
+    }
+
+    const idempotencyKey = `${exec.id}:${index}:${reviewItem.offerRef}`;
+    let resolved: {
+      readonly orderId: string | null;
+      readonly state: string;
+      readonly supplierRef: string | null;
+      readonly chargedMinor: number | null;
+      readonly releasedMinor: number | null;
+    } | null = null;
+
+    if (deps.travel.reconcileExecutionItem !== undefined) {
+      resolved = await deps.travel.reconcileExecutionItem({
+        grantId,
+        actorId: exec.review.userId,
+        idempotencyKey,
+        orderId: item.orderId,
+      });
+    } else if (item.orderId !== null) {
+      const status = await deps.travel.executionOrderStatus({
+        orderId: item.orderId,
+        grantId,
+        actorId: exec.review.userId,
+      });
+      if (status !== null) {
+        resolved = {
+          orderId: status.orderId,
+          state: status.state,
+          supplierRef: status.supplierRef,
+          chargedMinor: CONFIRMED_STATES.has(status.state)
+            ? reviewItem.priceMinor
+            : null,
+          releasedMinor: null,
+        };
+      }
+    }
+
+    const nextAttempts = attempts + 1;
+    changed = true;
+
+    if (resolved === null) {
+      nextItems.push({
+        ...item,
+        reconcileAttempts: nextAttempts,
+      });
+      continue;
+    }
+
+    if (CONFIRMED_STATES.has(resolved.state)) {
+      nextItems.push({
+        ...item,
+        state: resolved.state,
+        orderId: resolved.orderId ?? item.orderId,
+        supplierRef: resolved.supplierRef ?? item.supplierRef,
+        chargedMinor: resolved.chargedMinor ?? reviewItem.priceMinor,
+        releasedMinor: null,
+        detail: null,
+        reasonCode: "reconciled",
+        reconcileAttempts: nextAttempts,
+      });
+      continue;
+    }
+
+    if (FAILED_STATES.has(resolved.state)) {
+      const noOrderPlaced = resolved.orderId === null && item.orderId === null;
+      nextItems.push({
+        ...item,
+        state: "failed_released",
+        orderId: resolved.orderId ?? item.orderId,
+        supplierRef: resolved.supplierRef ?? item.supplierRef,
+        chargedMinor: null,
+        releasedMinor: resolved.releasedMinor,
+        detail: noOrderPlaced
+          ? "This booking did not reach checkout before timing out. Nothing was booked or charged."
+          : "The supplier did not take this booking. The hold was released and nothing was charged.",
+        reasonCode: noOrderPlaced
+          ? "reconciled_not_booked"
+          : "supplier_declined",
+        reconcileAttempts: nextAttempts,
+      });
+      continue;
+    }
+
+    nextItems.push({
+      ...item,
+      state: resolved.state,
+      orderId: resolved.orderId ?? item.orderId,
+      supplierRef: resolved.supplierRef ?? item.supplierRef,
+      reconcileAttempts: nextAttempts,
+    });
+  }
+
+  if (!changed) {
+    return false;
+  }
+
+  const nextOverall = deriveOverall(nextItems);
+  const now = deps.now();
+  const actorType = actorKindFor(input.actor.role);
+
+  await auditedTransaction(deps.db, async (tx) => {
+    const current = await tx.askExecution.findUnique({
+      where: { id: exec.id },
+    });
+    if (current === null) {
+      return { result: null };
+    }
+    if (current.status === "processing") {
+      assertTransition("askExecution", current.status, nextOverall);
+    }
+    await tx.askExecution.update({
+      where: { id: exec.id },
+      data: {
+        status: nextOverall,
+        items: asJson(nextItems),
+        completedAt: current.completedAt ?? now,
+      },
+    });
+    const events: OutboxInput[] = nextItems.map((item, index) => ({
+      name: "ask.execution.item.updated",
+      aggregateType: "askExecution",
+      aggregateId: exec.id,
+      fromVersion: index,
+      toVersion: index + 1,
+      actor: input.actor,
+      actorType,
+      cityId: input.cityId,
+      idempotencyKey: outboxKey(),
+      correlationId: input.correlationId,
+      occurredAt: now,
+      payload: {
+        executionId: exec.id,
+        kind: item.kind,
+        state: item.state,
+        orderId: item.orderId,
+        supplierRef: item.supplierRef,
+      },
+    }));
+    if (current.status !== nextOverall) {
+      events.push({
+        name: "ask.execution.completed",
+        aggregateType: "askExecution",
+        aggregateId: exec.id,
+        fromVersion: nextItems.length,
+        toVersion: nextItems.length + 1,
+        actor: input.actor,
+        actorType,
+        cityId: input.cityId,
+        idempotencyKey: outboxKey(),
+        correlationId: input.correlationId,
+        occurredAt: now,
+        payload: { executionId: exec.id, overall: nextOverall },
+      });
+    }
+    return { result: null, events };
+  });
+
+  return true;
+}
+
+/**
+ * Background sweep over travel executions with `unknown_reconciling` or
+ * `supplier_pending` items that have not exhausted `MAX_TRAVEL_RECONCILE_ATTEMPTS`.
+ */
+export async function sweepUnknownTravelExecutions(
+  deps: AskDeps,
+  options: { readonly cityId?: string; readonly limit?: number } = {},
+): Promise<number> {
+  const candidates = await deps.db.askExecution.findMany({
+    where: {
+      status: { in: ["processing", "partly_booked"] },
+    },
+    include: { review: true },
+    orderBy: { startedAt: "asc" },
+    take: options.limit ?? 50,
+  });
+  let reconciledCount = 0;
+  for (const exec of candidates) {
+    const didReconcile = await reconcileTravelExecution(deps, {
+      executionId: exec.id,
+      actor: { id: exec.review.userId, role: "rider" },
+      cityId: options.cityId ?? "lagos",
+      correlationId: null,
+    });
+    if (didReconcile) {
+      reconciledCount += 1;
+    }
+  }
+  return reconciledCount;
 }
 
 export interface ExecutionView {

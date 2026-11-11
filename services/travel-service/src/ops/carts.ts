@@ -217,6 +217,12 @@ export function cartView(row: CartRow): CartView {
         item.previousPriceMinor === null
           ? null
           : { amountMinor: item.previousPriceMinor, currency: item.currency },
+      payAtProperty:
+        item.payAtPropertyMinor === null ||
+        item.payAtPropertyMinor === undefined ||
+        item.payAtPropertyMinor <= 0
+          ? null
+          : { amountMinor: item.payAtPropertyMinor, currency: item.currency },
       terms: [...item.terms],
       unavailable: item.unavailable ?? null,
     })),
