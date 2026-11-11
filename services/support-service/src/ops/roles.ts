@@ -19,6 +19,8 @@ export const OPS_ROLES = [
   "safety_responder",
   "reviewer",
   "ops_admin",
+  "admin",
+  "super_admin",
 ] as const;
 export type OpsRole = (typeof OPS_ROLES)[number];
 
@@ -58,6 +60,23 @@ export const PERMISSIONS = [
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
+const FULL_OPS_PERMISSIONS: readonly Permission[] = [
+  "case.open",
+  "case.open.on_behalf",
+  "case.read.any",
+  "case.message",
+  "case.transition",
+  "remedy.post",
+  "remedy.post.high_value",
+  "safety.raise",
+  "safety.read",
+  "safety.respond",
+  "review.read",
+  "review.decide",
+  "pii.contact",
+  "pii.location",
+];
+
 const ROLE_PERMISSIONS: Readonly<
   Record<OpsRole | EndUserRole, readonly Permission[]>
 > = {
@@ -93,22 +112,9 @@ const ROLE_PERMISSIONS: Readonly<
     "pii.location",
   ],
   reviewer: ["review.read", "review.decide", "case.read.any"],
-  ops_admin: [
-    "case.open",
-    "case.open.on_behalf",
-    "case.read.any",
-    "case.message",
-    "case.transition",
-    "remedy.post",
-    "remedy.post.high_value",
-    "safety.raise",
-    "safety.read",
-    "safety.respond",
-    "review.read",
-    "review.decide",
-    "pii.contact",
-    "pii.location",
-  ],
+  ops_admin: FULL_OPS_PERMISSIONS,
+  admin: FULL_OPS_PERMISSIONS,
+  super_admin: FULL_OPS_PERMISSIONS,
   // ---- end users -------------------------------------------------------
   // They may raise things about themselves and read their own case; they get no
   // ".any" permission, so the case handler scopes every read to their own id.

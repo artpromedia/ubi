@@ -254,6 +254,7 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:3006
       TRAVEL_SERVICE_URL: http://travel-service:4012
       ASK_SERVICE_URL: http://ask-service:4013
+      GROWTH_SERVICE_URL: http://growth-service:4014
       FLEET_SERVICE_URL: http://fleet-service:4015
       # Only the two config reads (GET /v1/config/flags, GET
       # /v1/config/cities/{cityId}) are routed; see src/routes/config-read.ts.
@@ -405,6 +406,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
       PAYMENT_SERVICE_URL: http://payment-service:3005
       BITES_ISSUE_SWEEP_INTERVAL_MS: ${BITES_ISSUE_SWEEP_INTERVAL_MS:-60000}
@@ -780,12 +782,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=4
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
       PAYMENT_SERVICE_URL: http://payment-service:3005
       REFERRAL_URL_BASE: https://${DOMAIN:-ubi.africa}/r
-      # NOT PUBLIC. growth-service reads the caller from the plain X-User-ID
-      # header and is not proxied by the gateway: it must stay reachable from
-      # this network only until it verifies the signed context.
     depends_on:
       postgres:
         condition: service_healthy
@@ -815,6 +815,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=4
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       # Ledger remedies (payment-service) and SOS notifications, by service key.
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
       PAYMENT_SERVICE_URL: http://payment-service:3005

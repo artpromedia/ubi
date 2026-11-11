@@ -6,6 +6,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { verifiedCallerUserId } from "../lib/identity-context";
 import { prisma } from "../lib/prisma";
 import { cache, redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -265,7 +266,7 @@ restaurantRoutes.post(
   "/",
   zValidator("json", createRestaurantSchema),
   async (c) => {
-    const ownerId = c.req.header("X-User-ID");
+    const ownerId = verifiedCallerUserId(c);
     if (!ownerId) {
       return c.json(
         {
@@ -322,7 +323,7 @@ restaurantRoutes.put(
   zValidator("json", updateRestaurantSchema),
   async (c) => {
     const id = c.req.param("id");
-    const ownerId = c.req.header("X-User-ID");
+    const ownerId = verifiedCallerUserId(c);
     const data = c.req.valid("json");
 
     const restaurant = await prisma.restaurant.findUnique({
@@ -405,7 +406,7 @@ restaurantRoutes.put(
  */
 restaurantRoutes.post("/:id/status", async (c) => {
   const id = c.req.param("id");
-  const ownerId = c.req.header("X-User-ID");
+  const ownerId = verifiedCallerUserId(c);
   const { isOpen, reason } = await c.req.json<{
     isOpen: boolean;
     reason?: string;
@@ -470,7 +471,7 @@ restaurantRoutes.post("/:id/status", async (c) => {
  */
 restaurantRoutes.get("/:id/stats", async (c) => {
   const id = c.req.param("id");
-  const ownerId = c.req.header("X-User-ID");
+  const ownerId = verifiedCallerUserId(c);
   const period = c.req.query("period") || "week"; // day, week, month
 
   const restaurant = await prisma.restaurant.findUnique({

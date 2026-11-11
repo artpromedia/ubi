@@ -457,6 +457,8 @@ func (s *Service) Complete(ctx context.Context, actor Actor, rideID uuid.UUID) (
 			OccurredAt:     now,
 			Payload: map[string]any{
 				"rideId":          ride.ID.String(),
+				"riderId":         ride.RiderID.String(),
+				"driverId":        actor.UserID.String(),
 				"version":         moved.Version,
 				"fareMinor":       ride.QuotedFareMinor,
 				"waitFeeMinor":    waitFee.AmountMinor,

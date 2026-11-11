@@ -105,6 +105,12 @@ export const SCOPES = [
   // `ops_admin`, `admin`, `super_admin`), excluded from `service`, and never in
   // `LIMITED_MODE_SCOPES`.
   "finance:ops",
+  // Growth campaigns, simulations, dual-person approvals, referral review queue,
+  // live commission incentives, and reconciliation (CC-A12 / P2-10). Held ONLY
+  // by growth/ops admin roles (`growth_admin`, `growth_editor`, `ops_admin`,
+  // `admin`, `super_admin`), excluded from `service`, and never in
+  // `LIMITED_MODE_SCOPES`.
+  "growth:admin",
   "admin:all",
 ] as const;
 
@@ -214,6 +220,7 @@ const OPS_ADMIN_SCOPES: readonly Scope[] = [
   "mp:admin:write",
   "config:admin",
   "finance:ops",
+  "growth:admin",
 ];
 
 const FINANCE_OPS_SCOPES: readonly Scope[] = [...OPS_SCOPES, "finance:ops"];
@@ -235,6 +242,7 @@ const GROWTH_OPS_SCOPES: readonly Scope[] = [
   "auth:step_up",
   "mp:admin:read",
   "ask:converse",
+  "growth:admin",
 ];
 
 export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
@@ -282,6 +290,7 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
     "device:enroll",
     "auth:step_up",
     "mp:admin:read",
+    "growth:admin",
   ],
   ai_ops: GROWTH_OPS_SCOPES,
   admin: [...SCOPES],
@@ -290,6 +299,7 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
     (scope) =>
       scope !== "config:admin" &&
       scope !== "finance:ops" &&
+      scope !== "growth:admin" &&
       scope !== "mp:admin:write",
   ),
 };
@@ -880,6 +890,41 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     requiresCity: true,
   },
   { methods: "*", prefix: "/v1/support", anyOf: ["support:write"] },
+  // Growth (growth-service, CC-A12 / P2-10). Rider/driver benefits, referrals,
+  // attribution claims, and driver incentives/statements ride on profile:read
+  // (city-scoped where city-dependent); /v1/growth/* is gated by growth:admin
+  // and growth-service enforces fine-grained campaign/review RBAC + dual-person
+  // approval inside the service. /v1/ai/marketing is not proxied at all.
+  {
+    methods: ["GET"],
+    prefix: "/v1/benefits",
+    anyOf: ["profile:read"],
+    requiresCity: true,
+  },
+  {
+    methods: ["GET", "POST"],
+    prefix: "/v1/referrals",
+    anyOf: ["profile:read"],
+    requiresCity: true,
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/attribution",
+    anyOf: ["profile:read"],
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/driver/incentives",
+    anyOf: ["profile:read"],
+    requiresCity: true,
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/driver/statements",
+    anyOf: ["profile:read"],
+    requiresCity: true,
+  },
+  { methods: "*", prefix: "/v1/growth", anyOf: ["growth:admin"] },
 ];
 
 export function scopesForRole(role: string): readonly Scope[] {

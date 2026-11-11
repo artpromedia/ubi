@@ -1,0 +1,28 @@
+# growth-service route manifest: every METHOD + Hono path the production
+# app (src/index.ts createApp) serves; middleware is left out.
+# GENERATED — do not edit by hand.
+# Regenerate: UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/growth-service exec vitest run tests/routes-manifest.test.ts
+# Read by services/api-gateway/tests/route-contract.test.ts.
+GET /health
+GET /health/ready
+GET /v1/benefits
+GET /v1/benefits/changes/:changeId
+GET /v1/driver/incentives
+GET /v1/driver/incentives/:id
+GET /v1/driver/statements/:periodId
+GET /v1/growth/campaigns
+GET /v1/growth/campaigns/:id
+GET /v1/growth/campaigns/:id/versions/:v/outcome
+GET /v1/growth/commission-incentives/live
+GET /v1/growth/recon/:date
+GET /v1/growth/referrals/review-queue
+GET /v1/referrals
+GET /v1/referrals/:id
+POST /v1/ai/marketing/threads/:threadId/messages
+POST /v1/attribution/claim
+POST /v1/growth/campaigns
+POST /v1/growth/campaigns/:id/actions
+POST /v1/growth/campaigns/:id/versions/:v/simulate
+POST /v1/growth/campaigns/:id/versions/:v/submit
+POST /v1/growth/referrals/review-queue/:caseId/decision
+POST /v1/referrals/share

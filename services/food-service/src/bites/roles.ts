@@ -23,6 +23,8 @@ export const BITES_ROLES = [
   /** Trust & Safety / ops reviewing a merchant KYB application. */
   "reviewer",
   "ops_admin",
+  "admin",
+  "super_admin",
 ] as const;
 export type BitesRole = (typeof BITES_ROLES)[number];
 
@@ -48,6 +50,8 @@ const ROLE_PERMISSIONS: Readonly<Record<BitesRole, readonly Permission[]>> = {
   driver: ["courier.fulfill"],
   reviewer: ["merchant.review"],
   ops_admin: ["merchant.review", "merchant.manage"],
+  admin: ["merchant.review", "merchant.manage"],
+  super_admin: ["merchant.review", "merchant.manage"],
 };
 
 const ROLE_SET: ReadonlySet<string> = new Set(BITES_ROLES);

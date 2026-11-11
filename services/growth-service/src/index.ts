@@ -19,13 +19,14 @@
  */
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import { assertIdentityConfigured } from "./lib/identity-context";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
-import { disconnectRedis } from "./lib/redis";
+import { disconnectRedis, redis } from "./lib/redis";
+import { startRideCompletionConsumer } from "./ops/ride-completion";
 import { createBenefitsRoutes } from "./routes/benefits";
 import { createGrowthAdminRoutes } from "./routes/growth-admin";
 import { healthRoutes } from "./routes/health";
@@ -39,10 +40,7 @@ import { createDeps } from "./wiring";
 
 import type { GrowthDeps } from "./ops/context";
 
-// 4014: the first free port in the service list. 4012 is travel-service's
-// default (and ask-service's is 4013), so the two used to collide when both
-// ran with defaults. The gateway proxies nothing to growth-service yet, so
-// there is no gateway registry fallback to keep in step.
+// 4014: growth-service's port on ubi-network and in api-gateway's proxy map.
 const PORT = Number.parseInt(process.env.PORT ?? "4014", 10);
 
 export function createApp(deps: GrowthDeps): Hono {
@@ -50,34 +48,6 @@ export function createApp(deps: GrowthDeps): Hono {
 
   app.use("*", requestId());
   app.use("*", secureHeaders());
-  app.use(
-    "*",
-    cors({
-      origin: (origin) => {
-        const allowed = ["https://admin.ubi.africa", "https://app.ubi.africa"];
-        if (
-          !origin ||
-          allowed.includes(origin) ||
-          /^http:\/\/localhost:\d+$/.test(origin)
-        ) {
-          return origin || "";
-        }
-        return "";
-      },
-      allowMethods: ["GET", "POST", "OPTIONS"],
-      allowHeaders: [
-        "Content-Type",
-        "Authorization",
-        "Idempotency-Key",
-        "X-Request-ID",
-        "X-User-ID",
-        "X-User-Role",
-        "X-City-ID",
-      ],
-      credentials: true,
-      maxAge: 600,
-    }),
-  );
 
   app.route("/health", healthRoutes);
   app.route("/v1/benefits", createBenefitsRoutes(deps));
@@ -91,18 +61,33 @@ export function createApp(deps: GrowthDeps): Hono {
 }
 
 if (process.env.NODE_ENV !== "test") {
-  const app = createApp(createDeps());
+  assertIdentityConfigured();
+  const deps = createDeps();
+  const app = createApp(deps);
+  const subscriptionPromise = startRideCompletionConsumer(deps, redis).catch(
+    (err: unknown) => {
+      logger.error(
+        { err },
+        "failed to start growth ride-completion outbox consumer",
+      );
+      return null;
+    },
+  );
   const server = serve({ fetch: app.fetch, port: PORT });
   logger.info({ port: PORT }, "growth-service listening");
 
   const shutdown = (signal: string): void => {
     logger.info({ signal }, "shutting down");
     server.close();
-    void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(
-      () => {
-        process.exit(0);
-      },
-    );
+    void subscriptionPromise
+      .then((sub) => sub?.stop())
+      .finally(() => {
+        void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(
+          () => {
+            process.exit(0);
+          },
+        );
+      });
   };
 
   process.on("SIGTERM", () => {

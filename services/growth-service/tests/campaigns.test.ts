@@ -7,8 +7,25 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { closeTestDb, headers, idemKey, makeDeps, testDb } from "./helpers";
+import {
+  closeTestDb,
+  FakeLedger,
+  headers,
+  idemKey,
+  makeDeps,
+  seedCity,
+  seedIncentiveRule,
+  seedCampaign,
+  testDb,
+  TEST_IDENTITY_SECRET,
+  uid,
+} from "./helpers";
 import { createApp } from "../src/index";
+import {
+  assertIdentityConfigured,
+  IDENTITY_HEADER,
+  signIdentityContext,
+} from "../src/lib/identity-context";
 import {
   createCampaign,
   performAction,
@@ -16,6 +33,8 @@ import {
   submitVersion,
   type VersionInput,
 } from "../src/ops/campaigns";
+import { claimAttribution, share } from "../src/ops/referrals";
+import { handleRideCompletedEnvelope } from "../src/ops/ride-completion";
 
 import type { GrowthDeps } from "../src/ops/context";
 import type { GrowthDb } from "../src/ops/types";
@@ -127,6 +146,88 @@ describe("campaign lifecycle + two-person approval", () => {
     expect(body.code).toBe("approver_is_author");
   });
 
+  it("refuses a forged X-User-ID header when the signed x-ubi-identity belongs to the author (CC-A12)", async () => {
+    const campaignId = await draftAndSubmit();
+    // Author signs x-ubi-identity as AUTHOR (`author_a`), but forges plain
+    // `X-User-ID: approver_b` and `X-User-Role: growth_admin`. The verified
+    // identity context wins, so the two-person check still sees `author_a` and
+    // refuses with 409 `approver_is_author`.
+    const forgedHeaders = headers(AUTHOR, CITY, {
+      "idempotency-key": idemKey("forged"),
+      "X-User-ID": APPROVER.id,
+      "X-User-Role": APPROVER.role,
+    });
+    const response = await app.request(
+      `/v1/growth/campaigns/${campaignId}/actions`,
+      {
+        method: "POST",
+        headers: forgedHeaders,
+        body: JSON.stringify({ action: "activate" }),
+      },
+    );
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { code: string };
+    expect(body.code).toBe("approver_is_author");
+  });
+
+  it("negative control: refuses a request with only plain X-User-ID / X-User-Role headers and no signed x-ubi-identity (CC-A12)", async () => {
+    const response = await app.request("/v1/growth/campaigns", {
+      method: "GET",
+      headers: {
+        "content-type": "application/json",
+        "X-User-ID": APPROVER.id,
+        "X-User-Role": APPROVER.role,
+        "X-City-ID": CITY,
+      },
+    });
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { code: string };
+    expect(body.code).toBe("unauthorized");
+  });
+
+  it("refuses a city mismatch and missing growth:admin scope on /v1/growth/* (CC-A12)", async () => {
+    const mismatchRes = await app.request("/v1/growth/campaigns", {
+      method: "GET",
+      headers: headers(APPROVER, CITY, { "X-City-ID": "city_other" }),
+    });
+    expect(mismatchRes.status).toBe(403);
+    const mismatchBody = (await mismatchRes.json()) as {
+      code: string;
+      details?: { reason?: string };
+    };
+    expect(mismatchBody.code).toBe("forbidden");
+    expect(mismatchBody.details?.reason).toBe("city_mismatch");
+
+    const noAdminScopeToken = signIdentityContext({
+      userId: APPROVER.id,
+      role: APPROVER.role,
+      cityId: CITY,
+      scopes: ["profile:read"],
+      secret: TEST_IDENTITY_SECRET,
+    });
+    const scopeRes = await app.request("/v1/growth/campaigns", {
+      method: "GET",
+      headers: {
+        "content-type": "application/json",
+        [IDENTITY_HEADER]: noAdminScopeToken,
+        "x-auth-city-id": CITY,
+      },
+    });
+    expect(scopeRes.status).toBe(403);
+    const scopeBody = (await scopeRes.json()) as {
+      code: string;
+      details?: { reason?: string };
+    };
+    expect(scopeBody.details?.reason).toBe("missing_scope");
+
+    expect(() =>
+      assertIdentityConfigured({
+        NODE_ENV: "production",
+        UBI_IDENTITY_SECRET: "",
+      }),
+    ).toThrow(/UBI_IDENTITY_SECRET/);
+  });
+
   it("activates when a second person approves", async () => {
     const campaignId = await draftAndSubmit();
     const result = await performAction(deps, {
@@ -203,5 +304,79 @@ describe("campaign lifecycle + two-person approval", () => {
       correlationId: null,
     });
     expect(raised.budget?.limit.amountMinor).toBe(2_000_000);
+  });
+
+  it("qualifies referrals and posts driver rebates + milestone bonuses on ride.completed (P2-10)", async () => {
+    const ledger = new FakeLedger(db);
+    const localDeps = makeDeps(db, { ledger });
+    const { cityId } = await seedCity(db, {
+      referrals: true,
+      driver_commission_rebates: true,
+    });
+
+    await seedCampaign(db, {
+      benefitType: "referral",
+      budgetLimitMinor: 10_000_000,
+      currency: "NGN",
+      value: {
+        reward: { amountMinor: 200_000, currency: "NGN" },
+        refereeBenefit: { amountMinor: 100_000, currency: "NGN" },
+        monthlyCap: 10,
+      },
+    });
+    const referrer = { id: uid("rider"), role: "rider" };
+    const { code } = await share(localDeps, referrer);
+    const referee = { id: uid("rider"), role: "rider" };
+    await claimAttribution(localDeps, {
+      actor: referee,
+      cityId,
+      code,
+      source: "deferred_link",
+      correlationId: null,
+    });
+
+    const rule = await seedIncentiveRule(db, {
+      kind: "percentage_points",
+      baseBps: 2000,
+      reductionBps: 500,
+      currency: "NGN",
+    });
+    await db.campaignVersion.update({
+      where: { id: rule.versionId },
+      data: {
+        value: {
+          milestoneTrips: 1,
+          milestoneBonus: { amountMinor: 50_000, currency: "NGN" },
+        } as never,
+      },
+    });
+
+    const driverId = uid("driver");
+    const rideId = uid("ride");
+    const outcome = await handleRideCompletedEnvelope(localDeps, {
+      id: uid("evt"),
+      name: "ride.completed",
+      schemaVersion: 1,
+      occurredAt: new Date().toISOString(),
+      cityId,
+      actor: { type: "driver", id: driverId },
+      subject: { type: "ride", id: rideId, version: 3 },
+      idempotencyKey: `ride.completed:${rideId}`,
+      correlationId: `corr_${rideId}`,
+      payload: {
+        rideId,
+        riderId: referee.id,
+        driverId,
+        fareMinor: 100_000,
+        totalMinor: 100_000,
+        currency: "NGN",
+        paymentMethodId: "wallet",
+      },
+    });
+
+    expect(outcome).not.toBeNull();
+    expect(outcome?.referral?.outcome).toBe("rewarded");
+    expect(outcome?.incentives.some((i) => i.posted)).toBe(true);
+    expect(outcome?.milestones.some((m) => m.posted)).toBe(true);
   });
 });

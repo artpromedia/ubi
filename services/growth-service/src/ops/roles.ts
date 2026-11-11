@@ -20,6 +20,9 @@ import { ContractError } from "@ubi/contracts";
 export const GROWTH_ADMIN_ROLES = [
   "growth_admin",
   "growth_editor",
+  "ops_admin",
+  "admin",
+  "super_admin",
   "marketing_ai",
 ] as const;
 export type GrowthAdminRole = (typeof GROWTH_ADMIN_ROLES)[number];
@@ -55,21 +58,26 @@ export const PERMISSIONS = [
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
+const FULL_GROWTH_ADMIN_PERMISSIONS: readonly Permission[] = [
+  "campaign.read",
+  "campaign.create",
+  "campaign.simulate",
+  "campaign.submit",
+  "campaign.approve",
+  "referral.review.read",
+  "referral.review.decide",
+  "commission.read",
+  "recon.read",
+  "marketing.draft",
+];
+
 const ROLE_PERMISSIONS: Readonly<
   Record<GrowthAdminRole | EndUserRole, readonly Permission[]>
 > = {
-  growth_admin: [
-    "campaign.read",
-    "campaign.create",
-    "campaign.simulate",
-    "campaign.submit",
-    "campaign.approve",
-    "referral.review.read",
-    "referral.review.decide",
-    "commission.read",
-    "recon.read",
-    "marketing.draft",
-  ],
+  growth_admin: FULL_GROWTH_ADMIN_PERMISSIONS,
+  ops_admin: FULL_GROWTH_ADMIN_PERMISSIONS,
+  admin: FULL_GROWTH_ADMIN_PERMISSIONS,
+  super_admin: FULL_GROWTH_ADMIN_PERMISSIONS,
   growth_editor: [
     "campaign.read",
     "campaign.create",

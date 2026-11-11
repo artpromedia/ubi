@@ -27,6 +27,7 @@ beforeAll(async () => {
   process.env.ASK_SERVICE_URL = upstream.url;
   process.env.TRAVEL_SERVICE_URL = upstream.url;
   process.env.FLEET_SERVICE_URL = upstream.url;
+  process.env.GROWTH_SERVICE_URL = upstream.url;
   process.env.CONFIG_SERVICE_URL = upstream.url;
 });
 
@@ -1234,6 +1235,59 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       expect(
         (await call("full", "GET", "/v1/admin/mp/offroad-flags", role)).status,
       ).toBe(200);
+    }
+
+    // growth:admin routes (CC-A12 / P2-10): growth_admin, growth_editor, ai_ops, ops_admin, admin, super_admin in full mode;
+    // refused in limited mode and refused for rider, driver, merchant, ops, finance_ops, config_admin.
+    for (const role of [
+      "growth_admin",
+      "growth_editor",
+      "ai_ops",
+      "ops_admin",
+      "admin",
+      "super_admin",
+    ]) {
+      for (const [method, path] of [
+        ["GET", "/v1/growth/campaigns"],
+        ["POST", "/v1/growth/campaigns/cmp_1/actions"],
+        ["GET", "/v1/growth/referrals/review-queue"],
+        ["GET", "/v1/growth/recon/2026-10-01"],
+      ] as const) {
+        expect((await call("full", method, path, role)).status).toBe(200);
+        upstream.received.length = 0;
+        const lim = await call("limited", method, path, role);
+        expect(lim.code).toBe("limited_mode");
+        expect(upstream.received).toHaveLength(0);
+      }
+    }
+    for (const role of [
+      "rider",
+      "driver",
+      "merchant",
+      "ops",
+      "finance_ops",
+      "config_admin",
+      "travel_ops",
+    ]) {
+      upstream.received.length = 0;
+      const denied = await call("full", "GET", "/v1/growth/campaigns", role);
+      expect(denied.code).toBe("forbidden");
+      expect(upstream.received).toHaveLength(0);
+    }
+
+    // Rider/driver growth surfaces (benefits, referrals, attribution, driver incentives/statements)
+    // ride on profile:read and survive limited mode when cityId is present.
+    for (const [method, path] of [
+      ["GET", "/v1/benefits"],
+      ["GET", "/v1/referrals"],
+      ["POST", "/v1/referrals/share"],
+      ["POST", "/v1/attribution/claim"],
+      ["GET", "/v1/driver/incentives"],
+      ["GET", "/v1/driver/statements/2026-W39"],
+    ] as const) {
+      expect((await call("full", method, path, "rider")).status).toBe(200);
+      expect((await call("limited", method, path, "rider")).status).toBe(200);
+      expect((await call("full", method, path, "driver")).status).toBe(200);
     }
   });
 });

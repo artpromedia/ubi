@@ -12,12 +12,12 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { compress } from "hono/compress";
-import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createBitesModule, startIssueSweep } from "./bites/index.js";
+import { assertIdentityConfigured } from "./lib/identity-context.js";
 import { logger } from "./lib/logger.js";
 import { disconnect as disconnectPrisma } from "./lib/prisma";
 import { disconnect as disconnectRedis } from "./lib/redis";
@@ -36,32 +36,6 @@ app.use("*", requestId());
 app.use("*", honoLogger());
 app.use("*", secureHeaders());
 app.use("*", compress());
-
-// CORS configuration
-app.use(
-  "*",
-  cors({
-    origin: [
-      "https://app.ubi.africa",
-      "https://restaurant.ubi.africa",
-      "https://admin.ubi.africa",
-      "http://localhost:3000",
-      "http://localhost:3001",
-      "http://localhost:3002",
-    ],
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Request-ID",
-      "X-User-ID",
-      "X-Idempotency-Key",
-    ],
-    exposeHeaders: ["X-Request-ID"],
-    credentials: true,
-    maxAge: 600,
-  }),
-);
 
 // Error handler
 app.use("*", errorHandler);
@@ -91,6 +65,7 @@ app.route("/v1/merchants", bites.merchants);
 app.route("/v1/carts", bites.carts);
 app.route("/v1/orders", bites.orders);
 if (process.env.NODE_ENV !== "test") {
+  assertIdentityConfigured();
   startIssueSweep(bites.deps);
 }
 
@@ -111,38 +86,40 @@ app.notFound((c) => {
 // Start server
 const port = Number.parseInt(process.env.PORT || "4004", 10);
 
-logger.info({ port }, "UBI Food Service starting");
+if (process.env.NODE_ENV !== "test") {
+  logger.info({ port }, "UBI Food Service starting");
 
-const server = serve({
-  fetch: app.fetch,
-  port,
-});
-
-// Graceful shutdown
-const shutdown = (signal: string): void => {
-  logger.info({ signal }, "Shutdown signal received, closing gracefully...");
-
-  server.close(async () => {
-    logger.info("HTTP server closed");
-
-    await Promise.all([disconnectPrisma(), disconnectRedis()]);
-
-    logger.info("All connections closed");
-    process.exit(0);
+  const server = serve({
+    fetch: app.fetch,
+    port,
   });
 
-  // Force shutdown after 30s
-  setTimeout(() => {
-    logger.error("Forced shutdown after timeout");
-    process.exit(1);
-  }, 30000);
-};
+  // Graceful shutdown
+  const shutdown = (signal: string): void => {
+    logger.info({ signal }, "Shutdown signal received, closing gracefully...");
 
-process.on("SIGTERM", () => {
-  shutdown("SIGTERM");
-});
-process.on("SIGINT", () => {
-  shutdown("SIGINT");
-});
+    server.close(async () => {
+      logger.info("HTTP server closed");
+
+      await Promise.all([disconnectPrisma(), disconnectRedis()]);
+
+      logger.info("All connections closed");
+      process.exit(0);
+    });
+
+    // Force shutdown after 30s
+    setTimeout(() => {
+      logger.error("Forced shutdown after timeout");
+      process.exit(1);
+    }, 30000);
+  };
+
+  process.on("SIGTERM", () => {
+    shutdown("SIGTERM");
+  });
+  process.on("SIGINT", () => {
+    shutdown("SIGINT");
+  });
+}
 
 export default app;

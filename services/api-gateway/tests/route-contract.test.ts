@@ -142,6 +142,12 @@ const MANIFEST_SOURCES: Partial<Record<ServiceName, ManifestSource>> = {
     regenerate:
       "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/notification-service exec vitest run tests/routes-manifest.test.ts",
   },
+  "growth-service": {
+    file: "services/growth-service/tests/routes.manifest",
+    style: "hono",
+    regenerate:
+      "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/growth-service exec vitest run tests/routes-manifest.test.ts",
+  },
 };
 
 interface ManifestRoute {
@@ -1411,6 +1417,99 @@ const REACHABLE: readonly ReachableCase[] = [
     downstream: "/v1/ops/travel/transfers",
     source: `${ADMIN_OPS} travelOpsApi.transfers (CC-A04 / P2-12)`,
   },
+
+  // --- growth-service: mounts /v1/{benefits,referrals,attribution,driver,growth} itself (CC-A12 / P2-10) ---
+  {
+    rule: "/benefits",
+    method: "GET",
+    path: "/v1/benefits",
+    downstream: "/v1/benefits",
+    source: `${RIDER} src/api/benefits.ts`,
+  },
+  {
+    rule: "/benefits/*",
+    method: "GET",
+    path: "/v1/benefits/changes/chg_1",
+    downstream: "/v1/benefits/changes/chg_1",
+    source: `${RIDER} src/api/benefits.ts`,
+  },
+  {
+    rule: "/referrals",
+    method: "GET",
+    path: "/v1/referrals",
+    downstream: "/v1/referrals",
+    source: `${RIDER} src/api/benefits.ts`,
+  },
+  {
+    rule: "/referrals/*",
+    method: "POST",
+    path: "/v1/referrals/share",
+    downstream: "/v1/referrals/share",
+    source: `${RIDER} src/api/benefits.ts`,
+  },
+  {
+    rule: "/referrals/*",
+    method: "GET",
+    path: "/v1/referrals/ref_1",
+    downstream: "/v1/referrals/ref_1",
+    source: `${RIDER} src/api/benefits.ts`,
+  },
+  {
+    rule: "/attribution/*",
+    method: "POST",
+    path: "/v1/attribution/claim",
+    downstream: "/v1/attribution/claim",
+    source: `${RIDER} src/api/benefits.ts`,
+  },
+  {
+    rule: "/driver/incentives",
+    method: "GET",
+    path: "/v1/driver/incentives",
+    downstream: "/v1/driver/incentives",
+    source: `${DRIVER} src/api/incentives.ts`,
+  },
+  {
+    rule: "/driver/incentives/*",
+    method: "GET",
+    path: "/v1/driver/incentives/inc_1",
+    downstream: "/v1/driver/incentives/inc_1",
+    source: `${DRIVER} src/api/incentives.ts`,
+  },
+  {
+    rule: "/driver/statements/*",
+    method: "GET",
+    path: "/v1/driver/statements/2026-W39",
+    downstream: "/v1/driver/statements/2026-W39",
+    source: `${DRIVER} src/api/incentives.ts`,
+  },
+  {
+    rule: "/growth/*",
+    method: "GET",
+    path: "/v1/growth/campaigns",
+    downstream: "/v1/growth/campaigns",
+    source: ADMIN_OPS,
+  },
+  {
+    rule: "/growth/*",
+    method: "POST",
+    path: "/v1/growth/campaigns/cmp_1/actions",
+    downstream: "/v1/growth/campaigns/cmp_1/actions",
+    source: ADMIN_OPS,
+  },
+  {
+    rule: "/growth/*",
+    method: "GET",
+    path: "/v1/growth/referrals/review-queue",
+    downstream: "/v1/growth/referrals/review-queue",
+    source: ADMIN_OPS,
+  },
+  {
+    rule: "/growth/*",
+    method: "GET",
+    path: "/v1/growth/recon/2026-10-01",
+    downstream: "/v1/growth/recon/2026-10-01",
+    source: ADMIN_OPS,
+  },
 ];
 
 interface UnbackedRule {
@@ -1589,30 +1688,6 @@ const UNPROXIED_CLIENT_CALLS: readonly {
 }[] = [
   {
     method: "GET",
-    path: "/v1/benefits",
-    servedBy: "growth-service /v1/benefits",
-    source: `${RIDER} src/api/benefits.ts`,
-  },
-  {
-    method: "GET",
-    path: "/v1/referrals",
-    servedBy: "growth-service /v1/referrals",
-    source: `${RIDER} src/api/benefits.ts`,
-  },
-  {
-    method: "POST",
-    path: "/v1/attribution/claim",
-    servedBy: "growth-service /v1/attribution",
-    source: `${RIDER} src/api/benefits.ts`,
-  },
-  {
-    method: "GET",
-    path: "/v1/driver/incentives",
-    servedBy: "growth-service /v1/driver",
-    source: `${DRIVER} src/api/incentives.ts`,
-  },
-  {
-    method: "GET",
     path: "/v1/kyc/requirements?cityId=LOS&role=driver",
     servedBy: "user-service /v1/kyc/requirements",
     source: "apps/marketing-site src/lib/requirements.ts",
@@ -1622,12 +1697,6 @@ const UNPROXIED_CLIENT_CALLS: readonly {
     path: "/v1/flags",
     servedBy: "config-service /v1/flags",
     source: "apps/admin-dashboard (must call /v1/config/flags instead)",
-  },
-  {
-    method: "GET",
-    path: "/v1/growth/campaigns",
-    servedBy: "growth-service /v1/growth",
-    source: "apps/admin-dashboard",
   },
   {
     method: "GET",
@@ -1768,6 +1837,13 @@ const SERVICE_ONLY_ROUTES: readonly {
     path: "/v1/push/topic",
     servicePath: "/api/v1/push/topic",
     reason: "service-to-service topic push dispatch (serviceAuth), as above",
+  },
+  {
+    service: "growth-service",
+    method: "POST",
+    path: "/v1/ai/marketing/threads/thr_1/messages",
+    reason:
+      "the marketing AI assistant in growth-service is stubbed and deliberately excluded from the client gateway proxy map (CC-A12 / P2-10)",
   },
 ];
 

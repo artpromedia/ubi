@@ -36,6 +36,17 @@ function deps() {
   return makeDeps(db, new FakePayments(db), clock);
 }
 
+import {
+  IDENTITY_HEADER,
+  signIdentityContext,
+} from "../../src/lib/identity-context";
+
+const TEST_IDENTITY_SECRET =
+  "food_test_identity_secret_at_least_32_bytes_long_01";
+if (!process.env.UBI_IDENTITY_SECRET) {
+  process.env.UBI_IDENTITY_SECRET = TEST_IDENTITY_SECRET;
+}
+
 describe("server-side price recompute", () => {
   it("ignores a client-supplied price and charges the menu price + option deltas", async () => {
     const { cityId, currency } = await seedCity(db);
@@ -61,11 +72,19 @@ describe("server-side price recompute", () => {
 
     const userId = uid("rider");
     const cartId = uid("cart");
+    const identityToken = signIdentityContext({
+      userId,
+      role: "rider",
+      cityId,
+      scopes: ["order:create", "profile:read"],
+      secret: process.env.UBI_IDENTITY_SECRET ?? TEST_IDENTITY_SECRET,
+    });
     const response = await app.request(`/v1/carts/${cartId}/items`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "X-User-ID": userId,
+        [IDENTITY_HEADER]: identityToken,
+        "X-User-ID": "forged_attacker_user_id",
         "X-User-Role": "rider",
         "X-City-ID": cityId,
       },
@@ -90,6 +109,24 @@ describe("server-side price recompute", () => {
 
     const stored = await db.cart.findUnique({ where: { id: cartId } });
     expect(Number(stored?.subtotalMinor)).toBe(800_000);
+    expect(stored?.customerId).toBe(userId);
+
+    // Negative control: plain X-User-ID / X-User-Role without signed x-ubi-identity is refused
+    const plainOnly = await app.request(`/v1/carts/${uid("cart")}/items`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-User-ID": userId,
+        "X-User-Role": "rider",
+        "X-City-ID": cityId,
+      },
+      body: JSON.stringify({
+        itemId: item.itemId,
+        quantity: 1,
+        optionIds: [optionId],
+      }),
+    });
+    expect(plainOnly.status).toBe(401);
   });
 });
 

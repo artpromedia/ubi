@@ -505,14 +505,34 @@ export function makeDeps(
   };
 }
 
-/** Gateway headers, the only place an actor or a city may come from. */
+import {
+  IDENTITY_HEADER,
+  signIdentityContext,
+} from "../src/lib/identity-context";
+
+export const TEST_IDENTITY_SECRET =
+  "support_test_identity_secret_at_least_32_bytes_long";
+
+if (!process.env.UBI_IDENTITY_SECRET) {
+  process.env.UBI_IDENTITY_SECRET = TEST_IDENTITY_SECRET;
+}
+
+/** Gateway headers, with signed x-ubi-identity context (CC-A12). */
 export function headers(
-  actor: { id: string; role: string },
+  actor: { id: string; role: string; scopes?: readonly string[] },
   cityId: string,
   extra: Record<string, string> = {},
 ): Record<string, string> {
+  const token = signIdentityContext({
+    userId: actor.id,
+    role: actor.role,
+    cityId: cityId || null,
+    scopes: actor.scopes ?? ["support:write", "profile:read"],
+    secret: process.env.UBI_IDENTITY_SECRET ?? TEST_IDENTITY_SECRET,
+  });
   return {
     "content-type": "application/json",
+    [IDENTITY_HEADER]: token,
     "X-User-ID": actor.id,
     "X-User-Role": actor.role,
     "X-City-ID": cityId,

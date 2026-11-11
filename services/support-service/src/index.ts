@@ -15,10 +15,10 @@
  */
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import { assertIdentityConfigured } from "./lib/identity-context";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis, withSweepLock } from "./lib/redis";
@@ -42,34 +42,6 @@ export function createApp(deps: SupportDeps): Hono {
 
   app.use("*", requestId());
   app.use("*", secureHeaders());
-  app.use(
-    "*",
-    cors({
-      origin: (origin) => {
-        const allowed = ["https://admin.ubi.africa", "https://app.ubi.africa"];
-        if (
-          !origin ||
-          allowed.includes(origin) ||
-          /^http:\/\/localhost:\d+$/.test(origin)
-        ) {
-          return origin || "";
-        }
-        return "";
-      },
-      allowMethods: ["GET", "POST", "OPTIONS"],
-      allowHeaders: [
-        "Content-Type",
-        "Authorization",
-        "Idempotency-Key",
-        "X-Request-ID",
-        "X-User-ID",
-        "X-User-Role",
-        "X-City-ID",
-      ],
-      credentials: true,
-      maxAge: 600,
-    }),
-  );
 
   app.route("/health", healthRoutes);
   app.route("/v1/support", createSupportRoutes(deps));
@@ -100,6 +72,7 @@ function startSosSweep(): NodeJS.Timeout {
 }
 
 if (process.env.NODE_ENV !== "test") {
+  assertIdentityConfigured();
   const app = createApp(createDeps());
   const sweep = startSosSweep();
   const server = serve({ fetch: app.fetch, port: PORT });

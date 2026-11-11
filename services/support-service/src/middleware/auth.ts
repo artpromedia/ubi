@@ -1,10 +1,9 @@
 /**
  * Authentication and the actor.
  *
- * The API gateway authenticates the caller and forwards who they are. This
- * service reads the actor from those headers and from nowhere else: a request
- * body may not name a user, a role or a city (CLAUDE.md non-negotiable #1 — the
- * server is authoritative).
+ * The API gateway authenticates the caller and signs `x-ubi-identity`. This
+ * service verifies that signed context and reads the actor and city from it:
+ * plain `X-User-ID` and `X-User-Role` headers are never trusted alone (CC-A12).
  */
 import {
   ContractError,
@@ -12,42 +11,96 @@ import {
   IdempotencyKeySchema,
 } from "@ubi/contracts";
 
+import {
+  IDENTITY_HEADER,
+  identityVerificationKeys,
+  verifyIdentityContext,
+  type VerifiedIdentity,
+} from "../lib/identity-context";
 import { isKnownRole } from "../ops/roles";
 
 import type { Actor } from "../ops/types";
 import type { Context, Next } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 declare module "hono" {
   interface ContextVariableMap {
     actor: Actor;
+    identity: VerifiedIdentity;
+    verifiedCityId: string | null;
   }
+}
+
+function resolveCity(c: Context, identity: VerifiedIdentity): string | null {
+  const tokenCity = identity.cityId;
+  const gatewayCity =
+    c.req.header("x-ubi-city-id")?.trim() ||
+    c.req.header("x-auth-city-id")?.trim() ||
+    null;
+  const declaredCity = c.req.header("X-City-ID")?.trim() || null;
+
+  if (tokenCity !== null) {
+    if (gatewayCity !== null && gatewayCity !== tokenCity) {
+      throw new ContractError(
+        "forbidden",
+        "Gateway city header does not match token city",
+        { reason: "city_mismatch" },
+      );
+    }
+    if (declaredCity !== null && declaredCity !== tokenCity) {
+      throw new ContractError(
+        "forbidden",
+        "X-City-ID does not match the authenticated session city",
+        { reason: "city_mismatch" },
+      );
+    }
+    return tokenCity;
+  }
+  return gatewayCity ?? declaredCity;
 }
 
 export async function gatewayAuth(
   c: Context,
   next: Next,
 ): Promise<void | Response> {
-  const userId = c.req.header("X-User-ID");
-  const role = c.req.header("X-User-Role");
-  if (userId === undefined || userId.length === 0) {
+  const rawContext = c.req.header(IDENTITY_HEADER)?.trim();
+  if (rawContext === undefined || rawContext.length === 0) {
     return c.json(
       { code: "unauthorized", message: "authentication required" },
       401,
     );
   }
-  if (role === undefined || !isKnownRole(role)) {
-    // An unrecognised role gets no permissions at all, so say so rather than
-    // letting it fall through to a deny on every individual check.
+
+  let identity: VerifiedIdentity;
+  let cityId: string | null;
+  try {
+    identity = verifyIdentityContext(rawContext, identityVerificationKeys());
+    cityId = resolveCity(c, identity);
+  } catch (error) {
+    if (error instanceof ContractError) {
+      return c.json(error.toBody(), error.status as ContentfulStatusCode);
+    }
+    return c.json(
+      { code: "unauthorized", message: "authentication required" },
+      401,
+    );
+  }
+
+  const normalizedRole = identity.role.toLowerCase();
+  if (!isKnownRole(normalizedRole)) {
     return c.json(
       {
         code: "forbidden",
         message: "this role has no access to the support service",
-        details: { role: role ?? null },
+        details: { role: identity.role },
       },
       403,
     );
   }
-  c.set("actor", { id: userId, role });
+
+  c.set("identity", identity);
+  c.set("verifiedCityId", cityId);
+  c.set("actor", { id: identity.userId, role: normalizedRole });
   await next();
 }
 
@@ -60,12 +113,12 @@ export function actorOf(c: Context): Actor {
 }
 
 /**
- * The city the request belongs to. It arrives as a gateway header and is only
- * trusted once the config provider has proved the city exists and is live.
+ * The city the request belongs to, resolved from the verified identity context
+ * (and only accepted from `X-City-ID` when the token is cross-city or agrees).
  */
 export function cityOf(c: Context): string {
-  const cityId = c.req.header("X-City-ID");
-  if (cityId === undefined || cityId.length === 0) {
+  const cityId = c.get("verifiedCityId") ?? c.req.header("X-City-ID");
+  if (cityId === undefined || cityId === null || cityId.length === 0) {
     throw new ContractError(
       "city_unsupported",
       "the request does not say which city it belongs to",
@@ -88,5 +141,5 @@ export function idempotencyKeyOf(c: Context): string {
 
 /** Ties an audit row back to the request that caused it. */
 export function correlationIdOf(c: Context): string | null {
-  return c.req.header("X-Request-ID") ?? null;
+  return c.req.header("X-Request-ID") ?? c.get("identity")?.requestId ?? null;
 }

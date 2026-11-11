@@ -39,10 +39,41 @@ function getJWTSecret(): string {
   return secret;
 }
 
+import {
+  IDENTITY_HEADER,
+  identityVerificationKeys,
+  verifyIdentityContext,
+} from "../lib/identity-context";
+
 /**
- * JWT Authentication Middleware
+ * Gateway Signed-Identity / JWT Authentication Middleware
  */
 export async function auth(c: Context, next: Next): Promise<void | Response> {
+  const rawContext = c.req.header(IDENTITY_HEADER)?.trim();
+  if (rawContext !== undefined && rawContext.length > 0) {
+    try {
+      const verified = verifyIdentityContext(
+        rawContext,
+        identityVerificationKeys(),
+      );
+      c.set("userId", verified.userId);
+      c.set("userRole", verified.role.toUpperCase());
+      await next();
+      return;
+    } catch {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "UNAUTHORIZED",
+            message: "Invalid gateway identity context",
+          },
+        },
+        401,
+      );
+    }
+  }
+
   const authHeader = c.req.header("Authorization");
 
   if (!authHeader?.startsWith("Bearer ")) {

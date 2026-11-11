@@ -123,6 +123,7 @@ export const CONTRACT = {
     NOTIFICATION_SERVICE_URL: "set",
     ASK_SERVICE_URL: "set",
     TRAVEL_SERVICE_URL: "set",
+    GROWTH_SERVICE_URL: "set",
     FLEET_SERVICE_URL: "set",
     CONFIG_SERVICE_URL: "set",
     ANALYTICS_SERVICE_URL: "unset",
@@ -180,6 +181,8 @@ export const CONTRACT = {
   "food-service": {
     ...NODE_COMMON,
     JWT_SECRET: "required",
+    UBI_IDENTITY_SECRET: "required",
+    UBI_IDENTITY_SECRET_PREVIOUS: "optional",
     INTERNAL_SERVICE_KEY: "required",
     PAYMENT_SERVICE_URL: "set",
     BITES_ISSUE_SWEEP_INTERVAL_MS: "set",
@@ -348,6 +351,8 @@ export const CONTRACT = {
   },
   "growth-service": {
     ...NODE_COMMON,
+    UBI_IDENTITY_SECRET: "required",
+    UBI_IDENTITY_SECRET_PREVIOUS: "optional",
     INTERNAL_SERVICE_KEY: "required",
     PAYMENT_SERVICE_URL: "set",
     REFERRAL_URL_BASE: "set",
@@ -356,6 +361,8 @@ export const CONTRACT = {
   },
   "support-service": {
     ...NODE_COMMON,
+    UBI_IDENTITY_SECRET: "required",
+    UBI_IDENTITY_SECRET_PREVIOUS: "optional",
     INTERNAL_SERVICE_KEY: "required",
     PAYMENT_SERVICE_URL: "set",
     NOTIFICATION_SERVICE_URL: "set",

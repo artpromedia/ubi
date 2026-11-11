@@ -6,6 +6,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { verifiedCallerUserId } from "../lib/identity-context";
 import { prisma } from "../lib/prisma";
 import { cache } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -126,7 +127,7 @@ menuRoutes.post(
   "/categories",
   zValidator("json", createCategorySchema),
   async (c) => {
-    const ownerId = c.req.header("X-User-ID");
+    const ownerId = verifiedCallerUserId(c);
     const data = c.req.valid("json");
 
     // Verify ownership
@@ -167,7 +168,7 @@ menuRoutes.put(
   zValidator("json", updateCategorySchema),
   async (c) => {
     const id = c.req.param("id");
-    const ownerId = c.req.header("X-User-ID");
+    const ownerId = verifiedCallerUserId(c);
     const data = c.req.valid("json");
 
     const category = await prisma.menuCategory.findUnique({
@@ -201,7 +202,7 @@ menuRoutes.put(
  */
 menuRoutes.delete("/categories/:id", async (c) => {
   const id = c.req.param("id");
-  const ownerId = c.req.header("X-User-ID");
+  const ownerId = verifiedCallerUserId(c);
 
   const category = await prisma.menuCategory.findUnique({
     where: { id },
@@ -243,7 +244,7 @@ menuRoutes.delete("/categories/:id", async (c) => {
  * POST /menus/categories/reorder - Reorder categories
  */
 menuRoutes.post("/categories/reorder", async (c) => {
-  const ownerId = c.req.header("X-User-ID");
+  const ownerId = verifiedCallerUserId(c);
   const { restaurantId, categoryIds } = await c.req.json<{
     restaurantId: string;
     categoryIds: string[];
@@ -320,7 +321,7 @@ menuRoutes.post(
   "/items",
   zValidator("json", createMenuItemSchema),
   async (c) => {
-    const ownerId = c.req.header("X-User-ID");
+    const ownerId = verifiedCallerUserId(c);
     const data = c.req.valid("json");
 
     const restaurant = await prisma.restaurant.findUnique({
@@ -380,7 +381,7 @@ menuRoutes.put(
   zValidator("json", updateMenuItemSchema),
   async (c) => {
     const id = c.req.param("id");
-    const ownerId = c.req.header("X-User-ID");
+    const ownerId = verifiedCallerUserId(c);
     const data = c.req.valid("json");
 
     const item = await prisma.menuItem.findUnique({
@@ -440,7 +441,7 @@ menuRoutes.put(
  */
 menuRoutes.delete("/items/:id", async (c) => {
   const id = c.req.param("id");
-  const ownerId = c.req.header("X-User-ID");
+  const ownerId = verifiedCallerUserId(c);
 
   const item = await prisma.menuItem.findUnique({
     where: { id },
@@ -474,7 +475,7 @@ menuRoutes.delete("/items/:id", async (c) => {
  */
 menuRoutes.put("/items/:id/availability", async (c) => {
   const id = c.req.param("id");
-  const ownerId = c.req.header("X-User-ID");
+  const ownerId = verifiedCallerUserId(c);
   const { availability } = await c.req.json<{
     availability: ItemAvailability;
   }>();
@@ -513,7 +514,7 @@ menuRoutes.post(
   "/items/bulk-availability",
   zValidator("json", bulkUpdateAvailabilitySchema),
   async (c) => {
-    const ownerId = c.req.header("X-User-ID");
+    const ownerId = verifiedCallerUserId(c);
     const { items } = c.req.valid("json");
 
     // Get all items and verify ownership
@@ -569,7 +570,7 @@ menuRoutes.post(
  * POST /menus/items/reorder - Reorder items within a category
  */
 menuRoutes.post("/items/reorder", async (c) => {
-  const ownerId = c.req.header("X-User-ID");
+  const ownerId = verifiedCallerUserId(c);
   const { categoryId, itemIds } = await c.req.json<{
     categoryId: string;
     itemIds: string[];

@@ -60,13 +60,44 @@ export function idemKey(label = "k"): string {
   return uid(label).replace(/[^A-Za-z0-9_.:-]/g, "-");
 }
 
+import {
+  IDENTITY_HEADER,
+  signIdentityContext,
+} from "../src/lib/identity-context";
+
+export const TEST_IDENTITY_SECRET = (process.env.UBI_IDENTITY_SECRET ??=
+  "growth-test-identity-secret-32chars-minimum!!");
+
+function defaultScopesFor(role: string): readonly string[] {
+  if (
+    role === "growth_admin" ||
+    role === "growth_editor" ||
+    role === "ops_admin" ||
+    role === "admin" ||
+    role === "super_admin"
+  ) {
+    return ["profile:read", "growth:admin"];
+  }
+  return ["profile:read"];
+}
+
 export function headers(
   actor: { id: string; role: string },
   cityId: string,
   extra: Record<string, string> = {},
 ): Record<string, string> {
+  const identityToken = signIdentityContext({
+    userId: actor.id,
+    role: actor.role,
+    cityId,
+    scopes: defaultScopesFor(actor.role),
+    secret: TEST_IDENTITY_SECRET,
+  });
   return {
     "content-type": "application/json",
+    [IDENTITY_HEADER]: identityToken,
+    "x-auth-city-id": cityId,
+    "x-ubi-city-id": cityId,
     "X-User-ID": actor.id,
     "X-User-Role": actor.role,
     "X-City-ID": cityId,

@@ -307,4 +307,44 @@ describe("audit completeness", () => {
     });
     expect(row?.after).toMatchObject({ correlationId });
   });
+
+  it("refuses requests with only plain X-User-ID / X-User-Role headers and ignores forged X-User-ID when x-ubi-identity is present (CC-A12)", async () => {
+    const plainOnly = await app.request("/v1/support/cases", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-User-ID": lead.id,
+        "X-User-Role": lead.role,
+        "X-City-ID": city.cityId,
+        "idempotency-key": idemKey("plain"),
+      },
+      body: JSON.stringify({
+        category: "ride",
+        description: "plain header spoof attempt",
+        onBehalfOf: { userType: "rider", userId: customer.id },
+      }),
+    });
+    expect(plainOnly.status).toBe(401);
+
+    const forgedResponse = await app.request("/v1/support/cases", {
+      method: "POST",
+      headers: headers(lead, city.cityId, {
+        "idempotency-key": idemKey("forged"),
+        "X-User-ID": "spoofed_lead_id",
+        "X-User-Role": "ops_admin",
+      }),
+      body: JSON.stringify({
+        category: "ride",
+        description: "forged header alongside valid x-ubi-identity",
+        onBehalfOf: { userType: "rider", userId: customer.id },
+      }),
+    });
+    expect(forgedResponse.status).toBe(201);
+    const opened = (await forgedResponse.json()) as { id: string };
+    const row = await db.auditLog.findFirst({
+      where: { subjectId: opened.id },
+    });
+    expect(row?.actorId).toBe(lead.id);
+    expect(row?.actorRole).toBe(lead.role);
+  });
 });

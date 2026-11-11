@@ -121,6 +121,11 @@ export const SERVICES = {
     fallback: "http://localhost:4015",
     basePath: "/v1",
   },
+  "growth-service": {
+    env: "GROWTH_SERVICE_URL",
+    fallback: "http://localhost:4014",
+    basePath: "/v1",
+  },
   // Reached ONLY through routes/config-read.ts (GET, exact paths): no
   // PROXY_RULES entry forwards to config-service, whose flag flips, change
   // requests and approvals stay off the client edge.
@@ -194,6 +199,20 @@ export const PROXY_RULES: readonly ProxyRule[] = [
   { pattern: "/fleets", service: "fleet-service" },
   { pattern: "/fleets/*", service: "fleet-service" },
   { pattern: "/fleet-offers/*", service: "fleet-service" },
+
+  // Growth (growth-service, CC-A12 / P2-10) — mounts /v1/benefits,
+  // /v1/referrals, /v1/attribution, /v1/driver/{incentives,statements} and
+  // /v1/growth itself. Listed one family at a time so /v1/ai/marketing (stubbed
+  // assistant) stays off the client edge.
+  { pattern: "/benefits", service: "growth-service" },
+  { pattern: "/benefits/*", service: "growth-service" },
+  { pattern: "/referrals", service: "growth-service" },
+  { pattern: "/referrals/*", service: "growth-service" },
+  { pattern: "/attribution/*", service: "growth-service" },
+  { pattern: "/driver/incentives", service: "growth-service" },
+  { pattern: "/driver/incentives/*", service: "growth-service" },
+  { pattern: "/driver/statements/*", service: "growth-service" },
+  { pattern: "/growth/*", service: "growth-service" },
 
   // Ride Service — mounts everything under /v1 itself.
   { pattern: "/rides/*", service: "ride-service" },
