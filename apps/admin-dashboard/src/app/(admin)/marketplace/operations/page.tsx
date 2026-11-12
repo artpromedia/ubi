@@ -6,6 +6,10 @@ import {
   type CommandKind,
   type CommandState,
 } from "@/components/marketplace/StuckSagaBoard";
+import {
+  OffroadFlagsBoard,
+  type OffroadFlagDecisionState,
+} from "@/components/marketplace/OffroadFlagsBoard";
 import { AccessNotice } from "@/components/ops/AccessNotice";
 import { useOnlineStatus } from "@/components/ops/useOnlineStatus";
 import {
@@ -15,7 +19,10 @@ import {
   readFailure,
 } from "@/lib/access";
 import { newIdempotencyKey } from "@/lib/api-client";
-import { marketplaceApi } from "@/lib/marketplace-api";
+import {
+  marketplaceApi,
+  type OffroadFlagDecision,
+} from "@/lib/marketplace-api";
 import { formatMinorUnits, formatServerMoney } from "@/lib/money";
 import {
   DELIVERY_CANCEL_RETRY_NOTE,
@@ -66,6 +73,10 @@ export default function StuckSagaOperationsContainer() {
   const [active, setActive] = useState<CommandState>(null);
   const [confirmed, setConfirmed] = useState<Confirmed | null>(null);
   const [reason, setReason] = useState("");
+  const [selectedFlagId, setSelectedFlagId] = useState<string | null>(null);
+  const [activeFlagDecision, setActiveFlagDecision] =
+    useState<OffroadFlagDecisionState>(null);
+  const [flagReason, setFlagReason] = useState("");
 
   const sagas = useQuery({
     queryKey: ["mpPendingSagas"],
@@ -86,6 +97,51 @@ export default function StuckSagaOperationsContainer() {
     queryKey: ["mpDeliveryCancellations"],
     queryFn: () => marketplaceApi.deliveryCancellations("pending"),
     refetchInterval: 20_000,
+  });
+  const offroadFlags = useQuery({
+    queryKey: ["mpOffroadFlags"],
+    queryFn: () => marketplaceApi.offroadFlags(),
+    refetchInterval: 20_000,
+  });
+
+  const decideOffroadMutation = useMutation({
+    mutationFn: ({
+      flagId,
+      decision,
+      decisionReason,
+    }: {
+      flagId: string;
+      decision: OffroadFlagDecision;
+      decisionReason: string;
+    }) =>
+      marketplaceApi.decideOffroadFlag(
+        flagId,
+        { decision, reason: decisionReason },
+        newIdempotencyKey(),
+      ),
+    onMutate: () =>
+      setActiveFlagDecision((prev) => (prev ? { ...prev, busy: true } : prev)),
+    onSuccess: (res) => {
+      setFlagReason("");
+      setActiveFlagDecision({
+        flagId: res.row.flagId,
+        decision: res.row.decision ?? "dismiss",
+        resultMessage: `Recorded ${res.row.decision ?? "decision"} for flag ${res.row.flagId}.`,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["mpOffroadFlags"] });
+    },
+    onError: (err) => {
+      setActiveFlagDecision((prev) =>
+        prev
+          ? {
+              ...prev,
+              busy: false,
+              error: (err as Error).message,
+              access: classifyError(err),
+            }
+          : prev,
+      );
+    },
   });
 
   /** A preview is a dry run, so its failure is never ambiguous; an apply's
@@ -475,6 +531,38 @@ export default function StuckSagaOperationsContainer() {
             setConfirmed(null);
             setActive(null);
             setReason("");
+          }}
+        />
+        <OffroadFlagsBoard
+          loading={offroadFlags.isLoading}
+          error={readFailure(offroadFlags, online)}
+          flags={offroadFlags.data?.rows ?? []}
+          selectedFlagId={selectedFlagId}
+          activeDecision={activeFlagDecision}
+          reason={flagReason}
+          onSelectFlag={(flagId) => {
+            setSelectedFlagId(flagId);
+            setActiveFlagDecision(null);
+            setFlagReason("");
+          }}
+          onSelectAction={(flagId, decision) => {
+            setSelectedFlagId(flagId);
+            setActiveFlagDecision({ flagId, decision });
+          }}
+          onReasonChange={setFlagReason}
+          onSubmitDecision={() => {
+            if (!activeFlagDecision) return;
+            const trimmed = flagReason.trim();
+            if (trimmed.length < 3) return;
+            decideOffroadMutation.mutate({
+              flagId: activeFlagDecision.flagId,
+              decision: activeFlagDecision.decision,
+              decisionReason: trimmed,
+            });
+          }}
+          onCancelDecision={() => {
+            setActiveFlagDecision(null);
+            setFlagReason("");
           }}
         />
       </div>

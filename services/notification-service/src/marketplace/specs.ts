@@ -1102,15 +1102,36 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
   "fleet.conflict.opened": {
     prefCategory: "ride",
     type: "GENERAL",
+    smsFallback: (e) => text(e, "type") === "unplanned_off_road",
     copy: {
-      driver: (e) =>
-        text(e, "driverId") !== null &&
-        text(e, "type") !== "vehicle_service_requested"
-          ? {
-              title: "Schedule conflict needs your attention",
-              body: "A schedule or vehicle conflict affects one of your reserved jobs. Open UBI to review your options before the deadline.",
-            }
-          : null,
+      driver: (e) => {
+        if (text(e, "driverId") === null) return null;
+        const type = text(e, "type");
+        if (
+          type === "vehicle_service_requested" ||
+          type === "document_expiring"
+        ) {
+          return null;
+        }
+        const bodyByType: Readonly<Record<string, string>> = {
+          unplanned_off_road:
+            "The vehicle on your upcoming job was reported off-road. Open UBI to accept a replacement vehicle or release the job before the deadline.",
+          maintenance_overlaps_booking:
+            "Planned maintenance overlaps one of your reserved jobs. Open UBI to review a replacement vehicle or release the job before the deadline.",
+          document_expires_in_booking:
+            "A vehicle document expires before your reserved job starts. Open UBI to review your options before the deadline.",
+          time_off_overlaps_booking:
+            "Your time-off window overlaps a reserved job. Open UBI to keep the job or release it before the deadline.",
+          termination_bookings:
+            "Your arrangement ends before an upcoming reserved job. Open UBI to review your options before the deadline.",
+        };
+        return {
+          title: "Schedule conflict needs your attention",
+          body:
+            (type ? bodyByType[type] : undefined) ??
+            "A schedule or vehicle conflict affects one of your reserved jobs. Open UBI to review your options before the deadline.",
+        };
+      },
       fleet_owner: (e) => {
         if (text(e, "fleetId") === null) return null;
         const type = text(e, "type");
@@ -1126,9 +1147,23 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
             body: "A driver flagged a vehicle as needing service soon. Open the Fleet Portal conflict centre to plan maintenance.",
           };
         }
+        const bodyByType: Readonly<Record<string, string>> = {
+          unplanned_off_road:
+            "An off-road vehicle overlaps an upcoming booking. Open the Fleet Portal conflict centre to propose a vehicle swap or ask the driver to review.",
+          maintenance_overlaps_booking:
+            "A maintenance block overlaps an upcoming booking. Open the Fleet Portal conflict centre to move the block or propose a swap.",
+          document_expiring:
+            "A required vehicle document is expiring soon. Open the Fleet Portal conflict centre to upload a renewal.",
+          document_expires_in_booking:
+            "A vehicle document expires before an upcoming booking. Open the Fleet Portal conflict centre to renew it or propose a swap.",
+          termination_bookings:
+            "An arrangement notice period ends before an upcoming booking. Open the Fleet Portal conflict centre to propose a swap or review.",
+        };
         return {
           title: "New fleet schedule conflict",
-          body: "A schedule or vehicle conflict needs attention in your fleet. Open the Fleet Portal conflict centre.",
+          body:
+            (type ? bodyByType[type] : undefined) ??
+            "A schedule or vehicle conflict needs attention in your fleet. Open the Fleet Portal conflict centre.",
         };
       },
       fleet_manager: (e) => {
@@ -1146,9 +1181,23 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
             body: "A driver flagged a vehicle as needing service soon. Open the Fleet Portal conflict centre to plan maintenance.",
           };
         }
+        const bodyByType: Readonly<Record<string, string>> = {
+          unplanned_off_road:
+            "An off-road vehicle overlaps an upcoming booking. Open the Fleet Portal conflict centre to propose a vehicle swap or ask the driver to review.",
+          maintenance_overlaps_booking:
+            "A maintenance block overlaps an upcoming booking. Open the Fleet Portal conflict centre to move the block or propose a swap.",
+          document_expiring:
+            "A required vehicle document is expiring soon. Open the Fleet Portal conflict centre to upload a renewal.",
+          document_expires_in_booking:
+            "A vehicle document expires before an upcoming booking. Open the Fleet Portal conflict centre to renew it or propose a swap.",
+          termination_bookings:
+            "An arrangement notice period ends before an upcoming booking. Open the Fleet Portal conflict centre to propose a swap or review.",
+        };
         return {
           title: "New fleet schedule conflict",
-          body: "A schedule or vehicle conflict needs attention in your fleet. Open the Fleet Portal conflict centre.",
+          body:
+            (type ? bodyByType[type] : undefined) ??
+            "A schedule or vehicle conflict needs attention in your fleet. Open the Fleet Portal conflict centre.",
         };
       },
     },
@@ -1159,7 +1208,8 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
     copy: {
       driver: (e) =>
         text(e, "driverId") !== null &&
-        text(e, "type") !== "vehicle_service_requested"
+        text(e, "type") !== "vehicle_service_requested" &&
+        text(e, "type") !== "document_expiring"
           ? {
               title: "Schedule conflict resolved",
               body: "A conflict on your schedule has been resolved. Open UBI to view your updated schedule.",
@@ -1219,17 +1269,80 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
       },
     },
   },
-  "vehicle.document.expiring": {
+  "fleet.staff.changed": {
     prefCategory: "ride",
     type: "GENERAL",
     copy: {
       fleet_owner: {
-        title: "Vehicle document expiring soon",
-        body: "A required document on one of your fleet vehicles is expiring soon. Open the Fleet Portal to upload a renewal.",
+        title: "Fleet staff updated",
+        body: "A staff role or status changed in your fleet. Open the Fleet Portal Staff & roles tab for details.",
+      },
+    },
+  },
+  "fleet.vehicle_swap.requested": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    copy: {
+      driver: {
+        title: "Vehicle swap proposed for your job",
+        body: "Your fleet proposed a replacement vehicle for one of your reserved jobs. Open UBI to accept or decline.",
+      },
+      fleet_owner: {
+        title: "Vehicle swap requested",
+        body: "A replacement vehicle swap was proposed for a booked trip. Waiting for the driver, then the rider's confirmation.",
       },
       fleet_manager: {
-        title: "Vehicle document expiring soon",
-        body: "A required document on one of your fleet vehicles is expiring soon. Open the Fleet Portal to upload a renewal.",
+        title: "Vehicle swap requested",
+        body: "A replacement vehicle swap was proposed for a booked trip. Waiting for the driver, then the rider's confirmation.",
+      },
+    },
+  },
+  "vehicle.document.expiring": {
+    prefCategory: "ride",
+    type: "GENERAL",
+    smsFallback: (e) =>
+      Number(e.payload.thresholdDays) === 1 ||
+      text(e, "reason") === "booking_after_expiry",
+    copy: {
+      fleet_owner: (e) => {
+        const days = Number(e.payload.thresholdDays);
+        const reason = text(e, "reason");
+        if (reason === "booking_after_expiry") {
+          return {
+            title: "Vehicle document expiring soon",
+            body: "A required vehicle document expires before an upcoming booking. Open the Fleet Portal to upload a renewal or propose a vehicle swap.",
+          };
+        }
+        const windowPhrase =
+          Number.isFinite(days) && days > 0
+            ? days === 1
+              ? "in 1 day"
+              : `in ${days} days`
+            : "soon";
+        return {
+          title: "Vehicle document expiring soon",
+          body: `A required document on one of your fleet vehicles is expiring ${windowPhrase}. Open the Fleet Portal to upload a renewal.`,
+        };
+      },
+      fleet_manager: (e) => {
+        const days = Number(e.payload.thresholdDays);
+        const reason = text(e, "reason");
+        if (reason === "booking_after_expiry") {
+          return {
+            title: "Vehicle document expiring soon",
+            body: "A required vehicle document expires before an upcoming booking. Open the Fleet Portal to upload a renewal or propose a vehicle swap.",
+          };
+        }
+        const windowPhrase =
+          Number.isFinite(days) && days > 0
+            ? days === 1
+              ? "in 1 day"
+              : `in ${days} days`
+            : "soon";
+        return {
+          title: "Vehicle document expiring soon",
+          body: `A required document on one of your fleet vehicles is expiring ${windowPhrase}. Open the Fleet Portal to upload a renewal.`,
+        };
       },
     },
   },
@@ -1263,6 +1376,79 @@ export const NOTIFICATION_SPECS: Readonly<Record<string, NotificationSpec>> = {
     },
   },
 };
+
+/**
+ * Canonical D3 copy-deck coverage requirements (`P1-06`,
+ * `docs/design/NOTIFICATIONS_AND_OPS_BRIEF.md` §1.3). Every listed event must
+ * be present in `NOTIFICATION_SPECS` and define copy rules for all required
+ * roles.
+ */
+export const COPY_DECK_REQUIREMENTS: Readonly<
+  Record<string, readonly (keyof NotificationSpec["copy"])[]>
+> = {
+  "fleet.alert": ["fleet_owner", "fleet_manager"],
+  "fleet.offroad.reported": ["fleet_owner", "fleet_manager"],
+  "fleet.offroad.flagged": ["ubi_ops"],
+  "fleet.conflict.opened": ["driver", "fleet_owner", "fleet_manager"],
+  "fleet.conflict.resolved": ["driver", "fleet_owner", "fleet_manager"],
+  "fleet.conflict.lapsed": ["driver", "fleet_owner", "fleet_manager"],
+  "fleet.conflict.reminder_sent": ["driver"],
+  "fleet.staff.changed": ["fleet_owner"],
+  "fleet.vehicle_swap.requested": ["driver", "fleet_owner", "fleet_manager"],
+  "vehicle.document.expiring": ["fleet_owner", "fleet_manager"],
+  "vehicle.document.expired": ["fleet_owner", "fleet_manager"],
+  "assignment.proposal.status.changed": [
+    "driver",
+    "fleet_owner",
+    "fleet_manager",
+  ],
+  "assignment.signed": ["fleet_owner", "fleet_manager"],
+  "assignment.status.changed": ["driver", "fleet_owner", "fleet_manager"],
+  "maintenance.status.changed": ["fleet_owner", "fleet_manager"],
+  "driver.availability.saved": ["driver"],
+  "mp.vehicle_swap.proposed": ["driver"],
+  "mp.vehicle_swap.rider_consent_requested": ["requester"],
+  "mp.vehicle_swap.applied": [
+    "requester",
+    "driver",
+    "fleet_owner",
+    "fleet_manager",
+  ],
+  "mp.vehicle_swap.rider_declined": ["driver", "fleet_owner", "fleet_manager"],
+  "mp.vehicle_swap.expired": [
+    "requester",
+    "driver",
+    "fleet_owner",
+    "fleet_manager",
+  ],
+  "mp.advance_booking.reminder": ["requester", "driver"],
+  "mp.advance_booking.reconfirm_requested": ["driver"],
+  "mp.advance_booking.failed": ["requester", "driver"],
+  "mp.advance_booking.cancelled": ["requester", "driver"],
+  "mp.advance_booking.risk_changed": ["driver"],
+  "mp.advance_booking.choice_offered": ["requester"],
+  "mp.advance_booking.activated": ["requester", "driver"],
+  "shipment.return_proposed": ["sender"],
+};
+
+export function validateCopyDeckCoverage(
+  specs: Readonly<Record<string, NotificationSpec>> = NOTIFICATION_SPECS,
+): { readonly ok: boolean; readonly missing: string[] } {
+  const missing: string[] = [];
+  for (const [eventName, roles] of Object.entries(COPY_DECK_REQUIREMENTS)) {
+    const spec = specs[eventName];
+    if (!spec) {
+      missing.push(`${eventName} (missing spec)`);
+      continue;
+    }
+    for (const role of roles) {
+      if (spec.copy[role] === undefined) {
+        missing.push(`${eventName}:${role}`);
+      }
+    }
+  }
+  return { ok: missing.length === 0, missing };
+}
 
 /** Redis glob patterns whose events this table can notify. */
 export const NOTIFICATION_PATTERNS: readonly string[] = [

@@ -929,3 +929,44 @@ export interface FleetRemittanceStatementAvailable {
 export type FleetRemittanceStatement =
   | FleetRemittanceStatementUnavailable
   | FleetRemittanceStatementAvailable;
+
+// ── Fleet In-App Notices (CC-C05 / P1-06) ───────────────────────────────────
+
+export interface FleetNoticeData {
+  readonly kind?: string;
+  readonly name?: string;
+  readonly eventType?: string;
+  readonly role?: string;
+  readonly subjectType?: string;
+  readonly subjectId?: string;
+  readonly fleetId?: string;
+  readonly vehicleId?: string;
+  readonly conflictId?: string;
+  readonly blockId?: string;
+  readonly proposalId?: string;
+  readonly assignmentId?: string;
+  readonly swapId?: string;
+}
+
+export interface FleetNoticeItem {
+  readonly id: string;
+  readonly userId: string;
+  readonly type: string;
+  readonly title: string;
+  readonly body: string;
+  readonly actionUrl?: string | null;
+  readonly data?: FleetNoticeData | null;
+  readonly readAt: string | null;
+  readonly createdAt: string;
+}
+
+export interface FleetNoticesListResponse {
+  readonly notifications: readonly FleetNoticeItem[];
+  readonly unreadCount: number;
+  readonly pagination?: {
+    readonly page: number;
+    readonly limit: number;
+    readonly total: number;
+    readonly totalPages: number;
+  };
+}

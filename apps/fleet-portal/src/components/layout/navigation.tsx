@@ -24,6 +24,7 @@ import { useState, type FormEvent } from "react";
 import { Logo } from "@ubi/ui";
 
 import { useFleetContextOptional } from "@/components/fleet/fleet-context";
+import { FleetNoticesBell } from "@/components/notices/FleetNoticesBell";
 import { ROLE_LABELS } from "@/lib/roles";
 import type { PublicFleetSession } from "@/lib/session";
 import { FLEET_ACCOUNT_TEST_IDS } from "@/lib/test-ids";
@@ -283,59 +284,62 @@ export const FleetHeader = ({
       </div>
 
       {session?.mode === "full" ? (
-        <div className="relative">
-          <button
-            type="button"
-            data-testid={FLEET_ACCOUNT_TEST_IDS.signIn.approveDeviceToggle}
-            onClick={() => {
-              setShowApprove((prev) => !prev);
-              setApproveError(null);
-              setApproveMessage(null);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
-          >
-            <Smartphone className="h-3.5 w-3.5 text-[#1DB954]" aria-hidden />
-            Approve device
-          </button>
-
-          {showApprove ? (
-            <form
-              onSubmit={(e) => {
-                void handleApproveSubmit(e);
+        <div className="flex items-center gap-2">
+          <FleetNoticesBell />
+          <div className="relative">
+            <button
+              type="button"
+              data-testid={FLEET_ACCOUNT_TEST_IDS.signIn.approveDeviceToggle}
+              onClick={() => {
+                setShowApprove((prev) => !prev);
+                setApproveError(null);
+                setApproveMessage(null);
               }}
-              className="absolute right-0 mt-2 w-80 rounded-xl border border-zinc-700 bg-[#141414] p-4 shadow-xl space-y-3 z-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
             >
-              <p className="text-xs font-semibold text-zinc-100">
-                Approve a new browser or device
-              </p>
-              <input
-                type="text"
-                value={challengeId}
-                onChange={(e) => setChallengeId(e.target.value)}
-                placeholder="Paste challenge ID"
-                className="w-full rounded-lg border border-zinc-700 bg-[#0F0F0F] px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-500"
-              />
-              {approveError ? (
-                <p className="text-xs text-red-300">{approveError}</p>
-              ) : null}
-              {approveMessage ? (
-                <p className="flex items-center gap-1 text-xs text-[#86EFAC]">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {approveMessage}
-                </p>
-              ) : null}
-              <button
-                type="submit"
-                disabled={isApproving}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-[#1DB954] px-3 py-1.5 text-xs font-semibold text-black hover:bg-[#19a349] disabled:opacity-50"
+              <Smartphone className="h-3.5 w-3.5 text-[#1DB954]" aria-hidden />
+              Approve device
+            </button>
+
+            {showApprove ? (
+              <form
+                onSubmit={(e) => {
+                  void handleApproveSubmit(e);
+                }}
+                className="absolute right-0 mt-2 w-80 rounded-xl border border-zinc-700 bg-[#141414] p-4 shadow-xl space-y-3 z-50"
               >
-                {isApproving ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <p className="text-xs font-semibold text-zinc-100">
+                  Approve a new browser or device
+                </p>
+                <input
+                  type="text"
+                  value={challengeId}
+                  onChange={(e) => setChallengeId(e.target.value)}
+                  placeholder="Paste challenge ID"
+                  className="w-full rounded-lg border border-zinc-700 bg-[#0F0F0F] px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-500"
+                />
+                {approveError ? (
+                  <p className="text-xs text-red-300">{approveError}</p>
                 ) : null}
-                Approve challenge
-              </button>
-            </form>
-          ) : null}
+                {approveMessage ? (
+                  <p className="flex items-center gap-1 text-xs text-[#86EFAC]">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {approveMessage}
+                  </p>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={isApproving}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-[#1DB954] px-3 py-1.5 text-xs font-semibold text-black hover:bg-[#19a349] disabled:opacity-50"
+                >
+                  {isApproving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  Approve challenge
+                </button>
+              </form>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </header>

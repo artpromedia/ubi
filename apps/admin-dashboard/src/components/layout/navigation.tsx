@@ -3,24 +3,19 @@
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
-  Car,
   CheckCircle2,
   ChevronDown,
   CreditCard,
   FileCheck,
   Gavel,
-  HelpCircle,
   LayoutDashboard,
   Loader2,
   LogOut,
   Menu,
-  Package,
   Plane,
-  Settings,
-  Shield,
   ShieldCheck,
+  TrendingUp,
   Users,
-  UtensilsCrossed,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -32,7 +27,17 @@ import { LogoIcon } from "@ubi/ui";
 import { formatAdminRole, type PublicAdminSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
-const navigation = [
+export interface AdminNavItem {
+  readonly name: string;
+  readonly href: string;
+  readonly icon: typeof LayoutDashboard;
+  readonly children?: readonly {
+    readonly name: string;
+    readonly href: string;
+  }[];
+}
+
+export const navigation: readonly AdminNavItem[] = [
   {
     name: "Dashboard",
     href: "/dashboard",
@@ -42,53 +47,12 @@ const navigation = [
     name: "Users",
     href: "/users",
     icon: Users,
-    children: [
-      { name: "All Users", href: "/users" },
-      { name: "Riders", href: "/users/riders" },
-      { name: "Drivers", href: "/users/drivers" },
-      { name: "Couriers", href: "/users/couriers" },
-    ],
-  },
-  {
-    name: "Rides",
-    href: "/rides",
-    icon: Car,
-    children: [
-      { name: "All Rides", href: "/rides" },
-      { name: "Live Rides", href: "/rides/live" },
-      { name: "Disputes", href: "/rides/disputes" },
-    ],
-  },
-  {
-    name: "Food Orders",
-    href: "/food",
-    icon: UtensilsCrossed,
-    children: [
-      { name: "All Orders", href: "/food" },
-      { name: "Restaurants", href: "/food/restaurants" },
-      { name: "Live Orders", href: "/food/live" },
-    ],
-  },
-  {
-    name: "Deliveries",
-    href: "/deliveries",
-    icon: Package,
-    children: [
-      { name: "All Deliveries", href: "/deliveries" },
-      { name: "Live Tracking", href: "/deliveries/live" },
-      { name: "Issues", href: "/deliveries/issues" },
-    ],
   },
   {
     name: "Payments",
-    href: "/payments",
+    href: "/payments/ops-credits",
     icon: CreditCard,
-    children: [
-      { name: "Transactions", href: "/payments" },
-      { name: "Payouts", href: "/payments/payouts" },
-      { name: "Refunds", href: "/payments/refunds" },
-      { name: "Ops Wallet Credits", href: "/payments/ops-credits" },
-    ],
+    children: [{ name: "Ops Wallet Credits", href: "/payments/ops-credits" }],
   },
   {
     name: "Verification",
@@ -97,8 +61,6 @@ const navigation = [
     children: [
       { name: "Document Review", href: "/verification" },
       { name: "Fleets & KYB", href: "/fleets" },
-      { name: "Background Checks", href: "/verification/background" },
-      { name: "Liveness Checks", href: "/verification/liveness" },
     ],
   },
   {
@@ -124,25 +86,20 @@ const navigation = [
     ],
   },
   {
+    name: "Growth",
+    href: "/growth/campaigns",
+    icon: TrendingUp,
+    children: [
+      { name: "Campaigns", href: "/growth/campaigns" },
+      { name: "Referrals", href: "/growth/referrals" },
+      { name: "Assistant", href: "/growth/assistant" },
+    ],
+  },
+  {
     name: "Fraud Center",
     href: "/fraud",
     icon: AlertTriangle,
   },
-  {
-    name: "Safety",
-    href: "/safety",
-    icon: Shield,
-    children: [
-      { name: "Incidents", href: "/safety" },
-      { name: "Background Checks", href: "/safety/checks" },
-      { name: "Reports", href: "/safety/reports" },
-    ],
-  },
-];
-
-const secondaryNavigation = [
-  { name: "Settings", href: "/settings", icon: Settings },
-  { name: "Help", href: "/help", icon: HelpCircle },
 ];
 
 function operatorDisplayName(session?: PublicAdminSession | null): string {
@@ -309,24 +266,6 @@ export const Sidebar = ({
                   </Link>
                 )}
               </div>
-            ))}
-
-            <div className="!my-4 border-t border-gray-800" />
-
-            {secondaryNavigation.map((item) => (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition",
-                  pathname === item.href
-                    ? "bg-green-500/10 text-green-500"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800",
-                )}
-              >
-                <item.icon className="w-5 h-5" />
-                {item.name}
-              </Link>
             ))}
           </nav>
         )}

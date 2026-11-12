@@ -61,6 +61,8 @@ import type {
   FleetKybApplicationView,
   FleetKybRequirementsResponse,
   FleetList,
+  FleetNoticeItem,
+  FleetNoticesListResponse,
   FleetOverview,
   FleetRemittanceStatement,
   FleetStaffList,
@@ -464,6 +466,71 @@ export function createFleetApi(raw: FleetApiClient = apiClient) {
         `${base(fleetId)}/remittance` + query({ weekStart }),
         signal,
       ),
+    notices: async (
+      params: { limit?: number; unreadOnly?: boolean } = {},
+      signal?: AbortSignal,
+    ): Promise<FleetNoticesListResponse> => {
+      const raw = await get<
+        | FleetNoticesListResponse
+        | { success?: boolean; data?: FleetNoticesListResponse }
+      >(
+        "/v1/notifications" +
+          query({
+            limit: params.limit ? String(params.limit) : "25",
+            unreadOnly: params.unreadOnly ? "true" : undefined,
+          }),
+        signal,
+      );
+      if (
+        raw !== null &&
+        typeof raw === "object" &&
+        "data" in raw &&
+        raw.data !== undefined
+      ) {
+        return raw.data;
+      }
+      return raw as FleetNoticesListResponse;
+    },
+    markNoticeRead: async (
+      noticeId: string,
+      key: string,
+    ): Promise<{ notification: FleetNoticeItem }> => {
+      const raw = stripForbidden(
+        await client.patch<
+          | { notification: FleetNoticeItem }
+          | { data?: { notification: FleetNoticeItem } }
+        >(
+          `/v1/notifications/${enc(noticeId)}/read`,
+          {},
+          { idempotencyKey: key },
+        ),
+      );
+      if (
+        raw !== null &&
+        typeof raw === "object" &&
+        "data" in raw &&
+        raw.data !== undefined
+      ) {
+        return raw.data;
+      }
+      return raw as { notification: FleetNoticeItem };
+    },
+    markAllNoticesRead: async (
+      key: string,
+    ): Promise<{ markedAsRead: number }> => {
+      const raw = await post<
+        { markedAsRead: number } | { data?: { markedAsRead: number } }
+      >("/v1/notifications/read-all", {}, key);
+      if (
+        raw !== null &&
+        typeof raw === "object" &&
+        "data" in raw &&
+        raw.data !== undefined
+      ) {
+        return raw.data;
+      }
+      return raw as { markedAsRead: number };
+    },
   };
 }
 
@@ -476,6 +543,7 @@ export const fleetKeys = {
   fleets: () => ["fleets"] as const,
   myInvitations: () => ["fleet-invitations"] as const,
   kybRequirements: () => ["fleet-kyb-requirements"] as const,
+  notices: () => ["fleet-notices"] as const,
   all: (fleetId: string) => ["fleet", fleetId] as const,
   kyb: (fleetId: string) => ["fleet", fleetId, "kyb"] as const,
   overview: (fleetId: string) => ["fleet", fleetId, "overview"] as const,

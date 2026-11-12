@@ -952,6 +952,38 @@ const CASES: Case[] = [
     },
   },
   {
+    name: "fleet.staff.changed",
+    actor: { type: "fleet", id: FM },
+    subject: { type: "fleet", id: FLEET },
+    payload: {
+      fleetId: FLEET,
+      staffUserId: FM,
+      role: "manager",
+      status: "active",
+      ...MONEY,
+    },
+    expect: {
+      fleet_owner: "Fleet staff updated",
+    },
+  },
+  {
+    name: "fleet.vehicle_swap.requested",
+    actor: { type: "fleet", id: FO },
+    subject: { type: "mp_vehicle_swap", id: "swp_1" },
+    payload: {
+      swapId: "swp_1",
+      fleetId: FLEET,
+      driverId: D,
+      fromVehicleId: "veh_1",
+      toVehicleId: "veh_2",
+      ...MONEY,
+    },
+    expect: {
+      driver: "Vehicle swap proposed for your job",
+      fleet_manager: "Vehicle swap requested",
+    },
+  },
+  {
     name: "driver.availability.saved",
     actor: DRIVER,
     subject: { type: "driver", id: D },

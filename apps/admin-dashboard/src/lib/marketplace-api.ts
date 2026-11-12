@@ -312,6 +312,66 @@ export type DecideOffroadFlagResult = {
   standingAction?: StandingActionView;
 };
 
+export type DlqQueueFilter = "all" | "marketplace" | "trip_access";
+export type DlqStatusFilter = "all" | "pending" | "replayed" | "discarded";
+
+export type DlqItemView = {
+  id: string;
+  queue: "marketplace" | "trip_access";
+  status: "pending" | "replayed" | "discarded";
+  eventId: string;
+  eventName: string;
+  userId: string | null;
+  role: string | null;
+  channel: "push" | "sms";
+  attempts: number;
+  reason: string;
+  tokenId: string | null;
+  requestId: string | null;
+  maskedPhone: string | null;
+  subjectType: string | null;
+  subjectId: string | null;
+  cityId: string | null;
+  replayable: boolean;
+  at: string | null;
+  replayedAt: string | null;
+  replayedBy: string | null;
+  replayOutcome: string | null;
+  discardedAt: string | null;
+  discardedBy: string | null;
+  discardReason: string | null;
+};
+
+export type DlqListCounts = {
+  marketplace: number;
+  tripAccess: number;
+  pending: number;
+  replayed: number;
+  discarded: number;
+};
+
+export type DlqListResponse = {
+  success: boolean;
+  data: {
+    items: DlqItemView[];
+    total: number;
+    counts: DlqListCounts;
+  };
+};
+
+export type DlqDetailResponse = {
+  success: boolean;
+  data: DlqItemView;
+};
+
+export type DlqActionResult = {
+  success: boolean;
+  replayed?: boolean;
+  discarded?: boolean;
+  idempotent: boolean;
+  data: DlqItemView;
+};
+
 export type CancellationView = {
   rideId: string;
   awardId?: string;
@@ -588,6 +648,40 @@ export const marketplaceApi = {
       body,
       { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
     ),
+
+  dlqList: (filter?: {
+    queue?: DlqQueueFilter;
+    status?: DlqStatusFilter;
+    eventName?: string;
+    role?: string;
+    reason?: string;
+    since?: string;
+    limit?: number;
+  }) =>
+    apiClient.get<DlqListResponse>(
+      "/v1/ops/notifications/dlq" + toQuery(filter ?? {}),
+    ),
+  dlqDetail: (id: string) =>
+    apiClient.get<DlqDetailResponse>(
+      "/v1/ops/notifications/dlq/" + encodeURIComponent(id),
+    ),
+  replayDlqItem: (id: string, idempotencyKey?: string) =>
+    apiClient.post<DlqActionResult>(
+      "/v1/ops/notifications/dlq/" + encodeURIComponent(id) + "/replay",
+      {},
+      { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
+    ),
+  discardDlqItem: (id: string, reason: string, idempotencyKey?: string) => {
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      throw new Error("A discard reason of at least 3 characters is required");
+    }
+    return apiClient.post<DlqActionResult>(
+      "/v1/ops/notifications/dlq/" + encodeURIComponent(id) + "/discard",
+      { reason: trimmed },
+      { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
+    );
+  },
 
   cancellations: (cityId?: string, driverId?: string, cursor?: string) =>
     apiClient.get<CancellationsPage>(

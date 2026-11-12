@@ -122,4 +122,11 @@ export const FLEET_ACCOUNT_TEST_IDS = {
     assignmentRow: "fleet.remittance.assignmentRow",
     walletCard: "fleet.remittance.walletCard",
   },
+  notices: {
+    bell: "fleet.notices.bell",
+    unreadBadge: "fleet.notices.unreadBadge",
+    drawer: "fleet.notices.drawer",
+    item: "fleet.notices.item",
+    planMaintenance: "fleet.notices.planMaintenance",
+  },
 } as const;
